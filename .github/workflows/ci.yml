@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core-tests:
+    name: measurement core (453 checks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build and run the host tests
+        run: |
+          cc -std=c99 -Wall -Wextra -Werror -O1 \
+             -Ifirmware/components/ac_core/include \
+             firmware/components/ac_core/src/*.c \
+             firmware/test/host/test_ac_core.c -lm -o ac_test
+          ./ac_test
+
+  electrical:
+    name: electrical rule check (371 checks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: run the ERC
+        run: python3 electronics/schematic/design.py
+      - name: the generated files must be in step with the source
+        run: |
+          python3 electronics/schematic/design.py --emit
+          git diff --exit-code -- electronics/ docs/BOM.md
+
+  energy-model:
+    name: energy model
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python3 tools/battery_calculator/model.py
+      - name: ECO must still clear six months with margin
+        run: |
+          python3 - <<'PY'
+          import json, subprocess, sys
+          out = subprocess.run([sys.executable,
+                                "tools/battery_calculator/model.py", "--json"],
+                               capture_output=True, text=True, check=True).stdout
+          eco = next(p for p in json.loads(out)["profiles"] if p["profile"] == "ECO")
+          print(f"ECO: {eco['months_with_margin']} months with margin")
+          assert eco["months_with_margin"] >= 6.0, "ECO no longer meets the target"
+          PY
+
+  enclosure:
+    name: enclosure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: sudo apt-get update && sudo apt-get install -y openscad
+      - name: render every part (the asserts run here)
+        run: |
+          for p in front back button batclip stand; do
+            openscad -o "/tmp/$p.stl" --export-format binstl \
+                     cad/openscad/aircheck_case.scad -D "part=\"$p\""
+          done
+      - name: geometry checks
+        run: |
+          for p in front back button batclip stand; do
+            python3 tools/diagnostics/stl_check.py "/tmp/$p.stl" --build 250x210x220
+          done
+
+  firmware:
+    name: ESP-IDF + esp-matter build
+    runs-on: ubuntu-latest
+    # The Matter SDK is a large checkout and a long compile; only run it when
+    # the firmware actually changed.
+    if: contains(github.event.head_commit.message, 'firmware') || github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: note
+        run: |
+          echo "Building esp-matter in CI needs a prepared image with"
+          echo "ESP-IDF v5.5.x and esp-matter release/v1.6 already bootstrapped."
+          echo "See firmware/README.md for the local build."

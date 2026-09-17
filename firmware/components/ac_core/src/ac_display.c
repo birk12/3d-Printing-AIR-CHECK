@@ -293,7 +293,8 @@ static void screen_system(ac_canvas_t *c, const ac_engine_t *e,
     kv_row(c, 138, "THREAD", ui->thread_attached ? "UP" : "DOWN");
     kv_row(c, 158, "MATTER", ui->matter_commissioned ? "PAIRED" : "NOT PAIRED");
     uint32_t up = ac_engine_uptime_s(e, now);
-    snprintf(v, sizeof(v), "%ud %02uh", up / 86400u, (up % 86400u) / 3600u);
+    snprintf(v, sizeof(v), "%ud %02uh", (unsigned)(up / 86400u),
+             (unsigned)((up % 86400u) / 3600u));
     /* shares the hero label's line, right aligned, so it cannot collide */
     ac_canvas_text_right(c, &ac_font_small, AC_DISP_W - GRID, 44, v, true);
     status_strip(c, e, ui);

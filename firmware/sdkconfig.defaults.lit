@@ -1,0 +1,21 @@
+# Experimental: Long Idle Time ICD.
+#
+# A LIT ICD may sleep far longer between polls, which would take the radio
+# line in docs/BATTERY_LIFE.md from 2.3 mAh/day down to well under 1.  The
+# catch is ecosystem support: Matter 1.4 says a LIT ICD "SHALL operate as a
+# SIT ICD if it does not have at least one registration with any client", so
+# unless the controller registers as an ICD client you get SIT behaviour and a
+# more complicated device for nothing.
+#
+# Build with:
+#   idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.lit" \
+#          set-target esp32c6 build
+#
+# Verify against your own HomePod before trusting it - see docs/THREAD.md.
+CONFIG_ENABLE_ICD_LIT=y
+CONFIG_ICD_SLOW_POLL_INTERVAL_MS=20000
+CONFIG_ICD_IDLE_MODE_INTERVAL_SEC=600
+CONFIG_ICD_ACTIVE_MODE_THRESHOLD_MS=5000
+CONFIG_ICD_CLIENTS_SUPPORTED_PER_FABRIC=2
+CONFIG_ICD_MAX_NOTIFICATION_SUBSCRIBERS=2
+CONFIG_ENABLE_EXTENDED_DISCOVERY=y

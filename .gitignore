@@ -1,0 +1,23 @@
+# ESP-IDF
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/managed_components/
+firmware/dependencies.lock
+
+# build artefacts
+*.o
+*.a
+*.elf
+*.map
+__pycache__/
+*.pyc
+
+# CAD scratch
+*.pbm
+/tmp/
+
+# editors
+.DS_Store
+.vscode/
+.idea/
