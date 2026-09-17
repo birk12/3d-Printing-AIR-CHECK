@@ -21,7 +21,7 @@
 ## Before you open a pull request
 
 ```bash
-# measurement core: 453 checks
+# measurement core: 455 checks
 cc -std=c99 -Wall -Wextra -Werror -O1 -Ifirmware/components/ac_core/include \
    firmware/components/ac_core/src/*.c firmware/test/host/test_ac_core.c \
    -lm -o /tmp/ac_test && /tmp/ac_test

@@ -120,7 +120,7 @@ not a health assessment.
 ## Firmware
 
 * `ac_core` - the scheduling, filtering, baseline, classification, event
-  detection, history and display - is covered by 453 host checks that run on
+  detection, history and display - is covered by 455 host checks that run on
   every build.
 * `ac_hal` - the actual sensor drivers - is **not covered by any automated
   test**. It cannot be, without hardware. Every register address, command

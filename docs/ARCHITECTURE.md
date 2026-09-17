@@ -98,7 +98,7 @@ firmware/
   main/
     app_main.cpp    two tasks: measure and UI
     ac_matter.cpp   the Matter data model
-  test/host/        453 checks that run on a workstation
+  test/host/        455 checks that run on a workstation
 ```
 
 The split is the important part. `ac_core` decides *what happens and when*;

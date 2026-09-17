@@ -158,7 +158,7 @@ AIR CHECK has been built. What *has* been done:
 
 | | |
 |---|---|
-| measurement core | 453 host checks, run on every build |
+| measurement core | 455 host checks, run on every build |
 | electrical design | 371 automated rule checks over the netlist |
 | enclosure | OpenSCAD asserts, manifold check, 1.6 % overhang, fits a 250 x 210 bed |
 | display | all ten screens rendered and reviewed - see the image at the top |

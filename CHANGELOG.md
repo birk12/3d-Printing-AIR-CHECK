@@ -47,7 +47,7 @@ times as you want places to measure.
 
 ### Verification
 
-- 453 host checks over the measurement core
+- 455 host checks over the measurement core
 - 371 electrical rule checks
 - OpenSCAD asserts plus an STL checker (manifold, bounding box, overhang)
 - full ESP-IDF + esp-matter build for esp32c6

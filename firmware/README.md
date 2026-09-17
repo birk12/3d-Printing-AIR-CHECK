@@ -9,7 +9,7 @@ components/ac_core/    platform-independent measurement core - no esp_* headers
 components/ac_hal/     ESP-IDF drivers
 components/sensirion_gas_index/   vendored VOC Index algorithm (BSD-3)
 main/                  app_main.cpp and the Matter data model
-test/host/             453 checks that run on a workstation
+test/host/             455 checks that run on a workstation
 ```
 
 The split is the point: `ac_core` decides what happens and when, `ac_hal`

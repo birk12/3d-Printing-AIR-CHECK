@@ -7,7 +7,7 @@ on:
 
 jobs:
   core-tests:
-    name: measurement core (453 checks)
+    name: measurement core (455 checks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

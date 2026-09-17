@@ -17,7 +17,7 @@ believed.
 
 | area | status | evidence |
 |---|---|---|
-| measurement core logic | SIMULATED, 453 checks | `firmware/test/host/test_ac_core.c` |
+| measurement core logic | SIMULATED, 455 checks | `firmware/test/host/test_ac_core.c` |
 | display rendering | BUILD-VERIFIED | all ten screens rendered and visually reviewed, `docs/images/` |
 | energy model | BUILD-VERIFIED | `tools/battery_calculator/model.py`, inputs traced to datasheets |
 | electrical design | BUILD-VERIFIED | 371 rule checks in `electronics/schematic/design.py` |
@@ -36,7 +36,7 @@ cc -std=c99 -Wall -Wextra -O1 -Ifirmware/components/ac_core/include \
    -lm -o /tmp/ac_test && /tmp/ac_test
 ```
 
-453 checks in about 20 ms. What they cover:
+455 checks in about 20 ms. What they cover:
 
 | area | examples |
 |---|---|
