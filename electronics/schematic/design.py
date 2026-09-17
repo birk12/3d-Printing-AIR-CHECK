@@ -229,10 +229,15 @@ PARTS: list[Part] = [
          pins={"1": "a", "2": "b"},
          why="Bleeder on +3V3_SENS so the rail actually collapses when SW2 opens.",
          price_eur=0.02, supplier="Mouser"),
-    Part(ref="SW4", value="tactile switch 6 x 6 mm, 5 mm stem", mfr="Alps/Omron",
-         mpn="B3F-4055 (or equivalent)", footprint="THT 6 x 6 mm",
+    Part(ref="SW4", value="tactile switch 6 x 6 x 5.0 mm, through hole",
+         mfr="Alps/Omron", mpn="B3F-4050 (or any 6x6x5.0 mm THT tactile)",
+         footprint="THT 6 x 6 mm, 5.0 mm total height",
          pins={"1": "a", "2": "b"},
-         why="Single multifunction user button.", price_eur=0.30, supplier="Mouser / Reichelt"),
+         why="Single multifunction user button. The 5.0 mm overall height is "
+             "what the enclosure is dimensioned around: it puts the stem tip "
+             "3.5 mm behind the front face, leaving 0.3 mm of travel under the "
+             "printed cap.",
+         price_eur=0.30, supplier="Mouser / Reichelt"),
     Part(ref="J1", value="JST ZHR-5 cable", mfr="JST", mpn="ZHR-5 + SZH-002T-P0.5",
          footprint="1.5 mm pitch, 5 way", pins={"1": "VDD", "2": "RX", "3": "TX",
                                                 "4": "SEL", "5": "GND"},

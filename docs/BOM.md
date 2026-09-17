@@ -48,7 +48,7 @@ Everything except the SCD41. PM, VOC, temperature and humidity still work, and t
 | R3 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Button pull-up to +3V3 (always-on rail, so the button can wake the MCU out of deep sleep). |
 | R4 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Pull-down on EPD_BUSY so the MCU reads a defined level while the display rail is switched off. |
 | R5 | 1 | 1 M | `RC0603FR-071ML` | Mouser | 0.02 | Bleeder on +3V3_SENS so the rail actually collapses when SW2 opens. |
-| SW4 | 1 | tactile switch 6 x 6 mm, 5 mm stem | `B3F-4055 (or equivalent)` | Mouser / Reichelt | 0.30 | Single multifunction user button. |
+| SW4 | 1 | tactile switch 6 x 6 x 5.0 mm, through hole | `B3F-4050 (or any 6x6x5.0 mm THT tactile)` | Mouser / Reichelt | 0.30 | Single multifunction user button. The 5.0 mm overall height is what the enclosure is dimensioned around: it puts the stem tip 3.5 mm behind the front face, leaving 0.3 mm of travel under the printed cap. |
 | J1 | 1 | JST ZHR-5 cable | `ZHR-5 + SZH-002T-P0.5` | Mouser / Digi-Key | 1.50 | Mating connector for the SPS30, per its datasheet. |
 | BT1 | 1 | LiPo 3.7 V 4000 mAh, protected, 606090 | `606090 / PL-606090-4000 class` | Eremit / AKKUparts / Adafruit equivalent | 18.00 | Largest cell that fits a 120 x 104 mm case with a sane ~24 h charge time at the Feather's 196 mA charger. Must include a PCM (over-charge, over-discharge, over-current and short-circuit protection). |
 | PCB1 | 1 | AIR CHECK carrier board (ACC-1) | `ACC-1 rev A` | JLCPCB / Aisler / PCBWay | 8.00 | Carries the boost, the three load switches, the button, the SPS30 connector and the display header, and holds the Feather. |
@@ -85,7 +85,7 @@ Breakout modules on a carrier board. No fine-pitch soldering anywhere: the small
 | R3 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Button pull-up to +3V3 (always-on rail, so the button can wake the MCU out of deep sleep). |
 | R4 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Pull-down on EPD_BUSY so the MCU reads a defined level while the display rail is switched off. |
 | R5 | 1 | 1 M | `RC0603FR-071ML` | Mouser | 0.02 | Bleeder on +3V3_SENS so the rail actually collapses when SW2 opens. |
-| SW4 | 1 | tactile switch 6 x 6 mm, 5 mm stem | `B3F-4055 (or equivalent)` | Mouser / Reichelt | 0.30 | Single multifunction user button. |
+| SW4 | 1 | tactile switch 6 x 6 x 5.0 mm, through hole | `B3F-4050 (or any 6x6x5.0 mm THT tactile)` | Mouser / Reichelt | 0.30 | Single multifunction user button. The 5.0 mm overall height is what the enclosure is dimensioned around: it puts the stem tip 3.5 mm behind the front face, leaving 0.3 mm of travel under the printed cap. |
 | J1 | 1 | JST ZHR-5 cable | `ZHR-5 + SZH-002T-P0.5` | Mouser / Digi-Key | 1.50 | Mating connector for the SPS30, per its datasheet. |
 | BT1 | 1 | LiPo 3.7 V 4000 mAh, protected, 606090 | `606090 / PL-606090-4000 class` | Eremit / AKKUparts / Adafruit equivalent | 18.00 | Largest cell that fits a 120 x 104 mm case with a sane ~24 h charge time at the Feather's 196 mA charger. Must include a PCM (over-charge, over-discharge, over-current and short-circuit protection). |
 | PCB1 | 1 | AIR CHECK carrier board (ACC-1) | `ACC-1 rev A` | JLCPCB / Aisler / PCBWay | 8.00 | Carries the boost, the three load switches, the button, the SPS30 connector and the display header, and holds the Feather. |
@@ -121,7 +121,7 @@ Bare sensors reflowed onto the carrier board instead of breakouts. About 8 mm th
 | R3 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Button pull-up to +3V3 (always-on rail, so the button can wake the MCU out of deep sleep). |
 | R4 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Pull-down on EPD_BUSY so the MCU reads a defined level while the display rail is switched off. |
 | R5 | 1 | 1 M | `RC0603FR-071ML` | Mouser | 0.02 | Bleeder on +3V3_SENS so the rail actually collapses when SW2 opens. |
-| SW4 | 1 | tactile switch 6 x 6 mm, 5 mm stem | `B3F-4055 (or equivalent)` | Mouser / Reichelt | 0.30 | Single multifunction user button. |
+| SW4 | 1 | tactile switch 6 x 6 x 5.0 mm, through hole | `B3F-4050 (or any 6x6x5.0 mm THT tactile)` | Mouser / Reichelt | 0.30 | Single multifunction user button. The 5.0 mm overall height is what the enclosure is dimensioned around: it puts the stem tip 3.5 mm behind the front face, leaving 0.3 mm of travel under the printed cap. |
 | J1 | 1 | JST ZHR-5 cable | `ZHR-5 + SZH-002T-P0.5` | Mouser / Digi-Key | 1.50 | Mating connector for the SPS30, per its datasheet. |
 | BT1 | 1 | LiPo 3.7 V 4000 mAh, protected, 606090 | `606090 / PL-606090-4000 class` | Eremit / AKKUparts / Adafruit equivalent | 18.00 | Largest cell that fits a 120 x 104 mm case with a sane ~24 h charge time at the Feather's 196 mA charger. Must include a PCM (over-charge, over-discharge, over-current and short-circuit protection). |
 | PCB1 | 1 | AIR CHECK carrier board (ACC-1) | `ACC-1 rev A` | JLCPCB / Aisler / PCBWay | 8.00 | Carries the boost, the three load switches, the button, the SPS30 connector and the display header, and holds the Feather. |

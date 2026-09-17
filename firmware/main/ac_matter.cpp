@@ -7,6 +7,7 @@
 #include <app/server/CommissioningWindowManager.h>
 #include <app/server/Server.h>
 #include <setup_payload/ManualSetupPayloadGenerator.h>
+#include <setup_payload/OnboardingCodesUtil.h>
 #include <setup_payload/QRCodeSetupPayloadGenerator.h>
 
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
@@ -16,6 +17,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <string>
 
 static const char *TAG = "ac_matter";
 
@@ -252,15 +254,32 @@ esp_err_t ac_matter_init(ac_engine_t *engine)
         cluster::power_source::config_t ps;
         ps.status = 1;                  /* Active */
         ps.order = 1;
-        ps.description = "Battery";
-        cluster_t *psc = cluster::power_source::create(root, &ps, CLUSTER_FLAG_SERVER,
-                                                       ESP_MATTER_NONE_FEATURE_ID);
+        strncpy(ps.description, "Battery", sizeof(ps.description) - 1);
+
+        /* The generated create() validates that exactly one of Wired and
+         * Battery is in the feature map and adds the features itself, so the
+         * flags have to be set here rather than by calling feature::add()
+         * afterwards. RECHG is what carries BatChargeState; Status describes
+         * the power source, not the charge, and is the wrong attribute for it. */
+        ps.feature_flags = cluster::power_source::feature::battery::get_id() |
+                           cluster::power_source::feature::rechargeable::get_id();
+        ps.features.battery.bat_charge_level = 0;        /* OK */
+        ps.features.battery.bat_replacement_needed = false;
+        ps.features.battery.bat_replaceability = 2;      /* UserReplaceable,
+                                                          * and it genuinely is */
+        ps.features.rechargeable.bat_charge_state = 0;   /* Unknown */
+        ps.features.rechargeable.bat_functional_while_charging = true;
+
+        cluster_t *psc = cluster::power_source::create(root, &ps, CLUSTER_FLAG_SERVER);
         if (psc) {
-            cluster::power_source::feature::battery::config_t bat;
-            bat.bat_charge_level = 0;   /* OK */
-            bat.bat_replacement_needed = false;
-            bat.bat_replaceability = 2; /* UserReplaceable - it is, see ASSEMBLY.md */
-            cluster::power_source::feature::battery::add(psc, &bat);
+            /* Optional attributes the features do not create for us. */
+            cluster::power_source::attribute::create_bat_present(psc, true);
+            cluster::power_source::attribute::create_bat_percent_remaining(
+                psc, nullable<uint8_t>());
+            cluster::power_source::attribute::create_bat_voltage(
+                psc, nullable<uint32_t>());
+        } else {
+            ESP_LOGE(TAG, "power source cluster was not created");
         }
     }
 
@@ -338,9 +357,12 @@ esp_err_t ac_matter_publish_battery(float percent, float volts, bool charging,
     attribute::update(0, PowerSource::Id,
                       PowerSource::Attributes::BatChargeLevel::Id, &lvl);
 
-    esp_matter_attr_val_t st = esp_matter_enum8(charging ? 1 : 0);
+    /* BatChargeState: 0 Unknown, 1 IsCharging, 2 IsAtFullCharge,
+     * 3 IsNotCharging */
+    uint8_t cs = charging ? (percent >= 99.0f ? 2 : 1) : 3;
+    esp_matter_attr_val_t chg = esp_matter_enum8(cs);
     attribute::update(0, PowerSource::Id,
-                      PowerSource::Attributes::Status::Id, &st);
+                      PowerSource::Attributes::BatChargeState::Id, &chg);
     return ESP_OK;
 }
 
@@ -379,7 +401,8 @@ esp_err_t ac_matter_get_pairing_code(char *manual, size_t manual_len,
                                      char *qr, size_t qr_len)
 {
     chip::PayloadContents payload;
-    CHIP_ERROR err = chip::GetPayloadContents(
+    /* GetPayloadContents lives in the global namespace, not chip:: */
+    CHIP_ERROR err = GetPayloadContents(
         payload, chip::RendezvousInformationFlags(
                      chip::RendezvousInformationFlag::kBLE));
     if (err != CHIP_NO_ERROR) return ESP_FAIL;
