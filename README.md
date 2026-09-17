@@ -183,6 +183,7 @@ can contribute.
 | [MATTER.md](docs/MATTER.md) | endpoints, clusters, ICD |
 | [THREAD.md](docs/THREAD.md) | sleepy end device, border routers |
 | [CALIBRATION.md](docs/CALIBRATION.md) | baseline reset vs sensor calibration |
+| [CONFIGURATION.md](docs/CONFIGURATION.md) | every setting, and what changing it costs |
 | [SHORTCUTS.md](docs/SHORTCUTS.md) | two-device automations |
 | [TESTING.md](docs/TESTING.md) | what is verified and what is not |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | when it does not work |

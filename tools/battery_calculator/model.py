@@ -129,7 +129,7 @@ PROFILES = [
             co2_interval_s=10 * 60, icd_slow_poll_s=5,
             epd_partial_per_day=40,
             note="Recovery tracking after an event."),
-    Profile("CONTINUOUS", pm_interval_s=0, pm_window_s=0, voc_interval_s=1,
+    Profile("CONTINUOUS", pm_interval_s=0, pm_window_s=60, voc_interval_s=1,
             co2_interval_s=5, icd_slow_poll_s=5,
             epd_partial_per_day=200,
             note="Reference / validation mode. USB power expected."),

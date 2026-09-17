@@ -325,9 +325,14 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
     }
 
     if (e->health.sps30_ok && p->pm_interval_s == 0) {
+        /* "Continuous" means back-to-back measurement windows, not a one
+         * second window: the SPS30 needs 30 s in measurement mode before its
+         * output is usable, so a short window would return numbers the
+         * datasheet says not to trust. */
         plan.action = AC_ACT_SAMPLE_PM;
-        plan.pm_window_s = 1;                 /* continuous: read every second */
-        plan.sleep_ms = 1000;
+        plan.pm_window_s = p->pm_window_s >= AC_SPS30_REC_WINDOW_S
+                           ? p->pm_window_s : 60;
+        plan.sleep_ms = 0;
         plan.publish_dirty = publish_changed(e);
         return plan;
     }

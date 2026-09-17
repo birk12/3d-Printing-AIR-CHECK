@@ -17,7 +17,7 @@ static const ac_profile_t k_profiles[AC_MODE_COUNT] = {
     /* POST_PRINT */ { .pm_interval_s = 5 * 60,   .pm_window_s = 60,
                        .voc_interval_s = 10, .co2_interval_s = 10 * 60,
                        .icd_slow_poll_s = 5 },
-    /* CONTINUOUS */ { .pm_interval_s = 0,        .pm_window_s = 0,
+    /* CONTINUOUS */ { .pm_interval_s = 0,        .pm_window_s = 60,
                        .voc_interval_s = 1,  .co2_interval_s = 5,
                        .icd_slow_poll_s = 5 },
 };

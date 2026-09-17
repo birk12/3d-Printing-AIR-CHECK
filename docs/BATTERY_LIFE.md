@@ -62,7 +62,7 @@ Cell: **4000 mAh** nominal, **3600 mAh** usable. Engineering margin: **25 %**.
 | NORMAL | 15 min | 60 s | 138.46 | 3.7 weeks | **3.0 weeks** |
 | ACTIVE | 2 min | 60 s | 966.47 | 3.7 d | **3.0 d** |
 | POST_PRINT | 5 min | 60 s | 394.09 | 9.1 d | **7.3 d** |
-| CONTINUOUS | continuous | 0 s | 2036.27 | 1.8 d | **1.4 d** |
+| CONTINUOUS | continuous | 60 s | 2036.27 | 1.8 d | **1.4 d** |
 
 ## Where the energy goes
 

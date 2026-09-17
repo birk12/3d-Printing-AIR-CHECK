@@ -621,6 +621,15 @@ static void test_engine(void)
     p = ac_engine_tick(&e5, z);
     CHECK(p.publish_dirty);
 
+    CASE("continuous mode asks for a full window, not a one second one");
+    ac_config_t cont = c;
+    cont.default_mode = AC_MODE_CONTINUOUS;
+    ac_engine_t e7;
+    ac_engine_init(&e7, &cont, 0);
+    p = ac_engine_tick(&e7, 0);
+    CHECK(p.action == AC_ACT_SAMPLE_PM);
+    CHECK(p.pm_window_s >= AC_SPS30_REC_WINDOW_S);
+
     CASE("factory reset returns every setting to default");
     ac_engine_t e6;
     ac_config_t weird = c;
