@@ -1,7 +1,14 @@
 # Matter
 
-Built against **esp-matter release/v1.6** with the Matter 1.6 data model, on
-ESP-IDF v5.5.5.
+Built against **esp-matter release/v1.6** on ESP-IDF v5.5.5.
+
+The code targets esp-matter's *legacy* data-model implementation, which is the
+default. esp-matter also ships a generated data model behind
+`CONFIG_ESP_MATTER_ENABLE_GENERATED_DATA_MODEL`, but that option is marked
+experimental upstream and the cluster namespaces differ
+(`pm25_concentration_measurement` against `pm2_5_concentration_measurement`,
+and the concentration clusters share one config type in the legacy API). If
+you turn it on, `ac_matter.cpp` needs the generated names.
 
 ## Endpoints
 

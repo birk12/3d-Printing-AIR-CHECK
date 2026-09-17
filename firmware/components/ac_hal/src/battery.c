@@ -75,3 +75,11 @@ esp_err_t ac_battery_hibernate(bool on)
      * state anyway. */
     return write_reg(REG_HIBRT, on ? 0xFFFF : 0x0000);
 }
+
+void ac_battery_detach(void)
+{
+    if (s_dev) {
+        i2c_master_bus_rm_device(s_dev);
+        s_dev = NULL;
+    }
+}

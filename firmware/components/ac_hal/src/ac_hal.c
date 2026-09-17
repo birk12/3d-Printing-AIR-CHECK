@@ -16,6 +16,21 @@ static const char *TAG = "ac_hal";
 
 i2c_master_bus_handle_t g_i2c;   /* shared by the sensor drivers */
 
+static esp_err_t i2c_bus_open(void)
+{
+    i2c_master_bus_config_t bus = {
+        .i2c_port = I2C_NUM_0,
+        .sda_io_num = AC_PIN_I2C_SDA,
+        .scl_io_num = AC_PIN_I2C_SCL,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        /* The Feather already has 5k1 pull-ups to the always-on 3V3 rail.
+         * Enabling the internal ones as well would slow the edges. */
+        .flags.enable_internal_pullup = false,
+    };
+    return i2c_new_master_bus(&bus, &g_i2c);
+}
+
 static esp_err_t out_pin(int pin, int level)
 {
     gpio_config_t io = {
@@ -42,17 +57,7 @@ esp_err_t ac_hal_init(void)
      * Neither is used, and leaving it on costs about 60 uA. */
     ESP_ERROR_CHECK(out_pin(AC_PIN_STEMMA_PWR, 0));
 
-    i2c_master_bus_config_t bus = {
-        .i2c_port = I2C_NUM_0,
-        .sda_io_num = AC_PIN_I2C_SDA,
-        .scl_io_num = AC_PIN_I2C_SCL,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .glitch_ignore_cnt = 7,
-        /* The Feather already has 5k1 pull-ups to the always-on 3V3 rail.
-         * Enabling the internal ones as well would slow the edges. */
-        .flags.enable_internal_pullup = false,
-    };
-    esp_err_t err = i2c_new_master_bus(&bus, &g_i2c);
+    esp_err_t err = i2c_bus_open();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "i2c bus: %s", esp_err_to_name(err));
         return err;
@@ -79,15 +84,37 @@ esp_err_t ac_rail_sensors(bool on)
     if (!on) {
         /* With the rail down, the board's 5k1 pull-ups would push about
          * 0.5 mA per line into the unpowered sensors' ESD clamps.  Holding
-         * both lines low removes the path entirely.  This is why the rail is
-         * only ever switched off while the CPU is awake to hold them. */
+         * both lines low removes the path entirely.  The bus has to be torn
+         * down first, otherwise the I2C peripheral still owns the pads and
+         * the GPIO writes do nothing.
+         *
+         * This is also why the rail is only ever switched off while the CPU is
+         * awake: GPIO18/19 are not RTC pins and cannot be held through deep
+         * sleep. In normal operation the rail stays up. */
+        /* Every device has to be detached before the bus can be deleted, and
+         * the drivers have to forget their handles or they would use a
+         * dangling one after the rail comes back. */
+        ac_sgp40_detach();
+        ac_scd41_detach();
+        ac_battery_detach();
+        if (g_i2c) {
+            i2c_del_master_bus(g_i2c);
+            g_i2c = NULL;
+        }
         gpio_set_direction(AC_PIN_I2C_SDA, GPIO_MODE_OUTPUT);
         gpio_set_direction(AC_PIN_I2C_SCL, GPIO_MODE_OUTPUT);
         gpio_set_level(AC_PIN_I2C_SDA, 0);
         gpio_set_level(AC_PIN_I2C_SCL, 0);
+        return gpio_set_level(AC_PIN_EN_SENS, 0);
     }
-    esp_err_t err = gpio_set_level(AC_PIN_EN_SENS, on ? 1 : 0);
-    if (on) vTaskDelay(pdMS_TO_TICKS(20));
+
+    esp_err_t err = gpio_set_level(AC_PIN_EN_SENS, 1);
+    if (err != ESP_OK) return err;
+    vTaskDelay(pdMS_TO_TICKS(20));
+    if (!g_i2c) {
+        err = i2c_bus_open();
+        if (err != ESP_OK) ESP_LOGE(TAG, "i2c reopen: %s", esp_err_to_name(err));
+    }
     return err;
 }
 

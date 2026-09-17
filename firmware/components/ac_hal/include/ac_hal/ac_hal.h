@@ -73,6 +73,9 @@ esp_err_t ac_sgp40_self_test(void);
 esp_err_t ac_sgp40_measure(float temperature_c, float humidity_pct,
                            int32_t *raw_out, int32_t *index_out);
 esp_err_t ac_sgp40_serial(uint64_t *out);
+/* Detach from the I2C bus.  Must be called before the bus itself is torn
+ * down, which ac_rail_sensors(false) does. */
+void ac_sgp40_detach(void);
 
 /* ---- SCD41 ------------------------------------------------------------ */
 esp_err_t ac_scd41_init(void);
@@ -82,10 +85,12 @@ esp_err_t ac_scd41_wake_up(void);
 esp_err_t ac_scd41_set_temperature_offset(float c);
 esp_err_t ac_scd41_forced_recalibration(uint16_t target_ppm, int16_t *correction);
 esp_err_t ac_scd41_serial(uint64_t *out);
+void ac_scd41_detach(void);
 
 /* ---- battery ---------------------------------------------------------- */
 esp_err_t ac_battery_read(float *volts, float *percent, bool *charging);
 esp_err_t ac_battery_hibernate(bool on);
+void ac_battery_detach(void);
 
 /* ---- display ---------------------------------------------------------- */
 esp_err_t ac_epd_init(void);

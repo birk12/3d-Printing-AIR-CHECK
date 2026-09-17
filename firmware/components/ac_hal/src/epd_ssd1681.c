@@ -74,6 +74,11 @@ static void hw_reset(void)
 
 esp_err_t ac_epd_init(void)
 {
+    /* Called before every refresh.  The bus and the device are set up once;
+     * adding the SPI device again on each call would leak a handle until the
+     * driver ran out of them. */
+    if (s_spi) return ESP_OK;
+
     gpio_config_t io = {
         .pin_bit_mask = (1ULL << AC_PIN_EPD_DC) | (1ULL << AC_PIN_EPD_CS) |
                         (1ULL << AC_PIN_EPD_RST),

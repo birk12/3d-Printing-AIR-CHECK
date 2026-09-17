@@ -149,3 +149,11 @@ esp_err_t ac_scd41_serial(uint64_t *out)
     *out = ((uint64_t)w[0] << 32) | ((uint64_t)w[1] << 16) | w[2];
     return ESP_OK;
 }
+
+void ac_scd41_detach(void)
+{
+    if (s_dev) {
+        i2c_master_bus_rm_device(s_dev);
+        s_dev = NULL;
+    }
+}

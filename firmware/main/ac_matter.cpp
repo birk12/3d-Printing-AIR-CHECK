@@ -6,18 +6,27 @@
 
 #include <app/server/CommissioningWindowManager.h>
 #include <app/server/Server.h>
-#include <setup_payload/ManualSetupPayloadGenerator.h>
 #include <setup_payload/OnboardingCodesUtil.h>
-#include <setup_payload/QRCodeSetupPayloadGenerator.h>
 
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
+#include <esp_openthread_types.h>
 #include <platform/ESP32/OpenthreadLauncher.h>
 #include <platform/ThreadStackManager.h>
+
+/* ESP-IDF only ships these as example headers, and esp-matter gets them from
+ * examples/common - which this project deliberately does not pull in (it
+ * depends on espressif/button from the registry).  Spelling them out here is
+ * three lines and removes the dependency. */
+#define AC_OT_RADIO_CONFIG()  { .radio_mode = RADIO_MODE_NATIVE }
+#define AC_OT_HOST_CONFIG()   { .host_connection_mode = HOST_CONNECTION_MODE_NONE }
+#define AC_OT_PORT_CONFIG()   { .storage_partition_name = "nvs", \
+                                .netif_queue_size = 10,          \
+                                .task_queue_size = 10 }
 #endif
 
+#include <cinttypes>
 #include <cmath>
 #include <cstring>
-#include <string>
 
 static const char *TAG = "ac_matter";
 
@@ -73,73 +82,47 @@ static esp_err_t write_u8(uint16_t ep, uint32_t cluster, uint32_t attr,
     return attribute::update(ep, cluster, attr, &val);
 }
 
+/* Every concentration cluster shares one config type and differs only in its
+ * create() entry point, so this is a switch over five one-line calls rather
+ * than five near-identical blocks. */
 static void add_concentration(endpoint_t *ep, uint32_t cluster_id,
-                              uint8_t unit)
+                              uint8_t unit, float lo, float hi)
 {
-    /* Every concentration cluster is created with the NumericMeasurement
-     * feature only.  LevelIndication is deliberately left off: mapping a
-     * measured ug/m3 onto a five step enum adds no information that the
-     * Air Quality cluster on the same endpoint does not already carry. */
+    using namespace esp_matter::cluster;
+    concentration_measurement::config_t cfg;
+    cfg.measurement_medium = MEDIUM_AIR;
+    /* NumericMeasurement only.  LevelIndication is left off: a coarse five
+     * step enum derived from a measured ug/m3 adds nothing the Air Quality
+     * cluster on this same endpoint does not already carry. */
+    cfg.feature_flags = concentration_measurement::feature::numeric_measurement::get_id();
+    cfg.features.numeric_measurement.measurement_unit = unit;
+    cfg.features.numeric_measurement.min_measured_value = lo;
+    cfg.features.numeric_measurement.max_measured_value = hi;
+
+    cluster_t *c = nullptr;
     switch (cluster_id) {
-    case Pm25ConcentrationMeasurement::Id: {
-        cluster::pm2_5_concentration_measurement::config_t cfg;
-        cfg.measurement_medium = MEDIUM_AIR;
-        cfg.feature_flags = cluster::pm2_5_concentration_measurement::
-                            feature::numeric_measurement::get_id();
-        cfg.features.numeric_measurement.measurement_unit = unit;
-        cfg.features.numeric_measurement.min_measured_value = 0.0f;
-        cfg.features.numeric_measurement.max_measured_value = 1000.0f;
-        cluster::pm2_5_concentration_measurement::create(ep, &cfg, CLUSTER_FLAG_SERVER);
+    case Pm25ConcentrationMeasurement::Id:
+        c = pm25_concentration_measurement::create(ep, &cfg, CLUSTER_FLAG_SERVER);
         break;
-    }
-    case Pm10ConcentrationMeasurement::Id: {
-        cluster::pm10_concentration_measurement::config_t cfg;
-        cfg.measurement_medium = MEDIUM_AIR;
-        cfg.feature_flags = cluster::pm10_concentration_measurement::
-                            feature::numeric_measurement::get_id();
-        cfg.features.numeric_measurement.measurement_unit = unit;
-        cfg.features.numeric_measurement.min_measured_value = 0.0f;
-        cfg.features.numeric_measurement.max_measured_value = 1000.0f;
-        cluster::pm10_concentration_measurement::create(ep, &cfg, CLUSTER_FLAG_SERVER);
+    case Pm10ConcentrationMeasurement::Id:
+        c = pm10_concentration_measurement::create(ep, &cfg, CLUSTER_FLAG_SERVER);
         break;
-    }
-    case Pm1ConcentrationMeasurement::Id: {
-        cluster::pm1_concentration_measurement::config_t cfg;
-        cfg.measurement_medium = MEDIUM_AIR;
-        cfg.feature_flags = cluster::pm1_concentration_measurement::
-                            feature::numeric_measurement::get_id();
-        cfg.features.numeric_measurement.measurement_unit = unit;
-        cfg.features.numeric_measurement.min_measured_value = 0.0f;
-        cfg.features.numeric_measurement.max_measured_value = 1000.0f;
-        cluster::pm1_concentration_measurement::create(ep, &cfg, CLUSTER_FLAG_SERVER);
+    case Pm1ConcentrationMeasurement::Id:
+        c = pm1_concentration_measurement::create(ep, &cfg, CLUSTER_FLAG_SERVER);
         break;
-    }
-    case CarbonDioxideConcentrationMeasurement::Id: {
-        cluster::carbon_dioxide_concentration_measurement::config_t cfg;
-        cfg.measurement_medium = MEDIUM_AIR;
-        cfg.feature_flags = cluster::carbon_dioxide_concentration_measurement::
-                            feature::numeric_measurement::get_id();
-        cfg.features.numeric_measurement.measurement_unit = unit;
-        cfg.features.numeric_measurement.min_measured_value = 400.0f;
-        cfg.features.numeric_measurement.max_measured_value = 5000.0f;
-        cluster::carbon_dioxide_concentration_measurement::create(ep, &cfg, CLUSTER_FLAG_SERVER);
+    case CarbonDioxideConcentrationMeasurement::Id:
+        c = carbon_dioxide_concentration_measurement::create(ep, &cfg, CLUSTER_FLAG_SERVER);
         break;
-    }
-    case TotalVolatileOrganicCompoundsConcentrationMeasurement::Id: {
-        cluster::total_volatile_organic_compounds_concentration_measurement::config_t cfg;
-        cfg.measurement_medium = MEDIUM_AIR;
-        cfg.feature_flags = cluster::total_volatile_organic_compounds_concentration_measurement::
-                            feature::numeric_measurement::get_id();
-        cfg.features.numeric_measurement.measurement_unit = unit;
-        cfg.features.numeric_measurement.min_measured_value = 0.0f;
-        cfg.features.numeric_measurement.max_measured_value = 500.0f;
-        cluster::total_volatile_organic_compounds_concentration_measurement::create(
-            ep, &cfg, CLUSTER_FLAG_SERVER);
+    case TotalVolatileOrganicCompoundsConcentrationMeasurement::Id:
+        c = total_volatile_organic_compounds_concentration_measurement::create(
+                ep, &cfg, CLUSTER_FLAG_SERVER);
         break;
-    }
     default:
         break;
     }
+    if (!c)
+        ESP_LOGE(TAG, "concentration cluster 0x%04" PRIX32 " was not created",
+                 cluster_id);
 }
 
 static esp_err_t attribute_update_cb(attribute::callback_type_t type,
@@ -223,17 +206,18 @@ esp_err_t ac_matter_init(ac_engine_t *engine)
         cluster::air_quality::feature::very_poor::add(aq);
     }
 
-    add_concentration(ep, Pm25ConcentrationMeasurement::Id, UNIT_UGM3);
-    add_concentration(ep, Pm10ConcentrationMeasurement::Id, UNIT_UGM3);
-    add_concentration(ep, Pm1ConcentrationMeasurement::Id, UNIT_UGM3);
-    add_concentration(ep, CarbonDioxideConcentrationMeasurement::Id, UNIT_PPM);
+    add_concentration(ep, Pm25ConcentrationMeasurement::Id, UNIT_UGM3, 0.0f, 1000.0f);
+    add_concentration(ep, Pm10ConcentrationMeasurement::Id, UNIT_UGM3, 0.0f, 1000.0f);
+    add_concentration(ep, Pm1ConcentrationMeasurement::Id, UNIT_UGM3, 0.0f, 1000.0f);
+    add_concentration(ep, CarbonDioxideConcentrationMeasurement::Id, UNIT_PPM,
+                      400.0f, 5000.0f);
     /* See docs/MATTER.md: the SGP40 produces a VOC *Index*, not a
      * concentration.  Publishing it in a concentration cluster is a
      * compromise, taken because without a number Apple Home cannot build a
      * VOC automation at all.  The unit is declared as PPB and the
      * documentation says in as many words that the value is an index. */
     add_concentration(ep, TotalVolatileOrganicCompoundsConcentrationMeasurement::Id,
-                      UNIT_PPB);
+                      UNIT_PPB, 0.0f, 500.0f);
 
     /* ---- endpoints 2 and 3: temperature and humidity -------------- */
     temperature_sensor::config_t t_config;
@@ -275,9 +259,11 @@ esp_err_t ac_matter_init(ac_engine_t *engine)
             /* Optional attributes the features do not create for us. */
             cluster::power_source::attribute::create_bat_present(psc, true);
             cluster::power_source::attribute::create_bat_percent_remaining(
-                psc, nullable<uint8_t>());
+                psc, nullable<uint8_t>(), nullable<uint8_t>(0),
+                nullable<uint8_t>(200));
             cluster::power_source::attribute::create_bat_voltage(
-                psc, nullable<uint32_t>());
+                psc, nullable<uint32_t>(), nullable<uint32_t>(0),
+                nullable<uint32_t>(5000));
         } else {
             ESP_LOGE(TAG, "power source cluster was not created");
         }
@@ -292,9 +278,9 @@ esp_err_t ac_matter_start(void)
 {
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
     esp_openthread_platform_config_t config = {
-        .radio_config = ESP_OPENTHREAD_DEFAULT_RADIO_CONFIG(),
-        .host_config = ESP_OPENTHREAD_DEFAULT_HOST_CONFIG(),
-        .port_config = ESP_OPENTHREAD_DEFAULT_PORT_CONFIG(),
+        .radio_config = AC_OT_RADIO_CONFIG(),
+        .host_config = AC_OT_HOST_CONFIG(),
+        .port_config = AC_OT_PORT_CONFIG(),
     };
     set_openthread_platform_config(&config);
 #endif
@@ -400,27 +386,19 @@ esp_err_t ac_matter_factory_reset(void)
 esp_err_t ac_matter_get_pairing_code(char *manual, size_t manual_len,
                                      char *qr, size_t qr_len)
 {
-    chip::PayloadContents payload;
-    /* GetPayloadContents lives in the global namespace, not chip:: */
-    CHIP_ERROR err = GetPayloadContents(
-        payload, chip::RendezvousInformationFlags(
-                     chip::RendezvousInformationFlag::kBLE));
-    if (err != CHIP_NO_ERROR) return ESP_FAIL;
+    /* BLE is the rendezvous method: this device has no Wi-Fi in the build and
+     * no IP connectivity until it has joined a Thread network. */
+    const chip::RendezvousInformationFlags rv(chip::RendezvousInformationFlag::kBLE);
 
     if (manual && manual_len) {
-        chip::ManualSetupPayloadGenerator gen(payload);
         chip::MutableCharSpan span(manual, manual_len);
-        if (gen.payloadDecimalStringRepresentation(span) != CHIP_NO_ERROR)
-            manual[0] = '\0';
+        if (GetManualPairingCode(span, rv) != CHIP_NO_ERROR) manual[0] = '\0';
+        else manual[manual_len - 1] = '\0';
     }
     if (qr && qr_len) {
-        chip::QRCodeSetupPayloadGenerator gen(payload);
-        std::string out;
-        if (gen.payloadBase38Representation(out) == CHIP_NO_ERROR)
-            strncpy(qr, out.c_str(), qr_len - 1);
-        else
-            qr[0] = '\0';
-        qr[qr_len - 1] = '\0';
+        chip::MutableCharSpan span(qr, qr_len);
+        if (GetQRCode(span, rv) != CHIP_NO_ERROR) qr[0] = '\0';
+        else qr[qr_len - 1] = '\0';
     }
     return ESP_OK;
 }
