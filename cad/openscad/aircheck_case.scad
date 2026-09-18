@@ -462,6 +462,8 @@ assert(STACK_Z < BAT_Z - 0.5, "the FireBeetle stack collides with the battery co
 assert(RIB_TOP_Z < BAT_Z, "the front-shell ribs collide with the battery cover");
 // SEN63C
 assert(SEN_Z > FACE && SEN_Z + SEN_WID < CASE_D - FACE, "the SEN63C does not fit the depth");
+assert(SEN_PLUG_L0 < 17.2 && SEN_PLUG_L1 > 29.2 && SEN_CONN_W0 >= 0 && SEN_CONN_W1 <= SEN_WID,
+       "the plug keep-out does not cover the connector (STEP: 17.2..29.2 x 16.3..21.8)");
 assert(SEN_X + SEN_HGT + SEN_SEAL_T <= CASE_W - WALL + 0.001, "the SEN63C gasket does not fit");
 assert(SEN_Y - FIT_SLIDE - 2 > POST_XY[1][1] + POST_D / 2, "the SEN63C cradle hits the bottom post");
 assert(SEN_Y + SEN_LEN + FIT_SLIDE + 2 < POST_XY[3][1] - POST_D / 2, "the SEN63C cradle hits the top post");

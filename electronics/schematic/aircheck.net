@@ -6,7 +6,7 @@
       (footprint "25.4 x 60 mm, 2 x 0.1in rows 22.86 mm apart, JST PH 2.0 battery")
       (fields (field (name "MPN") "DFR1075") (field (name "MFR") "DFRobot")))
     (comp (ref "U1") (value "SEN63C")
-      (footprint "55.2 x 25.6 x 21.3 mm module, ACES 51451-006 (JST GH compatible)")
+      (footprint "55.2 x 25.6 x 21.3 mm module, ACES 51468-0064N-001 in a 6.35 mm pocket (JST GH compatible)")
       (fields (field (name "MPN") "SEN63C-SIN-T") (field (name "MFR") "Sensirion")))
     (comp (ref "J1") (value "JST GH 6-pin header, SMD")
       (footprint "JST GH 1.25 mm, 6 way, top entry")

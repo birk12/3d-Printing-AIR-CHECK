@@ -114,7 +114,7 @@ PARTS: list[Part] = [
     ),
     Part(
         ref="U1", value="SEN63C", mfr="Sensirion", mpn="SEN63C-SIN-T",
-        footprint="55.2 x 25.6 x 21.3 mm module, ACES 51451-006 (JST GH compatible)",
+        footprint="55.2 x 25.6 x 21.3 mm module, ACES 51468-0064N-001 in a 6.35 mm pocket (JST GH compatible)",
         pins={"1": "VDD", "2": "GND", "3": "SDA", "4": "SCL", "5": "GND", "6": "VDD"},
         why="One module for PM1/PM2.5/PM4/PM10 (laser, sheath flow), CO2 (+-(100 ppm + "
             "10 %)) and compensated temperature and humidity, at 3.3 V with no boost "

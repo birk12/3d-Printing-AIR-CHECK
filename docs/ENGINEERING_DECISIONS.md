@@ -478,7 +478,10 @@ windows. The SEN66 is also EUR 63, more than SEN63C + SGP40.
 * **Ports sideways.** The SEN6x guide says the ports must not face up or down
   (the SPS30 guide said down). The module stands on its side against the left
   wall, gasketed, and the case grows from 98 to **112 mm** wide to leave the
-  depth behind its connector free.
+  depth behind its connector free. Sensirion's STEP model and datasheet v0.92
+  fig. 12 put the connector in a 6.35 mm pocket at 17.2-29.2 mm along the
+  module and 16.3-21.8 mm across it - with the square inlet at the front, that
+  is towards the lid, level with the battery, so the keep-out is needed.
 * **Board.** From DFRobot's own schematic: CN3165 charger at 540 mA, TPS62A02
   buck, the green LED on GPIO15 is only lit when driven. No WS2812B, no second
   LDO - none of the EDR-11 trouble. DFRobot quote 36 µA in deep sleep for the

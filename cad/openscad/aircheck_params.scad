@@ -124,12 +124,18 @@ SEN_X             = CASE_W - WALL - SEN_SEAL_T - SEN_HGT;   // connector face
 SEN_Y             =  14.0;   // clear of the bottom screw post
 SEN_Z             = (CASE_D - SEN_WID) / 2;
 SEN_PLUG_L        =   8.0;   // GH plug and cable bend behind the connector face
-// Where along the module the connector is.  The datasheet only shows it in a
-// photo-like view (fig. 4): next to the outlet, toward the inlet end.  Which
-// edge of the 25.6 mm width it sits on cannot be read reliably off that view,
-// so the whole depth behind this stretch is kept free.
-SEN_PLUG_L0       =   8.0;   // sensor-local, along the length
-SEN_PLUG_L1       =  40.0;
+// Where the connector is, from Sensirion's STEP model (PS_CD_SEN6x_D1.STEP,
+// developer.sensirion.com) and datasheet v0.92 fig. 12: the ACES 51468 header
+// sits in a pocket 6.35 mm deep in the connector face, 17.2..29.2 mm along the
+// length (from the inlet end) and 16.3..21.8 mm across the width (from the
+// square-inlet edge).  With the square inlet towards the front, that puts
+// the plug at device Z 19.5..25 - towards the lid, level with the battery -
+// which is why the battery bay has to stop short of it.  The keep-out below
+// adds 2 mm along the length and spans the full depth for the cable.
+SEN_PLUG_L0       =  15.0;   // sensor-local, along the length
+SEN_PLUG_L1       =  31.5;
+SEN_CONN_W0       =  16.3;   // sensor-local, across the width
+SEN_CONN_W1       =  21.8;
 // Port positions on the port face, sensor-local (along the length, across the
 // width), from the datasheet drawing: square inlet 3.2..10.2 x 2.8..9.8,
 // round inlet d6 at (6.7, 18.2), outlet d20.5 at (42.4, 12.8).  Sensor-local

@@ -151,8 +151,10 @@ green or blue usually means the LED was fitted the wrong way round.
    side towards the middle of the case, the end with the two small inlets at
    the bottom and the **square inlet towards the front** of the case. It
    should need light thumb pressure.
-3. Plug in its cable, and lay a strip of foam on its back face; the lid presses
-   on it.
+3. Plug in its cable - the connector sits in a pocket in the face towards the
+   middle of the case, near the lid - and lay a strip of foam on the module's
+   back edge; the lid presses on it. Lead the cable towards the carrier's J1,
+   not over the battery bay.
 4. Screw the carrier board down with four M2.5 self-tappers into the printed
    posts. The LED drops into its guide tube, and the FireBeetle's USB-C lines
    up with the opening in the right-hand wall.
