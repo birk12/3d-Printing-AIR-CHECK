@@ -11,9 +11,10 @@ USB-C (Feather)
   `-- RT9080/AP2112 LDO --> +3V3 (always on)
 
 VBAT --[SW1 TPS22918, GPIO2]--> VBOOST_IN --[TPS61023 + L1]--> +5V --> SPS30
-+3V3 --[SW2 TPS22918, GPIO3]--> +3V3_SENS --> SGP40, SCD41
-+3V3 --[SW3 TPS22918, GPIO1]--> +3V3_EPD  --> 1.54in e-paper
-+3V3 ------------------------->  ESP32-C6, MAX17048, button pull-up
++3V3 --[SW2 TPS22918, GPIO3]--> +3V3_SENS --> SGP40, SCD41, sensor-bus pull-ups
++3V3 ------------------------->  ESP32-C6, button pull-up
++3V3 --[Feather LDO U5, GPIO20]--> VSENSOR --> gauge-bus pull-ups, WS2812B (Feather)
+VBAT ------------------------->  MAX17048 (Feather), status LED anode
 ```
 
 ## Rails
@@ -26,48 +27,57 @@ VBAT --[SW1 TPS22918, GPIO2]--> VBOOST_IN --[TPS61023 + L1]--> +5V --> SPS30
 | +5V | 4.90 V | 5.00 V | 5.10 V | TPS61023 boost |
 | +3V3 | 3.20 V | 3.30 V | 3.40 V | Feather RT9080/AP2112 LDO, always on |
 | +3V3_SENS | 3.20 V | 3.30 V | 3.40 V | +3V3 behind load switch SW2 |
-| +3V3_EPD | 3.20 V | 3.30 V | 3.40 V | +3V3 behind load switch SW3 |
 | GND | 0.00 V | 0.00 V | 0.00 V | system ground |
 
 ## GPIO map (ESP32-C6 on the Adafruit Feather)
 
 | GPIO | Feather pin | signal | dir | RTC | note |
 |---|---|---|---|---|---|
-| 0 | D11 | EPD_BUSY | in | yes | 100k pull-down |
-| 1 | A0 | EN_EPD_3V3 | out | yes | held LOW in deep sleep |
+| 1 | A0 | BTN | in | yes | EXT1 deep-sleep wake, active low |
 | 2 | A5 | EN_SPS30_5V | out | yes | held LOW in deep sleep |
 | 3 | A4 | EN_SENS_3V3 | out | yes | held HIGH in deep sleep |
-| 6 | A2/D6 | BTN | in | yes | EXT1 deep-sleep wake, active low |
-| 7 | D9 | EPD_RST | out | yes |  |
-| 14 | D12 | EPD_CS | out | no |  |
+| 6 | A2/D6 | SENS_SDA | bidir | yes | LP_I2C SDA - a fixed IO_MUX pad on the C6, not remappable |
+| 7 | D9 | SENS_SCL | bidir | yes | LP_I2C SCL - a fixed IO_MUX pad on the C6, not remappable |
 | 16 | TX | SPS30_RX | out | no | UART1 TX, Hi-Z in deep sleep |
 | 17 | RX | SPS30_TX | in | no | UART1 RX, pull-up disabled |
-| 18 | SCL | SCL | bidir | no | onboard 5k1 pull-up |
-| 19 | SDA | SDA | bidir | no | onboard 5k1 pull-up |
-| 20 | - | NEOPIXEL_I2C_POWER | out | no | driven LOW: disables the second LDO, the NeoPixel and the STEMMA QT port |
-| 21 | SCK | EPD_SCK | out | no |  |
-| 22 | MOSI | EPD_MOSI | out | no |  |
-| 23 | MISO | EPD_DC | out | no | repurposed: the panel is write-only |
+| 18 | SCL | GAUGE_SCL | bidir | no | Feather-internal bus to the MAX17048; pull-up only while GPIO20 is high |
+| 19 | SDA | GAUGE_SDA | bidir | no | Feather-internal bus to the MAX17048; pull-up only while GPIO20 is high |
+| 20 | - | I2C_PWR | out | no | Feather VSENSOR LDO: gauge-bus pull-ups AND the WS2812B. Pulsed high for ~50 ms per battery read, low otherwise |
+| 21 | SCK | LED_R | out | no | sink, active low |
+| 22 | MOSI | LED_G | out | no | sink, active low |
+| 23 | MISO | LED_B | out | no | sink, active low |
 
 Reserved / not used by the application:
 
 | GPIO | reason |
 |---|---|
+| 0 | free (was EPD_BUSY in v1.0) |
 | 4 | ESP32-C6 strapping pin (A1) - left unconnected |
 | 5 | ESP32-C6 strapping pin (A3/D5) - left unconnected |
 | 8 | ESP32-C6 strapping pin (D10) - left unconnected |
 | 9 | ESP32-C6 strapping pin, BOOT button - not used by the application |
 | 12 | native USB D- |
 | 13 | native USB D+ |
+| 14 | free (was EPD_CS in v1.0) |
 | 15 | ESP32-C6 strapping pin, red LED (D13) - not used by the application |
 
-## I2C bus (GPIO19 = SDA, GPIO18 = SCL, 5k1 pull-ups on the Feather, 100 kHz)
+## I2C buses
+
+**Sensor bus** - LP_I2C, GPIO6 = SDA, GPIO7 = SCL (fixed pads), 4.7k pull-ups to +3V3_SENS on the carrier, 100 kHz:
 
 | address | device |
 |---|---|
-| 0x36 | MAX17048 fuel gauge (on the Feather) |
-| 0x59 | SGP40 |
-| 0x62 | SCD41 |
+| 0x59 | SGP40 (sensor bus, LP_I2C, GPIO6/7) |
+| 0x62 | SCD41 (sensor bus, LP_I2C, GPIO6/7) |
+
+**Gauge bus** - HP I2C, GPIO19 = SDA, GPIO18 = SCL, the Feather's own 10k pull-ups on VSENSOR. Only usable while GPIO20 is high:
+
+| address | device |
+|---|---|
+| 0x36 | MAX17048 fuel gauge (Feather bus, GPIO19/18) |
+| 0x38 | AHT20, if fitted - it is on Adafruit's schematic (Feather bus) |
+
+Why two buses: on the Feather, the I2C pull-ups and the WS2812B share one switched LDO. Keeping it on for the sensors would also keep the WS2812B powered, and a WS2812B idles at around a milliamp - more than the whole radio. So the sensors get their own bus with their own pull-ups, and the Feather's LDO is only switched on for the few milliseconds a battery read takes.
 
 The SPS30 is **not** on this bus. It uses its UART (SHDLC) interface, which Sensirion recommends for cabled connections, and which leaves no pull-up path into the sensor while its 5 V rail is switched off.
 
@@ -75,29 +85,27 @@ The SPS30 is **not** on this bus. It uses its UART (SHDLC) interface, which Sens
 
 | net | connections |
 |---|---|
-| `VBAT` | M1.BAT, SW1.1, BT1.+ |
-| `GND` | M1.GND, U1.5, U2.GND, U3.GND, DS1.GND, U4.3, SW1.2, SW2.2, SW3.2, C1.2, C2.2, C3.2, C4.2, C5.2, C6.2, R4.2, R5.2, SW4.2, J1.5, BT1.- |
+| `VBAT` | M1.BAT, SW1.1, BT1.+, LED1.A |
+| `GND` | M1.GND, U1.5, U2.GND, U3.GND, U4.3, SW1.2, SW2.2, C1.2, C2.2, C3.2, C4.2, C6.2, R5.2, SW4.2, J1.5, BT1.- |
 | `VBOOST_IN` | SW1.5, SW1.6, U4.1, U4.2, C1.1 |
 | `+5V` | U4.6, C2.1, C3.1, J1.1 |
 | `SW_NODE` | U4.5, L1.2 |
 | `L1_IN` | L1.1 |
-| `+3V3` | M1.3V, SW2.1, SW3.1, R3.1 |
-| `+3V3_SENS` | SW2.5, SW2.6, U2.VIN, U3.VIN, C4.1, R5.1 |
-| `+3V3_EPD` | SW3.5, SW3.6, DS1.VCC, C5.1 |
+| `+3V3` | M1.3V, SW2.1, R3.1 |
+| `+3V3_SENS` | SW2.5, SW2.6, U2.VIN, U3.VIN, C4.1, R5.1, R6.1, R7.1 |
 | `EN_SPS30_5V` | M1.A5, SW1.3 |
 | `EN_SENS_3V3` | M1.A4, SW2.3 |
-| `EN_EPD_3V3` | M1.A0, SW3.3 |
 | `SPS30_RX` | M1.TX, R1.1 |
 | `SPS30_RX_S` | R1.2, J1.2 |
 | `SPS30_TX` | M1.RX, R2.1 |
 | `SPS30_TX_S` | R2.2, J1.3 |
 | `SPS30_SEL` | J1.4 |
-| `SDA` | M1.SDA, U2.SDA, U3.SDA |
-| `SCL` | M1.SCL, U2.SCL, U3.SCL |
-| `EPD_SCK` | M1.SCK, DS1.CLK |
-| `EPD_MOSI` | M1.MOSI, DS1.DIN |
-| `EPD_CS` | M1.D12, DS1.CS |
-| `EPD_DC` | M1.MISO, DS1.DC |
-| `EPD_RST` | M1.D9, DS1.RST |
-| `EPD_BUSY` | M1.D11, DS1.BUSY, R4.1 |
-| `BTN` | M1.A2, R3.2, SW4.1, C6.1 |
+| `SENS_SDA` | M1.A2, U2.SDA, U3.SDA, R6.2 |
+| `SENS_SCL` | M1.D9, U2.SCL, U3.SCL, R7.2 |
+| `LED_R` | M1.SCK, R8.1 |
+| `LED_R_K` | R8.2, LED1.R |
+| `LED_G` | M1.MOSI, R9.1 |
+| `LED_G_K` | R9.2, LED1.G |
+| `LED_B` | M1.MISO, R10.1 |
+| `LED_B_K` | R10.2, LED1.B |
+| `BTN` | M1.A0, R3.2, SW4.1, C6.1 |

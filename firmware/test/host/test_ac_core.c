@@ -8,7 +8,7 @@
 #include "ac_core/ac_airquality.h"
 #include "ac_core/ac_baseline.h"
 #include "ac_core/ac_config.h"
-#include "ac_core/ac_display.h"
+#include "ac_core/ac_status.h"
 #include "ac_core/ac_engine.h"
 #include "ac_core/ac_event.h"
 #include "ac_core/ac_filter.h"
@@ -117,13 +117,13 @@ static void test_config(void)
     ac_config_t wild;
     ac_config_defaults(&wild);
     wild.pm25_high = 1.0f;          /* below elevated */
-    wild.display_timeout_s = 99999;
+    wild.gauge_interval_s = 99999;
     wild.profile[AC_MODE_ECO].pm_window_s = 2;   /* below the SPS30 minimum */
     wild.profile[AC_MODE_ECO].icd_slow_poll_s = 900;
     int fixed = ac_config_validate(&wild);
     CHECK(fixed >= 4);
     CHECK(wild.pm25_high > wild.pm25_elevated);
-    CHECK(wild.display_timeout_s <= 600);
+    CHECK(wild.gauge_interval_s <= 3600);
     CHECK(wild.profile[AC_MODE_ECO].pm_window_s >= AC_SPS30_MIN_WINDOW_S);
     CHECK(wild.profile[AC_MODE_ECO].icd_slow_poll_s <= 15);
 }
@@ -514,12 +514,13 @@ static void test_engine(void)
     CHECK(ac_engine_values_valid(&e));
     CHECK(e.state == AC_STATE_NORMAL);
 
-    CASE("ECO schedules the SPS30 four hours out, not sooner");
+    CASE("ECO schedules the SPS30 an hour out, not sooner");
     /* drain the immediate CO2/VOC work first */
     for (int i = 0; i < 6; i++) ac_engine_tick(&e, t);
     p = ac_engine_tick(&e, t);
     CHECK(p.action == AC_ACT_NONE || p.action == AC_ACT_SAMPLE_VOC);
-    CHECK(e.next_pm >= t + 3ull * 3600ull * 1000ull);
+    CHECK(e.next_pm >= t + 3500ull * 1000ull);
+    CHECK(e.next_pm <= t + 3700ull * 1000ull);
 
     CASE("the device may sleep between samples, and does");
     p = ac_engine_tick(&e, t);
@@ -633,19 +634,27 @@ static void test_engine(void)
     CASE("factory reset returns every setting to default");
     ac_engine_t e6;
     ac_config_t weird = c;
-    weird.display_timeout_s = 120;
+    weird.gauge_interval_s = 120;
     strncpy(weird.name, "Printer", AC_NAME_MAX - 1);
     ac_engine_init(&e6, &weird, 0);
-    CHECK(e6.cfg.display_timeout_s == 120);
+    CHECK(e6.cfg.gauge_interval_s == 120);
     ac_engine_factory_reset(&e6, 0);
-    CHECK(e6.cfg.display_timeout_s == c.display_timeout_s);
+    CHECK(e6.cfg.gauge_interval_s == c.gauge_interval_s);
     CHECK(strcmp(e6.cfg.name, "AIR CHECK") == 0);
     CHECK(e6.state == AC_STATE_FACTORY_RESET);
 }
 
-/* ---------------- display ------------------------------------------ */
+/* ---------------- status LED --------------------------------------- */
 
-static void test_display(void)
+static int lit_ms(const ac_led_pattern_t *p, uint32_t span_ms)
+{
+    int on = 0;
+    for (uint32_t t = 0; t < span_ms; t += 10)
+        if (ac_status_level(p, t) != AC_RGB_OFF) on += 10;
+    return on;
+}
+
+static void test_status(void)
 {
     ac_config_t c;
     ac_config_defaults(&c);
@@ -654,53 +663,113 @@ static void test_display(void)
     ac_time_ms_t t = 0;
     for (int i = 0; i < 400; i++) {
         t += 60000;
-        ac_sample_t s = mk(t, 7.0f + (float)(i % 5), 100 + i % 7, 620.0f);
+        ac_sample_t s = mk(t, 6.0f, 100, 600.0f);
         ac_engine_submit(&e, &s);
+        ac_engine_set_power(&e, false, false, 80.0f, 3.9f, t);
         ac_engine_tick(&e, t);
     }
-    ac_ui_context_t ui = { true, true, 62, "1.0.0", "AC-0001-2026",
-                           "3497-011-2332", "MT:Y.K90AFN00KA0648G00", 2 };
-    ac_canvas_t cv;
 
-    CASE("every screen renders and puts ink on the panel");
-    for (int s = 0; s < AC_SCREEN_COUNT; s++) {
-        ac_display_render(&cv, &e, &ui, (ac_screen_t)s, t);
-        int on = 0;
-        for (size_t i = 0; i < sizeof(cv.px); i++)
-            for (int b = 0; b < 8; b++) on += (cv.px[i] >> b) & 1;
-        CHECK(on > 200);
-        CHECK(on < AC_DISP_W * AC_DISP_H / 2);   /* not a black rectangle */
-    }
+    CASE("in normal operation the LED stays dark");
+    ac_led_pattern_t p = ac_status_pattern(&e, AC_LED_EVENT_NONE);
+    CHECK(lit_ms(&p, 60000) == 0);
 
-    CASE("the special screens render too");
-    ac_screen_t extra[] = { AC_SCREEN_WARMUP, AC_SCREEN_COMMISSION,
-                            AC_SCREEN_DIAGNOSTIC, AC_SCREEN_CRITICAL };
-    for (unsigned i = 0; i < sizeof(extra) / sizeof(extra[0]); i++) {
-        ac_display_render(&cv, &e, &ui, extra[i], t);
-        int on = 0;
-        for (size_t k = 0; k < sizeof(cv.px); k++)
-            for (int b = 0; b < 8; b++) on += (cv.px[k] >> b) & 1;
-        CHECK(on > 100);
-    }
+    CASE("a button press shows the air quality colour for three seconds");
+    p = ac_status_pattern(&e, AC_LED_EVENT_BUTTON);
+    CHECK(ac_status_level(&p, 0) == AC_RGB_GREEN);
+    CHECK(ac_status_level(&p, 2900) == AC_RGB_GREEN);
+    CHECK(ac_status_level(&p, 3100) == AC_RGB_OFF);
 
-    CASE("rendering is deterministic");
-    ac_canvas_t a, b;
-    ac_display_render(&a, &e, &ui, AC_SCREEN_OVERVIEW, t);
-    ac_display_render(&b, &e, &ui, AC_SCREEN_OVERVIEW, t);
-    CHECK(memcmp(a.px, b.px, sizeof(a.px)) == 0);
+    CASE("the colour follows the air quality");
+    CHECK(ac_status_air_colour(AC_AQ_GOOD) == AC_RGB_GREEN);
+    CHECK(ac_status_air_colour(AC_AQ_ELEVATED) == AC_RGB_YELLOW);
+    CHECK(ac_status_air_colour(AC_AQ_HIGH) == AC_RGB_RED);
+    CHECK(ac_status_air_colour(AC_AQ_VERY_HIGH) == AC_RGB_PURPLE);
+    CHECK(ac_status_air_colour(AC_AQ_UNKNOWN) == AC_RGB_WHITE);
 
-    CASE("text never runs off the panel");
-    /* draw a deliberately over-long string and check the framebuffer edges */
-    ac_canvas_clear(&a);
-    ac_canvas_text(&a, &ac_font_medium, 150, 100,
-                   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", true);
-    CHECK(1);   /* the clip happens in ac_canvas_pixel; no crash is the check */
+    CASE("pairing blinks blue and times out with the commissioning window");
+    p = ac_status_pattern(&e, AC_LED_EVENT_PAIRING);
+    CHECK(ac_status_level(&p, 100) == AC_RGB_BLUE);
+    CHECK(ac_status_level(&p, 700) == AC_RGB_OFF);
+    CHECK(ac_status_level(&p, 300001) == AC_RGB_OFF);
 
-    CASE("missing values print as -- rather than as zero");
+    CASE("a button press during warm-up says so instead of guessing a colour");
     ac_engine_t cold;
     ac_engine_init(&cold, &c, 0);
-    ac_display_render(&cv, &cold, &ui, AC_SCREEN_OVERVIEW, 0);
-    CHECK(1);
+    p = ac_status_pattern(&cold, AC_LED_EVENT_BUTTON);
+    CHECK(ac_status_level(&p, 0) == AC_RGB_WHITE);
+
+    CASE("low battery answers a button press with yellow blinks");
+    ac_engine_set_power(&e, false, false, 12.0f, 3.5f, t);
+    p = ac_status_pattern(&e, AC_LED_EVENT_BUTTON);
+    CHECK(ac_status_level(&p, 0) == AC_RGB_YELLOW);
+    CHECK(ac_status_level(&p, 200) == AC_RGB_OFF);
+
+    CASE("critical battery blinks unprompted, but only a 50 ms blip every 10 s");
+    ac_engine_set_power(&e, false, false, 3.0f, 3.3f, t);
+    p = ac_status_pattern(&e, AC_LED_EVENT_NONE);
+    int on = lit_ms(&p, 60000);
+    CHECK(on > 0);
+    CHECK(on <= 60000 / 10000 * 50 + 10);
+
+    CASE("a dead device blinks red unprompted");
+    ac_engine_t dead;
+    ac_engine_init(&dead, &c, 0);
+    for (int i = 0; i < 10; i++) {
+        ac_engine_sensor_failed(&dead, AC_ACT_SAMPLE_PM, "x");
+        ac_engine_sensor_failed(&dead, AC_ACT_SAMPLE_VOC, "x");
+        ac_engine_sensor_failed(&dead, AC_ACT_SAMPLE_CO2, "x");
+    }
+    ac_engine_tick(&dead, 61000);
+    p = ac_status_pattern(&dead, AC_LED_EVENT_NONE);
+    CHECK(lit_ms(&p, 10000) > 0);
+    CHECK(ac_status_level(&p, 0) == AC_RGB_RED);
+}
+
+/* ---------------- window statistics (for the dashboard) ------------- */
+
+static void test_window(void)
+{
+    ac_history_t h;
+    ac_history_init(&h);
+
+    CASE("an empty history reports no window, not zeros");
+    ac_window_stat_t w = ac_history_window(&h, AC_CH_PM25, 86400);
+    CHECK(!w.valid);
+
+    ac_time_ms_t t = 0;
+    for (int i = 0; i < 6 * 60; i++) {          /* 6 hours at 1 min */
+        t += 60000;
+        float pm = (i == 200) ? 90.0f : 8.0f;
+        int32_t voc = (i >= 250 && i < 260) ? 300 : 100;
+        ac_sample_t s = mk(t, pm, voc, 600.0f + (float)(i % 10));
+        ac_history_push(&h, &s);
+    }
+
+    CASE("the 24 h peak keeps a one-minute spike");
+    w = ac_history_window(&h, AC_CH_PM25, 86400);
+    CHECK(w.valid);
+    CHECK_NEAR(w.peak, 90.0, 0.2);
+    CHECK(w.mean > 7.5f && w.mean < 10.0f);
+
+    CASE("a window that ends before the spike does not see it");
+    w = ac_history_window(&h, AC_CH_PM25, 3600);
+    CHECK(w.valid);
+    CHECK(w.peak < 10.0f);
+
+    CASE("VOC and CO2 windows work the same way");
+    w = ac_history_window(&h, AC_CH_VOC, 86400);
+    CHECK(w.valid && w.peak >= 299.0f);
+    w = ac_history_window(&h, AC_CH_CO2, 86400);
+    CHECK(w.valid && w.peak >= 608.0f && w.mean > 600.0f);
+
+    CASE("the bucket in progress is included");
+    ac_history_t h2;
+    ac_history_init(&h2);
+    ac_sample_t s = mk(60000, 42.0f, 100, 600.0f);
+    ac_history_push(&h2, &s);
+    w = ac_history_window(&h2, AC_CH_PM25, 3600);
+    CHECK(w.valid);
+    CHECK_NEAR(w.peak, 42.0, 0.01);
 }
 
 /* ------------------------------------------------------------------ */
@@ -715,7 +784,8 @@ int main(void)
     test_event();
     test_history();
     test_engine();
-    test_display();
+    test_status();
+    test_window();
     printf("\n%d checks, %d failure(s)\n", g_run, g_fail);
     return g_fail ? 1 : 0;
 }

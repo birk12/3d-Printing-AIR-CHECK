@@ -10,7 +10,7 @@
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 
-extern i2c_master_bus_handle_t g_i2c;
+extern i2c_master_bus_handle_t g_gauge;
 static i2c_master_dev_handle_t s_dev;
 
 #define REG_VCELL   0x02
@@ -34,7 +34,7 @@ static esp_err_t write_reg(uint8_t reg, uint16_t v)
     return i2c_master_transmit(s_dev, tx, 3, 100);
 }
 
-esp_err_t ac_battery_read(float *volts, float *percent, bool *charging)
+static esp_err_t read_all(float *volts, float *percent, bool *charging)
 {
     if (!s_dev) {
         i2c_device_config_t cfg = {
@@ -42,7 +42,7 @@ esp_err_t ac_battery_read(float *volts, float *percent, bool *charging)
             .device_address = AC_I2C_ADDR_MAX17048,
             .scl_speed_hz = 100000,
         };
-        esp_err_t err = i2c_master_bus_add_device(g_i2c, &cfg, &s_dev);
+        esp_err_t err = i2c_master_bus_add_device(g_gauge, &cfg, &s_dev);
         if (err != ESP_OK) return err;
     }
     uint16_t v = 0, soc = 0, crate = 0;
@@ -67,14 +67,33 @@ esp_err_t ac_battery_read(float *volts, float *percent, bool *charging)
     return ESP_OK;
 }
 
+/* The Feather's gauge bus only has pull-ups while GPIO20 is high (see
+ * ac_hal.c), so every access is bracketed by switching it on and off again.
+ * The MAX17048 itself runs from VBAT and keeps tracking the cell meanwhile. */
+esp_err_t ac_battery_read(float *volts, float *percent, bool *charging)
+{
+    esp_err_t err = ac_gauge_bus(true);
+    if (err == ESP_OK) err = read_all(volts, percent, charging);
+    ac_gauge_bus(false);
+    return err;
+}
+
+/* Hibernate drops the gauge from ~23 uA to ~3 uA and slows its update to once
+ * every 45 s, which is far more often than this device changes state anyway. */
 esp_err_t ac_battery_hibernate(bool on)
 {
-    if (!s_dev) return ESP_ERR_INVALID_STATE;
-    /* Hibernate drops the gauge from ~23 uA to ~3 uA and slows its update to
-     * once every 45 s, which is far more often than this device changes
-     * state anyway. */
-    return write_reg(REG_HIBRT, on ? 0xFFFF : 0x0000);
+    esp_err_t err = ac_gauge_bus(true);
+    if (err != ESP_OK) { ac_gauge_bus(false); return err; }
+    if (!s_dev) {
+        float v, p; bool c;
+        err = read_all(&v, &p, &c);          /* attaches the device */
+        if (err != ESP_OK) { ac_gauge_bus(false); return err; }
+    }
+    err = write_reg(REG_HIBRT, on ? 0xFFFF : 0x0000);
+    ac_gauge_bus(false);
+    return err;
 }
+
 
 void ac_battery_detach(void)
 {

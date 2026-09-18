@@ -45,10 +45,11 @@ enum : uint8_t { MEDIUM_AIR = 0 };
 
 static uint16_t s_ep_air = 0, s_ep_temp = 0, s_ep_hum = 0;
 static ac_engine_t *s_engine = nullptr;
+static void (*s_identify_cb)(bool on) = nullptr;
 static bool s_commissioned = false;
 
 /* last value written, so we never write the same number twice */
-static float s_last[8];
+static float s_last[16];
 static uint8_t s_last_aq = 0xFF;
 
 static esp_err_t write_float(uint16_t ep, uint32_t cluster, uint32_t attr,
@@ -85,19 +86,33 @@ static esp_err_t write_u8(uint16_t ep, uint32_t cluster, uint32_t attr,
 /* Every concentration cluster shares one config type and differs only in its
  * create() entry point, so this is a switch over five one-line calls rather
  * than five near-identical blocks. */
+/* 24 h: the window the dashboard's "peak today" and "average today" read. */
+static constexpr uint32_t k_stat_window_s = 24u * 3600u;
+
 static void add_concentration(endpoint_t *ep, uint32_t cluster_id,
-                              uint8_t unit, float lo, float hi)
+                              uint8_t unit, float lo, float hi, bool stats)
 {
     using namespace esp_matter::cluster;
+    namespace f = concentration_measurement::feature;
     concentration_measurement::config_t cfg;
     cfg.measurement_medium = MEDIUM_AIR;
-    /* NumericMeasurement only.  LevelIndication is left off: a coarse five
-     * step enum derived from a measured ug/m3 adds nothing the Air Quality
-     * cluster on this same endpoint does not already carry. */
-    cfg.feature_flags = concentration_measurement::feature::numeric_measurement::get_id();
+    /* NumericMeasurement, plus PeakMeasurement and AverageMeasurement where
+     * `stats` is set.  Those two are standard features of the concentration
+     * clusters and exist precisely so a controller - here the e-ink dashboard
+     * - can show "peak today" without keeping its own history, which matters
+     * for a dashboard that sleeps most of the time.  LevelIndication is left
+     * off: a five step enum derived from a measured ug/m3 adds nothing the Air
+     * Quality cluster on this endpoint does not already carry. */
+    cfg.feature_flags = f::numeric_measurement::get_id();
     cfg.features.numeric_measurement.measurement_unit = unit;
     cfg.features.numeric_measurement.min_measured_value = lo;
     cfg.features.numeric_measurement.max_measured_value = hi;
+    if (stats) {
+        cfg.feature_flags |= f::peak_measurement::get_id() |
+                             f::average_measurement::get_id();
+        cfg.features.peak_measurement.peak_measured_value_window = k_stat_window_s;
+        cfg.features.average_measurement.average_measured_value_window = k_stat_window_s;
+    }
 
     cluster_t *c = nullptr;
     switch (cluster_id) {
@@ -142,11 +157,10 @@ static esp_err_t identification_cb(identification::callback_type_t type,
                                    uint8_t effect_variant, void *priv)
 {
     (void)endpoint_id; (void)effect_id; (void)effect_variant; (void)priv;
-    /* Identify on an e-paper device means flashing the screen, which is slow
-     * and ugly.  Instead the display switches to the diagnostics screen, which
-     * shows the serial number - that is what a user needs to tell two
-     * identical units apart. */
+    /* Identify blinks the status LED white - the way to tell two identical
+     * units apart from the Home app or from the dashboard. */
     ESP_LOGI(TAG, "identify: type %d", (int)type);
+    if (s_identify_cb) s_identify_cb(type == identification::callback_type_t::START);
     return ESP_OK;
 }
 
@@ -206,18 +220,18 @@ esp_err_t ac_matter_init(ac_engine_t *engine)
         cluster::air_quality::feature::very_poor::add(aq);
     }
 
-    add_concentration(ep, Pm25ConcentrationMeasurement::Id, UNIT_UGM3, 0.0f, 1000.0f);
-    add_concentration(ep, Pm10ConcentrationMeasurement::Id, UNIT_UGM3, 0.0f, 1000.0f);
-    add_concentration(ep, Pm1ConcentrationMeasurement::Id, UNIT_UGM3, 0.0f, 1000.0f);
+    add_concentration(ep, Pm25ConcentrationMeasurement::Id, UNIT_UGM3, 0.0f, 1000.0f, true);
+    add_concentration(ep, Pm10ConcentrationMeasurement::Id, UNIT_UGM3, 0.0f, 1000.0f, true);
+    add_concentration(ep, Pm1ConcentrationMeasurement::Id, UNIT_UGM3, 0.0f, 1000.0f, false);
     add_concentration(ep, CarbonDioxideConcentrationMeasurement::Id, UNIT_PPM,
-                      400.0f, 5000.0f);
+                      400.0f, 5000.0f, true);
     /* See docs/MATTER.md: the SGP40 produces a VOC *Index*, not a
      * concentration.  Publishing it in a concentration cluster is a
      * compromise, taken because without a number Apple Home cannot build a
      * VOC automation at all.  The unit is declared as PPB and the
      * documentation says in as many words that the value is an index. */
     add_concentration(ep, TotalVolatileOrganicCompoundsConcentrationMeasurement::Id,
-                      UNIT_PPB, 0.0f, 500.0f);
+                      UNIT_PPB, 0.0f, 500.0f, true);
 
     /* ---- endpoints 2 and 3: temperature and humidity -------------- */
     temperature_sensor::config_t t_config;
@@ -287,6 +301,38 @@ esp_err_t ac_matter_start(void)
     return esp_matter::start(device_event_cb);
 }
 
+static void write_stat(uint32_t cluster, uint32_t peak_attr, uint32_t avg_attr,
+                       ac_window_stat_t w, int slot)
+{
+    if (!w.valid) return;
+    write_float(s_ep_air, cluster, peak_attr, w.peak, slot);
+    write_float(s_ep_air, cluster, avg_attr, w.mean, slot + 1);
+}
+
+static void publish_stats(const ac_engine_t *e)
+{
+    const ac_history_t *h = &e->hist;
+    write_stat(Pm25ConcentrationMeasurement::Id,
+               Pm25ConcentrationMeasurement::Attributes::PeakMeasuredValue::Id,
+               Pm25ConcentrationMeasurement::Attributes::AverageMeasuredValue::Id,
+               ac_history_window(h, AC_CH_PM25, k_stat_window_s), 8);
+    write_stat(Pm10ConcentrationMeasurement::Id,
+               Pm10ConcentrationMeasurement::Attributes::PeakMeasuredValue::Id,
+               Pm10ConcentrationMeasurement::Attributes::AverageMeasuredValue::Id,
+               ac_history_window(h, AC_CH_PM10, k_stat_window_s), 10);
+    write_stat(CarbonDioxideConcentrationMeasurement::Id,
+               CarbonDioxideConcentrationMeasurement::Attributes::PeakMeasuredValue::Id,
+               CarbonDioxideConcentrationMeasurement::Attributes::AverageMeasuredValue::Id,
+               ac_history_window(h, AC_CH_CO2, k_stat_window_s), 12);
+    if (e->cfg.voc_publish_index_as_ppb)
+        write_stat(TotalVolatileOrganicCompoundsConcentrationMeasurement::Id,
+                   TotalVolatileOrganicCompoundsConcentrationMeasurement::Attributes::
+                       PeakMeasuredValue::Id,
+                   TotalVolatileOrganicCompoundsConcentrationMeasurement::Attributes::
+                       AverageMeasuredValue::Id,
+                   ac_history_window(h, AC_CH_VOC, k_stat_window_s), 14);
+}
+
 esp_err_t ac_matter_publish(const ac_engine_t *e)
 {
     if (!s_ep_air || !ac_engine_values_valid(e)) return ESP_OK;
@@ -312,6 +358,8 @@ esp_err_t ac_matter_publish(const ac_engine_t *e)
                     TotalVolatileOrganicCompoundsConcentrationMeasurement::
                         Attributes::MeasuredValue::Id,
                     (float)e->last.voc_index, 4);
+
+    publish_stats(e);
 
     if (e->last.temperature > -50.0f)
         write_i16(s_ep_temp, TemperatureMeasurement::Id,
@@ -350,6 +398,23 @@ esp_err_t ac_matter_publish_battery(float percent, float volts, bool charging,
     attribute::update(0, PowerSource::Id,
                       PowerSource::Attributes::BatChargeState::Id, &chg);
     return ESP_OK;
+}
+
+void ac_matter_set_identify_cb(void (*cb)(bool on)) { s_identify_cb = cb; }
+
+esp_err_t ac_matter_set_label(const char *label)
+{
+    /* Basic Information / NodeLabel is the standard, controller-readable place
+     * for a user-given name.  Apple Home keeps its own names inside its own
+     * fabric and a second controller never sees them, so this is how the
+     * dashboard tells "3D Printer" from "Room" without being told twice.  The
+     * spec caps it at 32 characters, the same as AC_NAME_MAX - 1. */
+    static char buf[33];
+    strncpy(buf, label ? label : "", sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    esp_matter_attr_val_t val = esp_matter_char_str(buf, (uint16_t)strlen(buf));
+    return attribute::update(0, BasicInformation::Id,
+                             BasicInformation::Attributes::NodeLabel::Id, &val);
 }
 
 bool ac_matter_is_commissioned(void)

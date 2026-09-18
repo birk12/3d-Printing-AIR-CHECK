@@ -3,7 +3,7 @@
  *
  * ac_hal calls ac_engine_tick() with the current time and whatever samples it
  * managed to collect; the engine answers with a plan (which sensor to run
- * next, how long the MCU may sleep, what the display should show, what should
+ * next, how long the MCU may sleep, what the status LED should show, what should
  * be published over Matter).  That split is what makes the interesting half of
  * this firmware testable on a workstation.
  */
@@ -47,12 +47,12 @@ typedef struct {
     ac_action_t action;
     uint32_t    pm_window_s;     /* only meaningful for AC_ACT_SAMPLE_PM */
     uint32_t    sleep_ms;        /* how long the caller may sleep */
-    bool        display_dirty;
+    bool        status_dirty;
     bool        publish_dirty;   /* a reported Matter attribute changed */
 } ac_plan_t;
 
 typedef struct {
-    bool sps30_ok, sgp40_ok, scd41_ok, display_ok, battery_ok;
+    bool sps30_ok, sgp40_ok, scd41_ok, battery_ok;
     uint16_t sps30_errors, sgp40_errors, scd41_errors;
     char last_error[48];
 } ac_health_t;

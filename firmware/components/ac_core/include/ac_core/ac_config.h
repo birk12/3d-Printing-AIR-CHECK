@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 #define AC_CONFIG_MAGIC    0x41434B31u   /* "ACK1" */
-#define AC_CONFIG_VERSION  1
+#define AC_CONFIG_VERSION  2   /* v2: no display on the sensor since v1.1 */
 #define AC_NAME_MAX        33
 
 /* One measurement cadence.  Mirrors tools/battery_calculator/model.py - if you
@@ -29,7 +29,7 @@ typedef struct {
     uint16_t version;
     uint16_t size;
 
-    char     name[AC_NAME_MAX];      /* shown on the display and in the label */
+    char     name[AC_NAME_MAX];      /* shown in the commissioning label and the logs */
     char     location[AC_NAME_MAX];  /* free text, Apple Home owns the real one */
 
     ac_mode_t default_mode;
@@ -54,10 +54,9 @@ typedef struct {
     uint32_t baseline_update_s;
     float    baseline_alpha;       /* EMA weight per update, 0..1 */
 
-    /* display */
-    uint32_t display_timeout_s;
-    uint8_t  display_start_screen;
-    bool     display_show_delta;
+    /* status LED and battery gauge */
+    bool     led_show_air_quality;  /* a button press flashes the air quality colour */
+    uint32_t gauge_interval_s;      /* how often the MAX17048 is read */
 
     /* battery */
     float low_battery_pct;

@@ -9,7 +9,7 @@ components/ac_core/    platform-independent measurement core - no esp_* headers
 components/ac_hal/     ESP-IDF drivers
 components/sensirion_gas_index/   vendored VOC Index algorithm (BSD-3)
 main/                  app_main.cpp and the Matter data model
-test/host/             455 checks that run on a workstation
+test/host/             466 checks that run on a workstation
 ```
 
 The split is the point: `ac_core` decides what happens and when, `ac_hal`
@@ -32,16 +32,17 @@ not. Note that `esp-matter/examples/common` is deliberately **not** on
 `espressif/button` from the registry, and this project has its own button
 handling.
 
-The first build takes a while: it compiles the whole Matter SDK. The result:
+The first build takes a while: it compiles the whole Matter SDK. The result
+(v1.1):
 
 ```
-aircheck.bin   1 690 176 bytes, 14 % free in the 1.9 MB OTA partition
-DIRAM          224 636 bytes, 49.7 % of 452 112
+aircheck.bin   1 646 944 bytes, 16 % free in the 1.9 MB OTA partition
+DIRAM          210 484 bytes, 46.6 % of 452 112
 ```
 
-Half the RAM is gone before anything is allocated at runtime, which is the
-measured reason this is an ESP32-C6 and not an ESP32-H2 - see EDR-1 in
-`docs/ENGINEERING_DECISIONS.md`.
+Almost half the RAM is gone before anything is allocated at runtime. That is
+the measured reason this is an ESP32-C6 and not an ESP32-H2 (EDR-1 in
+`docs/ENGINEERING_DECISIONS.md`).
 
 ## Host tests
 
@@ -55,16 +56,6 @@ cc -std=c99 -Wall -Wextra -Werror -O1 -Ifirmware/components/ac_core/include \
 
 About 20 ms. See `docs/TESTING.md` for what they cover.
 
-## Screen previews
-
-```bash
-cc -std=c99 -I components/ac_core/include components/ac_core/src/*.c \
-   ../tools/diagnostics/screen_preview.c -lm -o /tmp/preview
-/tmp/preview /tmp/screens
-```
-
-Writes every screen as a PBM, exactly as the panel would show it.
-
 ## Configuration
 
 `sdkconfig.defaults` is the shipped configuration - Thread only, Wi-Fi
@@ -76,17 +67,6 @@ Runtime settings - names, thresholds, intervals, sensitivity - are in NVS and
 never need a rebuild. `ac_config_validate()` clamps everything into the range
 the sensor datasheets allow, so a bad value cannot produce a schedule that the
 energy model did not account for.
-
-## Fonts
-
-`ac_font_data.c` is generated:
-
-```bash
-python3 ../tools/fontgen/make_font.py
-```
-
-Three faces rasterised from DejaVu Sans: 12 px regular, 20 px bold, 46 px bold
-digits. About 60 kB of source, 25 kB of flash.
 
 ## Vendored code
 

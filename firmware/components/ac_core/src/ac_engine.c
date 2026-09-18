@@ -54,7 +54,7 @@ void ac_engine_init(ac_engine_t *e, const ac_config_t *cfg, ac_time_ms_t now)
     e->last_fan_clean = now;   /* a fresh boot counts as recently cleaned */
 
     e->health.sps30_ok = e->health.sgp40_ok = e->health.scd41_ok = true;
-    e->health.display_ok = e->health.battery_ok = true;
+    e->health.battery_ok = true;
 }
 
 const ac_profile_t *ac_engine_profile(const ac_engine_t *e)
@@ -239,7 +239,7 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
     /* ---- warm-up ---------------------------------------------------------
      * Do not publish anything until the gas sensor has had its documented
      * 60 s and we have at least one PM window behind us.  Until then the
-     * display says INITIALIZING and Matter reports the attributes as
+     * status LED pulses white and Matter reports the attributes as
      * unavailable rather than as plausible-looking nonsense. */
     if (!e->warm) {
         bool voc_ready = (!e->health.sgp40_ok) || (e->cfg.profile[e->mode].voc_interval_s == 0) ||
@@ -247,10 +247,10 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
         bool pm_ready = (!e->health.sps30_ok) || (e->last.pm25 >= 0.0f);
         if (voc_ready && pm_ready) {
             e->warm = true;
-            plan.display_dirty = true;
+            plan.status_dirty = true;
         } else if (e->state == AC_STATE_BOOT) {
             set_state(e, AC_STATE_WARMUP, now);
-            plan.display_dirty = true;
+            plan.status_dirty = true;
         }
     }
 
@@ -260,7 +260,7 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
     ac_aq_result_t aq = ac_airquality_eval(&e->cfg, &e->base, &e->last,
                                            pm_rate, voc_rate);
     if (aq.level != e->aq.level || aq.reason != e->aq.reason)
-        plan.display_dirty = true;
+        plan.status_dirty = true;
     e->aq = aq;
 
     /* ---- event detection -------------------------------------------------*/
@@ -268,7 +268,7 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
     bool changed = ac_event_update(&e->ev, &e->cfg, &e->base, &e->last,
                                    pm_rate, voc_rate, &done);
     ac_baseline_freeze(&e->base, ac_event_should_freeze_baseline(&e->ev));
-    if (changed) plan.display_dirty = true;
+    if (changed) plan.status_dirty = true;
 
     /* ---- baseline and history -------------------------------------------*/
     if (e->warm) {
@@ -283,7 +283,7 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
         if (want != e->mode) {
             ac_engine_set_mode(e, want, now);
             p = ac_engine_profile(e);
-            plan.display_dirty = true;
+            plan.status_dirty = true;
         }
     }
 

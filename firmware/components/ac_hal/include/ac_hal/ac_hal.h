@@ -14,25 +14,23 @@
 extern "C" {
 #endif
 
-/* ---- pin map (Adafruit ESP32-C6 Feather + ACC-1 carrier) --------------
+/* ---- pin map (Adafruit ESP32-C6 Feather + ACC-1 carrier, v1.1) --------
  * Only GPIO0..GPIO7 are RTC capable on the ESP32-C6, so everything that has
  * to hold a level through deep sleep or wake the chip lives there.  GPIO4, 5,
  * 8, 9 and 15 are strapping pins and are left alone. */
-#define AC_PIN_EN_EPD        1   /* A0  - load switch SW3, e-paper rail      */
+#define AC_PIN_BUTTON        1   /* A0  - active low, EXT1 deep-sleep wake   */
 #define AC_PIN_EN_SPS30      2   /* A5  - load switch SW1, boost input       */
-#define AC_PIN_EN_SENS       3   /* A4  - load switch SW2, I2C sensor rail   */
-#define AC_PIN_BUTTON        6   /* A2  - active low, EXT1 deep-sleep wake   */
-#define AC_PIN_EPD_BUSY      0   /* D11 - input, 100k pull-down              */
-#define AC_PIN_EPD_RST       7   /* D9                                       */
-#define AC_PIN_EPD_DC       23   /* MISO, repurposed: the panel is write only */
-#define AC_PIN_EPD_CS       14   /* D12                                      */
-#define AC_PIN_EPD_SCK      21
-#define AC_PIN_EPD_MOSI     22
+#define AC_PIN_EN_SENS       3   /* A4  - load switch SW2, sensor rail       */
+#define AC_PIN_SENS_SDA      6   /* A2  - LP_I2C SDA, fixed pad on the C6    */
+#define AC_PIN_SENS_SCL      7   /* D9  - LP_I2C SCL, fixed pad on the C6    */
 #define AC_PIN_SPS30_TX     16   /* MCU -> sensor, 330 R in series           */
 #define AC_PIN_SPS30_RX     17   /* sensor -> MCU                            */
-#define AC_PIN_I2C_SDA      19   /* 5k1 pull-up on the Feather               */
-#define AC_PIN_I2C_SCL      18
-#define AC_PIN_STEMMA_PWR   20   /* driven low: kills the second LDO + NeoPixel */
+#define AC_PIN_GAUGE_SCL    18   /* Feather-internal bus to the MAX17048     */
+#define AC_PIN_GAUGE_SDA    19
+#define AC_PIN_I2C_PWR      20   /* Feather VSENSOR LDO: gauge pull-ups + WS2812B */
+#define AC_PIN_LED_R        21   /* LED cathodes, active low                 */
+#define AC_PIN_LED_G        22
+#define AC_PIN_LED_B        23
 
 #define AC_I2C_ADDR_SGP40   0x59
 #define AC_I2C_ADDR_SCD41   0x62
@@ -42,7 +40,8 @@ extern "C" {
 esp_err_t ac_hal_init(void);
 esp_err_t ac_rail_sps30(bool on);   /* also waits out the boost soft start  */
 esp_err_t ac_rail_sensors(bool on);
-esp_err_t ac_rail_epd(bool on);
+/* Power the Feather's gauge bus (GPIO20 high, bus created) or drop it. */
+esp_err_t ac_gauge_bus(bool on);
 /* Latch the RTC GPIOs so the rails keep their state through deep sleep. */
 void ac_rail_hold(bool hold);
 
@@ -92,16 +91,17 @@ esp_err_t ac_battery_read(float *volts, float *percent, bool *charging);
 esp_err_t ac_battery_hibernate(bool on);
 void ac_battery_detach(void);
 
-/* ---- display ---------------------------------------------------------- */
-esp_err_t ac_epd_init(void);
-esp_err_t ac_epd_full_update(const uint8_t *fb);
-esp_err_t ac_epd_partial_update(const uint8_t *fb);
-esp_err_t ac_epd_sleep(void);
+/* ---- status LED -------------------------------------------------------
+ * Common anode on VBAT, cathodes sunk by GPIO21/22/23.  "Off" releases the
+ * pins to high impedance rather than driving them high, so nothing flows in
+ * sleep either way.  Colour bits: 1 = red, 2 = green, 4 = blue. */
+esp_err_t ac_led_init(void);
+void      ac_led_set(uint8_t rgb_bits);
 
 /* ---- button ----------------------------------------------------------- */
 typedef enum {
     AC_BTN_NONE = 0,
-    AC_BTN_SHORT,       /*  < 1.0 s  wake / next screen  */
+    AC_BTN_SHORT,       /*  < 1.0 s  show the air quality on the LED */
     AC_BTN_LONG,        /*  3 .. 8 s setup / commissioning */
     AC_BTN_VERY_LONG,   /* 12 .. 20 s factory reset       */
 } ac_button_event_t;

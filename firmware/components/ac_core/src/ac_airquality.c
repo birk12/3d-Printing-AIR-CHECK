@@ -32,7 +32,7 @@ ac_aq_result_t ac_airquality_eval(const ac_config_t *cfg,
     r.co2_level  = grade_f(s->co2, cfg->co2_elevated, cfg->co2_high, cfg->co2_very_high);
 
     /* Worst channel wins, and every channel at or above ELEVATED names itself
-     * in the reason mask so the display and the logs can say *why*. */
+     * in the reason mask so the logs and the dashboard can say *why*. */
     ac_air_quality_t worst = AC_AQ_UNKNOWN;
     struct { ac_air_quality_t lvl; uint32_t bit; } ch[] = {
         { r.pm25_level, AC_REASON_PM25 },

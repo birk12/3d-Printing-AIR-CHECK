@@ -1,26 +1,27 @@
-/* 3D Printing AIR CHECK - application entry point.
+/* 3D Printing AIR CHECK - application entry point (v1.1, no display).
  *
  * Two tasks and nothing else:
  *   measure_task  drives the sensors according to whatever ac_engine decides,
- *                 and hands the results to Matter
- *   ui_task       owns the button and the e-paper panel
+ *                 reads the fuel gauge, and hands the results to Matter
+ *   ui_task       owns the button and the status LED
  *
  * The engine is the only place that decides *when* anything happens.  The
  * tasks just do what it says, which is what keeps the scheduling testable on a
- * workstation.
+ * workstation.  Numbers are shown elsewhere: in Apple Home and on the e-ink
+ * dashboard, which reads this device over Matter (docs/DASHBOARD_INTERFACE.md).
  */
-#include "ac_core/ac_display.h"
 #include "ac_core/ac_engine.h"
+#include "ac_core/ac_status.h"
 #include "ac_hal/ac_hal.h"
 #include "ac_matter.h"
 
 #include <esp_err.h>
 #include <esp_log.h>
-#include <esp_sleep.h>
 #include <esp_mac.h>
+#include <esp_sleep.h>
 #include <esp_system.h>
-#include <esp_timer.h>
 #include <esp_task_wdt.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
@@ -33,19 +34,20 @@
 
 static const char *TAG = "aircheck";
 
-#define AC_FW_VERSION "1.0.0"
+#define AC_FW_VERSION "1.1.0"
 #define WDT_TIMEOUT_S 120
 
 static ac_engine_t s_engine;
 static SemaphoreHandle_t s_lock;
-static ac_canvas_t s_canvas;
-static ac_screen_t s_screen = AC_SCREEN_OVERVIEW;
-static int64_t s_display_on_until_us;
-static bool s_display_awake;
 static char s_manual_code[32];
 static char s_qr_payload[64];
 static char s_serial[24];
-static uint32_t s_full_refreshes;
+
+/* LED: the pattern that is running and when it started. */
+static ac_led_pattern_t s_led;
+static int64_t s_led_since_us;
+static volatile ac_led_event_t s_led_event = AC_LED_EVENT_BOOT;
+static volatile bool s_identify;
 
 static inline ac_time_ms_t now_ms(void)
 {
@@ -54,49 +56,6 @@ static inline ac_time_ms_t now_ms(void)
 
 static void lock(void)   { xSemaphoreTake(s_lock, portMAX_DELAY); }
 static void unlock(void) { xSemaphoreGive(s_lock); }
-
-/* ------------------------------------------------------------------ */
-
-static void build_ui_context(ac_ui_context_t *ui)
-{
-    ui->thread_attached = ac_matter_thread_attached();
-    ui->matter_commissioned = ac_matter_is_commissioned();
-    ui->thread_rssi_neg = 0;
-    ui->fw_version = AC_FW_VERSION;
-    ui->serial = s_serial;
-    ui->pairing_code = s_manual_code[0] ? s_manual_code : nullptr;
-    ui->qr_payload = s_qr_payload[0] ? s_qr_payload : nullptr;
-    ui->events_today = s_engine.ev.events_total;
-}
-
-static void redraw(ac_screen_t screen, bool force_full)
-{
-    ac_ui_context_t ui;
-    build_ui_context(&ui);
-
-    lock();
-    ac_display_render(&s_canvas, &s_engine, &ui, screen, now_ms());
-    unlock();
-
-    ac_rail_epd(true);
-    if (ac_epd_init() != ESP_OK) {
-        ESP_LOGE(TAG, "e-paper init failed");
-        ac_rail_epd(false);
-        return;
-    }
-    /* A partial update is about six times cheaper than a full one, but the
-     * SSD1681 accumulates ghosting.  One full refresh every 20 partials keeps
-     * the panel clean without costing anything measurable. */
-    esp_err_t err;
-    if (force_full || (s_full_refreshes % 20) == 0)
-        err = ac_epd_full_update(s_canvas.px);
-    else
-        err = ac_epd_partial_update(s_canvas.px);
-    s_full_refreshes++;
-    if (err != ESP_OK) ESP_LOGW(TAG, "e-paper update: %s", esp_err_to_name(err));
-    ac_epd_sleep();
-    ac_rail_epd(false);
-}
 
 /* ------------------------------------------------------------------ */
 
@@ -178,6 +137,25 @@ static void do_co2_measurement(void)
     unlock();
 }
 
+static void read_battery(void)
+{
+    float v = 0, pct = -1;
+    bool charging = false;
+    if (ac_battery_read(&v, &pct, &charging) != ESP_OK) {
+        lock();
+        s_engine.health.battery_ok = false;
+        unlock();
+        return;
+    }
+    lock();
+    s_engine.health.battery_ok = true;
+    ac_engine_set_power(&s_engine, charging, charging, pct, v, now_ms());
+    bool low = s_engine.state == AC_STATE_LOW_BATTERY ||
+               s_engine.state == AC_STATE_CRITICAL_BATTERY;
+    unlock();
+    ac_matter_publish_battery(pct, v, charging, low);
+}
+
 static void persist(void)
 {
     lock();
@@ -195,13 +173,37 @@ static void measure_task(void *arg)
     (void)arg;
     esp_task_wdt_add(nullptr);
     int64_t last_persist = 0;
+    int64_t last_gauge = -1;
+    ac_mode_t last_mode = AC_MODE_COUNT;
+    ac_device_state_t last_state = AC_STATE_COUNT;
+    ac_air_quality_t last_aq = AC_AQ_UNKNOWN;
 
     for (;;) {
         esp_task_wdt_reset();
 
         lock();
         ac_plan_t plan = ac_engine_tick(&s_engine, now_ms());
+        uint32_t gauge_s = s_engine.cfg.gauge_interval_s;
+        ac_mode_t mode = s_engine.mode;
+        ac_device_state_t state = s_engine.state;
+        ac_air_quality_t aq = s_engine.aq.level;
+        uint32_t reason = s_engine.aq.reason;
         unlock();
+
+        /* The sensor has no screen, so every transition worth knowing about
+         * goes to the log. */
+        if (mode != last_mode || state != last_state) {
+            ESP_LOGI(TAG, "state %s, mode %s", ac_device_state_name(state),
+                     ac_mode_name(mode));
+            last_mode = mode;
+            last_state = state;
+        }
+        if (aq != last_aq) {
+            char why[48];
+            ac_reason_text(reason, why, sizeof(why));
+            ESP_LOGI(TAG, "air quality %s (%s)", ac_air_quality_name(aq), why);
+            last_aq = aq;
+        }
 
         switch (plan.action) {
         case AC_ACT_SAMPLE_PM:   do_pm_measurement(plan.pm_window_s); break;
@@ -221,15 +223,12 @@ static void measure_task(void *arg)
             break;
         }
 
-        float v = 0, pct = -1;
-        bool charging = false;
-        if (ac_battery_read(&v, &pct, &charging) == ESP_OK) {
-            lock();
-            ac_engine_set_power(&s_engine, charging, charging, pct, v, now_ms());
-            bool low = s_engine.state == AC_STATE_LOW_BATTERY ||
-                       s_engine.state == AC_STATE_CRITICAL_BATTERY;
-            unlock();
-            ac_matter_publish_battery(pct, v, charging, low);
+        /* The fuel gauge is read on its own, slower clock: every read has to
+         * power the Feather's VSENSOR LDO for a few milliseconds. */
+        int64_t t = esp_timer_get_time();
+        if (last_gauge < 0 || t - last_gauge > (int64_t)gauge_s * 1000000LL) {
+            read_battery();
+            last_gauge = t;
         }
 
         if (plan.publish_dirty) {
@@ -238,12 +237,9 @@ static void measure_task(void *arg)
             unlock();
             ac_matter_publish(&snapshot);
         }
-        if (plan.display_dirty && s_display_awake)
-            redraw(s_screen, false);
 
-        /* An event record that just completed goes into flash.  There is no
-         * point keeping it only in RAM: the whole reason to record it is to be
-         * able to look at it after the print has finished. */
+        /* An event record that just completed goes into flash.  The whole
+         * reason to record it is to look at it after the print has finished. */
         lock();
         bool have_event = s_engine.ev.cur.complete;
         ac_event_record_t rec = s_engine.ev.cur;
@@ -256,7 +252,6 @@ static void measure_task(void *arg)
                      (unsigned long)rec.duration_s);
         }
 
-        int64_t t = esp_timer_get_time();
         if (t - last_persist > 30LL * 60 * 1000000) {
             persist();
             last_persist = t;
@@ -264,7 +259,6 @@ static void measure_task(void *arg)
 
         uint32_t sleep_ms = plan.sleep_ms;
         if (sleep_ms == 0) sleep_ms = 20;
-        /* Never sleep past the watchdog. */
         if (sleep_ms > (WDT_TIMEOUT_S - 20) * 1000u)
             sleep_ms = (WDT_TIMEOUT_S - 20) * 1000u;
         vTaskDelay(pdMS_TO_TICKS(sleep_ms));
@@ -277,17 +271,7 @@ static void handle_button(ac_button_event_t ev)
 {
     switch (ev) {
     case AC_BTN_SHORT:
-        if (!s_display_awake) {
-            s_display_awake = true;
-            redraw(s_screen, true);
-        } else {
-            s_screen = (ac_screen_t)((s_screen + 1) % AC_SCREEN_COUNT);
-            redraw(s_screen, false);
-        }
-        lock();
-        s_display_on_until_us = esp_timer_get_time() +
-            (int64_t)s_engine.cfg.display_timeout_s * 1000000LL;
-        unlock();
+        s_led_event = AC_LED_EVENT_BUTTON;
         break;
 
     case AC_BTN_LONG:
@@ -295,19 +279,19 @@ static void handle_button(ac_button_event_t ev)
         ac_matter_open_commissioning_window();
         ac_matter_get_pairing_code(s_manual_code, sizeof(s_manual_code),
                                    s_qr_payload, sizeof(s_qr_payload));
-        s_display_awake = true;
-        redraw(AC_SCREEN_COMMISSION, true);
-        s_display_on_until_us = esp_timer_get_time() + 300LL * 1000000LL;
+        ESP_LOGI(TAG, "manual pairing code %s", s_manual_code);
+        s_led_event = AC_LED_EVENT_PAIRING;
         break;
 
     case AC_BTN_VERY_LONG:
         ESP_LOGW(TAG, "factory reset requested");
+        s_led_event = AC_LED_EVENT_RESET;
         lock();
         ac_engine_set_state(&s_engine, AC_STATE_FACTORY_RESET, now_ms());
         unlock();
-        redraw(AC_SCREEN_OVERVIEW, true);
+        vTaskDelay(pdMS_TO_TICKS(3000));    /* let the red blink be seen */
         ac_store_erase_all();
-        ac_matter_factory_reset();      /* reboots */
+        ac_matter_factory_reset();          /* reboots */
         break;
 
     default:
@@ -315,21 +299,47 @@ static void handle_button(ac_button_event_t ev)
     }
 }
 
+static void on_identify(bool on) { s_identify = on; }
+
 static void ui_task(void *arg)
 {
     (void)arg;
+    uint8_t shown = 0xFF;
     for (;;) {
-        ac_button_event_t ev = ac_button_poll();
-        if (ev != AC_BTN_NONE) handle_button(ev);
+        ac_button_event_t bev = ac_button_poll();
+        if (bev != AC_BTN_NONE) handle_button(bev);
 
-        if (s_display_awake && esp_timer_get_time() > s_display_on_until_us) {
-            /* "Off" on e-paper means: stop refreshing.  The last screen stays
-             * readable at zero current, which is the whole point of the
-             * technology - a blanked panel would only waste one more refresh. */
-            s_display_awake = false;
-            ESP_LOGD(TAG, "display idle, holding the last image");
+        /* a new user event replaces whatever pattern was running */
+        ac_led_event_t lev = s_led_event;
+        if (lev != AC_LED_EVENT_NONE) {
+            s_led_event = AC_LED_EVENT_NONE;
+            lock();
+            s_led = ac_status_pattern(&s_engine, lev);
+            unlock();
+            s_led_since_us = esp_timer_get_time();
         }
-        vTaskDelay(pdMS_TO_TICKS(30));
+
+        uint32_t elapsed = (uint32_t)((esp_timer_get_time() - s_led_since_us) / 1000);
+        ac_rgb_t c = ac_status_level(&s_led, elapsed);
+        if (s_led.duration_ms && elapsed >= s_led.duration_ms) {
+            /* the user-triggered pattern is over; fall back to the unprompted one */
+            lock();
+            s_led = ac_status_pattern(&s_engine, AC_LED_EVENT_NONE);
+            unlock();
+            s_led_since_us = esp_timer_get_time();
+            c = ac_status_level(&s_led, 0);
+        }
+        if (s_identify) c = ((elapsed / 250) % 2) ? AC_RGB_WHITE : AC_RGB_OFF;
+
+        if ((uint8_t)c != shown) {
+            ac_led_set((uint8_t)c);
+            shown = (uint8_t)c;
+        }
+        /* 30 ms while something is lit or the button is down, otherwise
+         * relax: tickless idle only saves power if the tasks let it. */
+        bool busy = c != AC_RGB_OFF || ac_button_pressed() || s_identify ||
+                    (s_led.duration_ms && elapsed < s_led.duration_ms);
+        vTaskDelay(pdMS_TO_TICKS(busy ? 30 : 100));
     }
 }
 
@@ -343,15 +353,17 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(ac_store_init());
     ESP_ERROR_CHECK(ac_hal_init());
     ESP_ERROR_CHECK(ac_button_init());
+    ac_led_set(AC_RGB_WHITE);                /* proof of life before Matter starts */
 
     uint8_t mac[8] = { 0 };
     esp_read_mac(mac, ESP_MAC_IEEE802154);
     snprintf(s_serial, sizeof(s_serial), "AC-%02X%02X-%02X%02X",
              mac[4], mac[5], mac[6], mac[7]);
+    ESP_LOGI(TAG, "serial %s", s_serial);
 
     ac_config_t cfg;
     if (ac_store_config_load(&cfg) != ESP_OK) {
-        ESP_LOGW(TAG, "no stored config, using defaults");
+        ESP_LOGW(TAG, "no usable stored config, using defaults");
         ac_config_defaults(&cfg);
         ac_store_config_save(&cfg);
     }
@@ -365,9 +377,9 @@ extern "C" void app_main(void)
     }
     ac_store_history_load(&s_engine.hist);
 
-    /* Sensors.  A failure here is logged and the channel is marked down; it
-     * never stops the device from starting, because a unit that boots into a
-     * blank screen is useless for working out what is wrong with it. */
+    /* A sensor that fails to start is marked down; it never stops the device
+     * from starting, because a unit that will not boot cannot tell you what is
+     * wrong with it. */
     if (ac_sgp40_init(cfg.profile[cfg.default_mode].voc_interval_s) != ESP_OK) {
         ESP_LOGE(TAG, "SGP40 init failed");
         s_engine.health.sgp40_ok = false;
@@ -379,11 +391,16 @@ extern "C" void app_main(void)
     ac_battery_hibernate(true);
 
     ESP_ERROR_CHECK(ac_matter_init(&s_engine));
+    ac_matter_set_identify_cb(on_identify);
     ESP_ERROR_CHECK(ac_matter_start());
+    ac_matter_set_label(cfg.name);
     ac_matter_get_pairing_code(s_manual_code, sizeof(s_manual_code),
                                s_qr_payload, sizeof(s_qr_payload));
-    if (!ac_matter_is_commissioned())
-        ESP_LOGI(TAG, "not commissioned; pairing code %s", s_manual_code);
+    if (!ac_matter_is_commissioned()) {
+        ESP_LOGI(TAG, "not commissioned; manual code %s, QR %s",
+                 s_manual_code, s_qr_payload);
+        s_led_event = AC_LED_EVENT_PAIRING;
+    }
 
 #if CONFIG_PM_ENABLE
     esp_pm_config_t pm = {
@@ -403,11 +420,6 @@ extern "C" void app_main(void)
     };
     esp_task_wdt_reconfigure(&wdt);
 
-    s_display_awake = true;
-    s_display_on_until_us = esp_timer_get_time() +
-                            (int64_t)cfg.display_timeout_s * 1000000LL;
-    redraw(AC_SCREEN_WARMUP, true);
-
     xTaskCreate(measure_task, "measure", 6144, nullptr, 5, nullptr);
-    xTaskCreate(ui_task, "ui", 4096, nullptr, 4, nullptr);
+    xTaskCreate(ui_task, "ui", 3072, nullptr, 4, nullptr);
 }

@@ -24,9 +24,9 @@ gh auth refresh -h github.com -s workflow
 
 | job | what it checks |
 |---|---|
-| core-tests | the 455 host checks over the measurement core, with `-Werror` |
-| electrical | the 371 rule checks, and that the generated files are in step with `design.py` |
-| energy-model | re-runs the model and **fails if ECO stops clearing six months with margin** |
+| core-tests | the 466 host checks over the measurement core, with `-Werror` |
+| electrical | the 344 rule checks, and that the generated files are in step with `design.py` |
+| energy-model | re-runs the model and **fails if ECO stops clearing three months with margin** |
 | enclosure | renders every part (which runs the OpenSCAD asserts) and checks each STL is manifold, fits the bed and stays under the overhang limit |
 | firmware | placeholder - building esp-matter in CI needs a prepared image |
 

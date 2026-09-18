@@ -7,7 +7,7 @@ on:
 
 jobs:
   core-tests:
-    name: measurement core (455 checks)
+    name: measurement core (466 checks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +20,7 @@ jobs:
           ./ac_test
 
   electrical:
-    name: electrical rule check (371 checks)
+    name: electrical rule check (344 checks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: python3 tools/battery_calculator/model.py
-      - name: ECO must still clear six months with margin
+      - name: ECO must still clear the three-month target with margin
         run: |
           python3 - <<'PY'
           import json, subprocess, sys
@@ -50,7 +50,7 @@ jobs:
                                capture_output=True, text=True, check=True).stdout
           eco = next(p for p in json.loads(out)["profiles"] if p["profile"] == "ECO")
           print(f"ECO: {eco['months_with_margin']} months with margin")
-          assert eco["months_with_margin"] >= 6.0, "ECO no longer meets the target"
+          assert eco["months_with_margin"] >= 3.0, "ECO no longer meets the target"
           PY
 
   enclosure:
@@ -63,13 +63,13 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y openscad
       - name: render every part (the asserts run here)
         run: |
-          for p in front back button batclip stand; do
+          for p in front back button batcover stand; do
             openscad -o "/tmp/$p.stl" --export-format binstl \
                      cad/openscad/aircheck_case.scad -D "part=\"$p\""
           done
       - name: geometry checks
         run: |
-          for p in front back button batclip stand; do
+          for p in front back button batcover stand; do
             python3 tools/diagnostics/stl_check.py "/tmp/$p.stl" --build 250x210x220
           done
 

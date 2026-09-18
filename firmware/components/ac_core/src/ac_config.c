@@ -5,7 +5,7 @@
  * tools/battery_calculator/model.py has the same table; firmware/test/host
  * checks that they still agree. */
 static const ac_profile_t k_profiles[AC_MODE_COUNT] = {
-    /* ECO        */ { .pm_interval_s = 4 * 3600, .pm_window_s = 40,
+    /* ECO        */ { .pm_interval_s = 3600,     .pm_window_s = 40,
                        .voc_interval_s = 10, .co2_interval_s = 3600,
                        .icd_slow_poll_s = 15 },
     /* NORMAL     */ { .pm_interval_s = 15 * 60,  .pm_window_s = 60,
@@ -65,9 +65,8 @@ void ac_config_defaults(ac_config_t *c)
     c->baseline_update_s = 900;
     c->baseline_alpha    = 0.02f;
 
-    c->display_timeout_s     = 20;
-    c->display_start_screen  = 0;
-    c->display_show_delta    = true;
+    c->led_show_air_quality  = true;
+    c->gauge_interval_s      = 300;
 
     c->low_battery_pct      = 20.0f;
     c->critical_battery_pct = 5.0f;
@@ -181,8 +180,7 @@ int ac_config_validate(ac_config_t *c)
     CLAMP(c->baseline_update_s, 60u, 6u * 3600u, n);
     CLAMP(c->baseline_alpha, 0.001f, 0.5f, n);
 
-    CLAMP(c->display_timeout_s, 5u, 600u, n);
-    CLAMP(c->display_start_screen, 0, 5, n);
+    CLAMP(c->gauge_interval_s, 60u, 3600u, n);
 
     CLAMP(c->low_battery_pct, 5.0f, 50.0f, n);
     CLAMP(c->critical_battery_pct, 1.0f, 20.0f, n);

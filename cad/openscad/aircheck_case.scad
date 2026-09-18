@@ -69,14 +69,9 @@ module post(x, y, z0, z1, od = POST_D) {
 // component mock-ups (for the assembly view and the collision check)
 // ---------------------------------------------------------------------
 
-module mock_epd() {
-    color("DimGray")
-        box_at(EPD_CX - EPD_MOD_W / 2, EPD_CY - EPD_MOD_H / 2, FACE,
-               EPD_MOD_W, EPD_MOD_H, EPD_MOD_T);
-    color("White")
-        box_at(EPD_CX - EPD_ACTIVE / 2 + EPD_ACTIVE_DX,
-               EPD_CY - EPD_ACTIVE / 2 + EPD_ACTIVE_DY, FACE - 0.2,
-               EPD_ACTIVE, EPD_ACTIVE, 0.4);
+module mock_led() {
+    color("White") translate([LED_CX, LED_CY, LED_SKIN + 0.1])
+        cylinder(d = 5.0, h = LED_BODY_H);
 }
 
 module mock_pcb() {
@@ -116,21 +111,13 @@ module mock_battery() {
 // shared negatives
 // ---------------------------------------------------------------------
 
-module epd_window() {
-    // straight opening at the outer face, opening out to 45 deg inwards so the
-    // chamfer prints without support when the shell lies face down.
-    translate([EPD_CX - EPD_WIN / 2 + EPD_ACTIVE_DX,
-               EPD_CY - EPD_WIN / 2 + EPD_ACTIVE_DY, -0.5])
-        cube([EPD_WIN, EPD_WIN, FACE + 1]);
-    hull() {
-        translate([EPD_CX - EPD_WIN / 2 + EPD_ACTIVE_DX,
-                   EPD_CY - EPD_WIN / 2 + EPD_ACTIVE_DY, FACE - EPD_BEZEL_CHAMFER])
-            cube([EPD_WIN, EPD_WIN, 0.01]);
-        translate([EPD_CX - EPD_WIN / 2 - EPD_BEZEL_CHAMFER + EPD_ACTIVE_DX,
-                   EPD_CY - EPD_WIN / 2 - EPD_BEZEL_CHAMFER + EPD_ACTIVE_DY, FACE])
-            cube([EPD_WIN + 2 * EPD_BEZEL_CHAMFER,
-                  EPD_WIN + 2 * EPD_BEZEL_CHAMFER, 0.01]);
-    }
+// Blind pocket from the inside; the last LED_SKIN of front face stays, so the
+// LED glows through the plastic without a hole.  Printed face down this is an
+// open pocket, not a bridge.
+module led_pocket() {
+    // LED_SKIN = 0 gives a plain through-hole for dark filaments
+    translate([LED_CX, LED_CY, LED_SKIN > 0 ? LED_SKIN : -0.5])
+        cylinder(d = LED_POCKET_D, h = FACE + 1);
 }
 
 module button_hole() {
@@ -178,8 +165,13 @@ module front_shell() {
                    FRONT_SHELL_D - FACE - LAP_DEPTH);
             // --- SPS30 cradle -------------------------------------------
             sps30_cradle();
-            // --- display module retainers --------------------------------
-            epd_retainers();
+            // --- LED guide: a short tube that centres the 5 mm LED ------------
+            difference() {
+                translate([LED_CX, LED_CY, FACE - 0.01])
+                    cylinder(d = LED_POCKET_D + 2.4, h = 3.0);
+                translate([LED_CX, LED_CY, FACE - 0.1])
+                    cylinder(d = LED_POCKET_D, h = 3.2);
+            }
             // --- carrier board standoffs ---------------------------------
             for (dx = [PCB_HOLE_INSET, PCB_W - PCB_HOLE_INSET],
                  dy = [PCB_HOLE_INSET, PCB_H - PCB_HOLE_INSET])
@@ -190,7 +182,7 @@ module front_shell() {
                     post(b[0] + dx, b[1] + dy, FACE, FACE + GAS_STANDOFF, 5.0);
         }
         // ---- negatives -------------------------------------------------
-        epd_window();
+        led_pocket();
         button_hole();
         usbc_opening();
         sps30_ducts();
@@ -213,7 +205,8 @@ module front_shell() {
         box_at(GAS_PARTITION_X - 16, SENSOR_BAY_TOP - 0.1, FACE + 6,
                12, DIVIDER_T + 0.2, 6);
         // branding, engraved 0.6 mm deep and 1.2 mm wide strokes
-        translate([EPD_CX, 11.5, -0.01]) linear_extrude(0.7)
+        // mirrored: the front face is seen from -Z, see aircheck_params.scad
+        translate([CASE_W / 2, 11.5, -0.01]) mirror([1, 0, 0]) linear_extrude(0.7)
             text("AIR CHECK", size = 4.2, halign = "center", valign = "center",
                  font = "Helvetica:style=Bold", spacing = 1.25);
     }
@@ -263,29 +256,19 @@ module sps30_ducts() {
 }
 
 module gas_bay_vents() {
-    // bottom wall
+    // bottom wall: slots between the corner post and the partition to the
+    // SPS30 bay, each <= VENT_SLOT_W so the roof is a printable bridge
+    x0 = 12.0;
+    x1 = GAS_PARTITION_X - 1.0;
+    ncol = ceil((x1 - x0 + 1.6) / (VENT_SLOT_W + 1.6));
+    colw = (x1 - x0 - (ncol - 1) * 1.6) / ncol;
+    for (c = [0 : ncol - 1], r = [0 : 3])
+        translate([x0 + c * (colw + 1.6), -1, FACE + 3 + r * 4.0])
+            cube([colw, WALL + 2, 2.4]);
+    // left wall, above the corner post and below the divider
     for (c = [0 : 2], r = [0 : 3])
-        translate([GAS_BAY_X + 8 + c * 11.6, -1, FACE + 3 + r * 4.0])
-            cube([10, WALL + 2, 2.4]);
-    // left wall
-    for (c = [0 : 2], r = [0 : 3])
-        translate([-1, GAS_BAY_Y + 6 + c * 11.6, FACE + 3 + r * 4.0])
+        translate([-1, 13 + c * 11.6, FACE + 3 + r * 4.0])
             cube([WALL + 2, 10, 2.4]);
-}
-
-module epd_retainers() {
-    // four L shaped tabs that trap the module against the inside of the face
-    x0 = EPD_CX - EPD_MOD_W / 2 - 1.2;
-    y0 = EPD_CY - EPD_MOD_H / 2 - 1.2;
-    w = EPD_MOD_W + 2.4;
-    h = EPD_MOD_H + 2.4;
-    for (c = [[x0, y0], [x0 + w - 6, y0], [x0, y0 + h - 6], [x0 + w - 6, y0 + h - 6]])
-        difference() {
-            translate([c[0], c[1], FACE]) cube([6, 6, EPD_MOD_T + 1.2]);
-            translate([c[0] - 0.1 + (c[0] > EPD_CX ? -1.2 : 1.2),
-                       c[1] - 0.1 + (c[1] > EPD_CY ? -1.2 : 1.2), FACE - 0.1])
-                cube([6, 6, EPD_MOD_T + FIT_LOOSE + 0.1]);
-        }
 }
 
 // ---------------------------------------------------------------------
@@ -330,6 +313,12 @@ module back_shell() {
 
 module bat_bay() {
     t = 1.6;
+    // bosses for the battery cover, just outside the side walls
+    for (x = [BAT_X - BAT_CLEAR - t - 3.5, BAT_X + BAT_W + BAT_CLEAR + t + 3.5])
+        difference() {
+            translate([x, BAT_Y + BAT_H / 2, FACE]) cylinder(d = 6, h = BACK_SHELL_D - FACE);
+            translate([x, BAT_Y + BAT_H / 2, FACE + 1]) cylinder(d = SELFTAP_CORE_D, h = 20);
+        }
     x0 = BAT_X - BAT_CLEAR - t;
     y0 = BAT_Y - BAT_CLEAR - t;
     w = BAT_W + 2 * (BAT_CLEAR + t);
@@ -346,7 +335,7 @@ module bat_bay() {
 module keyholes() {
     for (i = [-1, 1]) {
         x = CASE_W / 2 + i * KEYHOLE_SPACING / 2;
-        y = CASE_H - 12;
+        y = KEYHOLE_Y;
         translate([x, y, -1]) cylinder(d = KEYHOLE_D_BIG, h = FACE + 2);
         translate([x, y - KEYHOLE_LEN, -1]) cylinder(d = KEYHOLE_D_SMALL, h = FACE + 2);
         translate([x - KEYHOLE_D_SMALL / 2, y - KEYHOLE_LEN, -1])
@@ -367,16 +356,25 @@ module button_cap() {
         cylinder(d = BTN_HOLE_D - 2 * FIT_SLIDE, h = BTN_CAP_POST);
 }
 
-module battery_clip() {
-    // bridges the battery bay and holds the cell down; screws into the
-    // two bosses cast into the bay walls
-    l = BAT_W + 2 * BAT_CLEAR + 16;
+module battery_cover() {
+    // Lies over the open side of the battery bay: holds the cell, and keeps
+    // the sensor-bay air off it.  Two tabs screw into the bosses on the bay's
+    // side walls (self-tapping, it is fitted once per battery change).
+    t = 1.2;
+    w = BAT_W + 2 * (BAT_CLEAR + 1.6) + 12;
+    h = 30;
     difference() {
         union() {
-            cube([l, 12, 2.4]);
-            for (x = [4, l - 4]) translate([x - 4, 0, 0]) cube([8, 12, 5.0]);
+            translate([6, 0, 0]) cube([w - 12, BAT_H + 2 * BAT_CLEAR, t]);
+            for (x = [0, w - 12]) translate([x, (BAT_H + 2 * BAT_CLEAR - h) / 2, 0])
+                cube([12, h, t]);
         }
-        for (x = [5, l - 5]) translate([x, 6, -1]) cylinder(d = SCREW_D, h = 10);
+        for (x = [3.5, w - 3.5])
+            translate([x, (BAT_H + 2 * BAT_CLEAR) / 2, -1])
+                cylinder(d = SCREW_D, h = t + 2);
+        // stiffening pattern also saves plastic
+        for (i = [0 : 3], j = [0 : 5])
+            translate([14 + i * 12, 8 + j * 14, -1]) cube([6, 8, t + 2]);
     }
 }
 
@@ -408,7 +406,7 @@ module assembly() {
     color("Gainsboro", 0.55) front_shell();
     color("Gainsboro", 0.55) translate([0, 0, CASE_D])
         rotate([0, 180, 0]) translate([-CASE_W, 0, 0]) back_shell();
-    mock_epd();
+    mock_led();
     mock_pcb();
     mock_sps30();
     mock_gas();
@@ -419,7 +417,7 @@ module assembly() {
 
 module exploded(gap = 26) {
     color("Gainsboro") front_shell();
-    translate([0, 0, -gap]) mock_epd();
+    translate([0, 0, gap * 0.4]) mock_led();
     translate([0, 0, gap * 0.55]) mock_pcb();
     translate([0, 0, gap * 0.25]) mock_sps30();
     translate([0, 0, gap * 0.25]) mock_gas();
@@ -440,39 +438,55 @@ echo(str("battery front face Z = ", BAT_Z + BAT_PAD,
          "   clearance to the stack = ", BAT_Z + BAT_PAD - STACK_Z, " mm"));
 echo(str("SPS30 occupies Z ", SPS30_Z, " .. ", SPS30_Z + SPS30_T,
          "  (front shell is ", FRONT_SHELL_D, " deep)"));
-echo(str("display window ", EPD_WIN, " x ", EPD_WIN, " mm, active area ",
-         EPD_ACTIVE, " mm"));
 echo(str("sensor bay: Y ", WALL, " .. ", SENSOR_BAY_TOP,
          "   electronics: Y ", SENSOR_BAY_TOP + DIVIDER_T, " .. ", CASE_H - WALL));
 
-assert(STACK_Z < BAT_Z + BAT_PAD,
-       "the Feather stack collides with the battery");
-assert(SPS30_Z + SPS30_T <= FRONT_SHELL_D - LAP_DEPTH,
-       "the SPS30 crosses the shell seam");
-assert(SPS30_Y + SPS30_H < SENSOR_BAY_TOP,
-       "the SPS30 pokes through the sensor bay divider");
-assert(PCB_Y > SENSOR_BAY_TOP + DIVIDER_T,
-       "the carrier board sits inside the sensor bay");
-assert(PCB_X + PCB_W < CASE_W - WALL && PCB_Y + PCB_H < CASE_H - WALL,
+function hits(p, x0, y0, x1, y1, r = POST_D / 2) =
+    p[0] + r > x0 && p[0] - r < x1 && p[1] + r > y0 && p[1] - r < y1;
+
+assert(STACK_Z < BAT_Z + BAT_PAD, "the Feather stack collides with the battery");
+assert(SPS30_Z + SPS30_T <= FRONT_SHELL_D - LAP_DEPTH, "the SPS30 crosses the shell seam");
+assert(SPS30_Y + SPS30_H < SENSOR_BAY_TOP, "the SPS30 pokes through the sensor bay divider");
+assert(SPS30_X + SPS30_W + FIT_SLIDE + 2.0 < CASE_W - WALL, "the SPS30 cradle hits the right wall");
+assert(PCB_Y > SENSOR_BAY_TOP + DIVIDER_T, "the carrier board sits inside the sensor bay");
+assert(PCB_X > WALL && PCB_X + PCB_W < CASE_W - WALL && PCB_Y + PCB_H < CASE_H - WALL,
        "the carrier board does not fit inside the case");
-assert(BAT_Y + BAT_H <= CASE_H - WALL,
-       "the battery does not fit inside the case");
-assert(BAT_Y > SENSOR_BAY_TOP,
-       "the battery overlaps the sensor bay");
-assert(EPD_CY + EPD_MOD_H / 2 < CASE_H - WALL,
-       "the display module hits the top wall");
-assert(EPD_CY - EPD_MOD_H / 2 > BTN_CY + BTN_CAP_D / 2,
-       "the button overlaps the display module");
+assert(BAT_X - BAT_CLEAR - 1.6 > WALL && BAT_X + BAT_W + BAT_CLEAR + 1.6 < CASE_W - WALL,
+       "the battery bay does not fit across the case");
+assert(BAT_Y - BAT_CLEAR - 1.6 > WALL && BAT_Y + BAT_H + BAT_CLEAR + 1.6 < CASE_H - WALL,
+       "the battery bay does not fit up the case");
 assert(SGP40_Y + GAS_BRK_H < SCD41_Y, "the two gas breakouts overlap");
 assert(SCD41_Y + GAS_BRK_H < SENSOR_BAY_TOP, "the SCD41 pokes past the divider");
-assert(SGP40_X + GAS_BRK_W < GAS_PARTITION_X,
-       "the gas breakouts hit the partition to the SPS30 bay");
-assert(SPS30_X > GAS_PARTITION_X + GAS_PARTITION_T,
-       "the SPS30 overlaps the gas bay partition");
+assert(SGP40_X + GAS_BRK_W < GAS_PARTITION_X, "the gas breakouts hit the partition");
+assert(SPS30_X - FIT_SLIDE - 2.0 > GAS_PARTITION_X + GAS_PARTITION_T,
+       "the SPS30 cradle overlaps the gas bay partition");
+for (p = POST_XY) {
+    assert(!hits(p, PCB_X, PCB_Y, PCB_X + PCB_W, PCB_Y + PCB_H),
+           str("screw post ", p, " hits the carrier board"));
+    assert(!hits(p, SPS30_X - 2.25, SPS30_Y, SPS30_X + SPS30_W + 2.25, SPS30_Y + SPS30_H),
+           str("screw post ", p, " hits the SPS30 cradle"));
+    assert(!hits(p, SGP40_X, SGP40_Y, SGP40_X + GAS_BRK_W, SCD41_Y + GAS_BRK_H),
+           str("screw post ", p, " hits a gas breakout"));
+    assert(!hits(p, BAT_X - BAT_CLEAR - 1.6, BAT_Y - BAT_CLEAR - 1.6,
+                 BAT_X + BAT_W + BAT_CLEAR + 1.6, BAT_Y + BAT_H + BAT_CLEAR + 1.6),
+           str("screw post ", p, " hits the battery bay"));
+}
+for (i = [-1, 1]) {
+    kx = CASE_W / 2 + i * KEYHOLE_SPACING / 2;
+    assert(kx + KEYHOLE_D_BIG / 2 + 1.5 < BAT_X - BAT_CLEAR - 1.6 ||
+           kx - KEYHOLE_D_BIG / 2 - 1.5 > BAT_X + BAT_W + BAT_CLEAR + 1.6,
+           "a keyhole would put a screw head against the battery");
+    assert(kx - KEYHOLE_D_BIG / 2 > WALL - 0.5 && kx + KEYHOLE_D_BIG / 2 < CASE_W - WALL + 0.5,
+           "a keyhole runs into a side wall");
+}
+assert(LED_CX > PCB_X + 3 && LED_CX < PCB_X + PCB_W - 3 &&
+       LED_CY > PCB_Y + 3 && LED_CY < PCB_Y + PCB_H - 3, "the LED is not over the carrier");
+assert(BTN_CX > PCB_X + 3 && BTN_CX < PCB_X + PCB_W - 3 &&
+       BTN_CY > PCB_Y + 3 && BTN_CY < PCB_Y + PCB_H - 3, "the button is not over the carrier");
+assert(abs(LED_CY - BTN_CY) > (LED_POCKET_D + BTN_CB_D) / 2 + 4, "LED and button too close");
 assert(WALL >= 4 * NOZZLE, "wall thinner than four extrusions");
 assert(VENT_SLOT_W <= 12, "vent slot roof is too long a bridge");
-assert(INSERT_D > 2.5 && INSERT_DEPTH >= 5,
-       "heat-set insert pocket does not match an M2.5 insert");
+assert(INSERT_D > 2.5 && INSERT_DEPTH >= 5, "heat-set insert pocket does not match an M2.5 insert");
 
 // ---------------------------------------------------------------------
 // export dispatcher
@@ -481,13 +495,13 @@ assert(INSERT_D > 2.5 && INSERT_DEPTH >= 5,
 if (part == "front")        rotate([0, 0, 0]) front_shell();
 else if (part == "back")    back_shell();
 else if (part == "button")  button_cap();
-else if (part == "batclip") battery_clip();
+else if (part == "batcover") battery_cover();
 else if (part == "stand")   desk_stand();
 else if (part == "assembly") assembly();
 else if (part == "exploded") exploded();
 else if (part == "sec_z")
-    projection(cut = true) translate([0, 0, -(FACE + EPD_MOD_T + 1)]) assembly();
+    projection(cut = true) translate([0, 0, -(PCB_Z - 1)]) assembly();
 else if (part == "sec_y")
     projection(cut = true) rotate([90, 0, 0]) translate([0, -24, 0]) assembly();
 else if (part == "sec_x")
-    projection(cut = true) rotate([0, 90, 0]) translate([-EPD_CX, 0, 0]) assembly();
+    projection(cut = true) rotate([0, 90, 0]) translate([-LED_CX, 0, 0]) assembly();

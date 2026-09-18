@@ -31,11 +31,16 @@ SRC = {
     "sgp40_lp": "Sensirion gas-index-algorithm README: '2 % duty cycle (10 s interval): < 0.2 mW'",
     "scd4x": "Sensirion SCD4x Datasheet v1.5 (July 2023), Table 4",
     "scd4x_lp": "Sensirion AN 'SCD4x Low Power Operation' v1.0 (July 2022), Table 1",
-    "c6_icd": "Espressif esp-matter examples/icd_app README, measured C6 SIT-ICD current trace "
-              "(avg 174.43 uA over 61.08 s, floor 54.84 uA, 5 s slow poll, 20 dBm TX)",
+    "c6_icd": "Microamp Home, 'I built a sleeper IKEA smart home sensor' (YouTube KE7bOYCYETM): "
+              "ESP32-C6 DevKit, Matter SIT ICD at a 15 s slow poll, PPK2 over 1 h: "
+              "121.88 uA average, 39.31 uA sleep floor",
+    "c6_icd_esp": "Espressif esp-matter examples/icd_app README, C6 SIT-ICD trace at a 5 s "
+                  "poll: avg 174.43 uA, floor 54.84 uA (cross-check)",
     "feather": "Adafruit ESP32-C6 Feather product page / learn guide: 17 uA deep sleep, "
                "MCP73831T-2ACI/OT charger with R_PROG = 5.1 kOhm",
-    "epd": "Waveshare 1.54in e-Paper (SSD1681) specification; GDEY0154D67 panel data",
+    "led": "status LED: 5 mA for a 3 s status flash, a handful of times a day",
+    "dash": "ASSUMPTION: a second Matter controller (the e-ink dashboard) reads the "
+            "sensor every 15 min; each read costs ~10 poll-equivalents of radio time",
     "cell": "Generic protected single-cell LiPo, 606090 format; self-discharge assumption",
 }
 
@@ -62,22 +67,31 @@ SCD41_Q_PER_SHOT_MAS = 250e-3 * 600  # = 150 mA*s = 0.0417 mAh
 SCD41_I_LOWPOWER_PERIODIC_MA = 3.2   # 30 s periodic mode, src=scd4x
 
 # ---- MCU + carrier board --------------------------------------------------
-C6_ICD_AVG_UA_5S = 174.4      # measured, 5 s slow poll, src=c6_icd
-C6_ICD_FLOOR_UA = 54.8        # measured sleep floor between polls, src=c6_icd
-# Derived poll cost: (174.4 - 54.8) uA * 5 s = 598 uA*s of extra charge per poll
-C6_POLL_CHARGE_UAS = (C6_ICD_AVG_UA_5S - C6_ICD_FLOOR_UA) * 5.0
+# v1.1: an independent one-hour PPK2 measurement at exactly our configuration
+# (SIT ICD, 15 s slow poll) replaces the Espressif 5 s trace as the primary
+# input.  It is the higher of the two, i.e. the conservative choice.
+C6_ICD_AVG_UA_15S = 121.88    # measured, 15 s slow poll, src=c6_icd
+C6_ICD_FLOOR_UA = 39.31       # measured sleep floor between polls, src=c6_icd
+# Derived poll cost: (121.88 - 39.31) uA * 15 s = 1239 uA*s per poll.
+# Espressif's own trace gives 598 uA*s per poll - about half.  We take the
+# larger figure.
+C6_POLL_CHARGE_UAS = (C6_ICD_AVG_UA_15S - C6_ICD_FLOOR_UA) * 15.0
 # Everything on the carrier that is powered even in deep sleep:
 #   Feather deep-sleep floor is already inside C6_ICD_FLOOR_UA for the bare chip;
 #   the Feather adds RT9080 LDO Iq (~35 uA), MAX17048 (~23 uA hibernate),
-#   3 x TPS22918 load switch Iq (~1.1 uA each) and divider/leakage.
-BOARD_QUIESCENT_UA = 62.0
+#   2 x TPS22918 load switch Iq (~1.1 uA each) and divider/leakage.
+BOARD_QUIESCENT_UA = 61.0
 
-# ---- Display --------------------------------------------------------------
-EPD_V = 3.3
-EPD_I_REFRESH_MA = 8.0        # mA during update, src=epd
-EPD_FULL_REFRESH_S = 2.0
-EPD_PARTIAL_REFRESH_S = 0.4
-EPD_I_SLEEP_UA = 1.0          # deep sleep; we also power-gate the rail
+# ---- Status LED (the sensor has no display since v1.1) ---------------------
+LED_I_MA = 5.0
+LED_FLASH_S = 3.0
+LED_FLASHES_PER_DAY = 6.0
+
+# ---- Second Matter controller (the dashboard, multi-admin) ------------------
+# Every read wakes the ICD into active mode and costs a few fast polls plus the
+# CASE handshake.  Ten poll-equivalents is a deliberately generous guess.
+DASH_READS_PER_DAY = 96.0         # one every 15 min
+DASH_POLLS_PER_READ = 10.0
 
 # ---- Power conversion -----------------------------------------------------
 BOOST_EFFICIENCY = 0.92       # TPS61023, 3.7 V -> 5.0 V at ~55 mA
@@ -104,34 +118,29 @@ class Profile:
     voc_interval_s: float         # 0 -> VOC disabled
     co2_interval_s: float         # 0 -> CO2 disabled
     icd_slow_poll_s: float
-    epd_full_per_day: float = 2.0
-    epd_partial_per_day: float = 20.0
     note: str = ""
 
 
 PROFILES = [
-    Profile("ECO",        pm_interval_s=4 * 3600, pm_window_s=40, voc_interval_s=10,
+    Profile("ECO",        pm_interval_s=3600, pm_window_s=40, voc_interval_s=10,
             co2_interval_s=3600, icd_slow_poll_s=15,
-            note="Long-life room monitoring. Meets the 6-month target with margin."),
-    Profile("ECO_PLUS",   pm_interval_s=2 * 3600, pm_window_s=40, voc_interval_s=10,
+            note="The default. Particles every hour, VOC every 10 s as the tripwire. "
+                 "Meets the 3-month target with margin."),
+    Profile("ECO_LONG",   pm_interval_s=4 * 3600, pm_window_s=40, voc_interval_s=10,
             co2_interval_s=3600, icd_slow_poll_s=15,
-            note="Room monitoring with 2 h PM cadence."),
+            note="Optional long-life setting: particles every 4 h, about six months."),
     Profile("NORMAL",     pm_interval_s=15 * 60, pm_window_s=60, voc_interval_s=10,
             co2_interval_s=15 * 60, icd_slow_poll_s=15,
-            epd_partial_per_day=40,
             note="Sensirion's reference cadence (60 s every 15 min). Default when a "
                  "printer is in the room."),
     Profile("ACTIVE",     pm_interval_s=2 * 60, pm_window_s=60, voc_interval_s=10,
             co2_interval_s=5 * 60, icd_slow_poll_s=5,
-            epd_partial_per_day=60,
             note="Entered automatically on a detected emission event. Time-limited."),
     Profile("POST_PRINT", pm_interval_s=5 * 60, pm_window_s=60, voc_interval_s=10,
             co2_interval_s=10 * 60, icd_slow_poll_s=5,
-            epd_partial_per_day=40,
             note="Recovery tracking after an event."),
     Profile("CONTINUOUS", pm_interval_s=0, pm_window_s=60, voc_interval_s=1,
             co2_interval_s=5, icd_slow_poll_s=5,
-            epd_partial_per_day=200,
             note="Reference / validation mode. USB power expected."),
 ]
 
@@ -195,10 +204,12 @@ def budget(p: Profile, cell_mah: float = CELL_MAH_DEFAULT) -> Budget:
         shots_day = 86400.0 / p.co2_interval_s
         b.lines["SCD41"] = shots_day * SCD41_Q_PER_SHOT_MAS / 3600.0
 
-    # --- display -----------------------------------------------------------
-    epd_mas = (p.epd_full_per_day * EPD_FULL_REFRESH_S +
-               p.epd_partial_per_day * EPD_PARTIAL_REFRESH_S) * EPD_I_REFRESH_MA
-    b.lines["e-paper refreshes"] = epd_mas / 3600.0
+    # --- status LED --------------------------------------------------------
+    b.lines["status LED"] = LED_I_MA * LED_FLASH_S * LED_FLASHES_PER_DAY / 3600.0
+
+    # --- second Matter controller (dashboard) ------------------------------
+    b.lines["dashboard reads (multi-admin)"] = (
+        DASH_READS_PER_DAY * DASH_POLLS_PER_READ * C6_POLL_CHARGE_UAS / 3.6e6)
 
     # --- MCU + Thread ------------------------------------------------------
     mcu_ua = C6_ICD_FLOOR_UA + C6_POLL_CHARGE_UAS / p.icd_slow_poll_s
@@ -225,6 +236,7 @@ def runtime_days(b: Budget, cell_mah: float = CELL_MAH_DEFAULT,
 # --------------------------------------------------------------------------
 
 MARGIN = 0.25   # 25 % engineering margin, per the project requirement
+TARGET_MONTHS = 3.0   # v1.1: three months per charge, agreed 2026-09-18
 
 
 def table(cell_mah: float = CELL_MAH_DEFAULT) -> list[dict]:
@@ -297,11 +309,12 @@ def markdown(cell_mah: float = CELL_MAH_DEFAULT) -> str:
     w(f"| SGP40 low-power (10 s interval) | {SGP40_LP_POWER_MW:.1f} mW | {SRC['sgp40_lp']} |")
     w(f"| SCD41 power-cycled single shot | 250/130/43 uA at 10/20/60 min | {SRC['scd4x_lp']} |")
     w(f"| SCD41 charge per single shot | {SCD41_Q_PER_SHOT_MAS/3600:.4f} mAh | derived from the row above |")
-    w(f"| ESP32-C6 Matter SIT-ICD average | {C6_ICD_AVG_UA_5S:.1f} uA at 5 s poll | {SRC['c6_icd']} |")
+    w(f"| ESP32-C6 Matter SIT-ICD average | {C6_ICD_AVG_UA_15S:.1f} uA at 15 s poll | {SRC['c6_icd']} |")
     w(f"| ESP32-C6 sleep floor | {C6_ICD_FLOOR_UA:.1f} uA | {SRC['c6_icd']} |")
-    w(f"| derived charge per Thread poll | {C6_POLL_CHARGE_UAS:.0f} uA*s | (avg - floor) x 5 s |")
-    w(f"| carrier quiescent | {BOARD_QUIESCENT_UA:.0f} uA | LDO Iq + MAX17048 + 3x TPS22918 + leakage |")
-    w(f"| e-paper refresh current | {EPD_I_REFRESH_MA:.0f} mA for {EPD_FULL_REFRESH_S:.1f} s full / {EPD_PARTIAL_REFRESH_S:.1f} s partial | {SRC['epd']} |")
+    w(f"| derived charge per Thread poll | {C6_POLL_CHARGE_UAS:.0f} uA*s | (avg - floor) x 15 s; Espressif's trace gives about half, we take the larger |")
+    w(f"| carrier quiescent | {BOARD_QUIESCENT_UA:.0f} uA | LDO Iq + MAX17048 + 2x TPS22918 + leakage |")
+    w(f"| status LED | {LED_I_MA:.0f} mA x {LED_FLASH_S:.0f} s x {LED_FLASHES_PER_DAY:.0f}/day | {SRC['led']} |")
+    w(f"| dashboard reads | {DASH_READS_PER_DAY:.0f}/day x {DASH_POLLS_PER_READ:.0f} poll-equivalents | {SRC['dash']} |")
     w(f"| boost efficiency | {BOOST_EFFICIENCY*100:.0f} % | TPS61023 at 3.7 V -> 5 V, 55 mA |")
     w(f"| battery nominal working voltage | {VBAT_NOMINAL:.2f} V | discharge-weighted 1S LiPo |")
     w(f"| cell | {cell_mah:.0f} mAh, {CELL_USABLE_FRACTION*100:.0f} % usable | {SRC['cell']} |")

@@ -146,3 +146,74 @@ float ac_history_pm25_trend(const ac_history_t *h, uint32_t minutes)
 }
 
 size_t ac_history_bytes(void) { return sizeof(ac_history_t); }
+
+static void bucket_vals(const ac_hist_bucket_t *b, ac_channel_t ch,
+                        float *mean, float *peak)
+{
+    *mean = *peak = -1.0f;
+    switch (ch) {
+    case AC_CH_PM25:
+        if (b->pm25_mean != AC_HIST_NODATA) *mean = b->pm25_mean / 10.0f;
+        if (b->pm25_max  != AC_HIST_NODATA) *peak = b->pm25_max / 10.0f;
+        break;
+    case AC_CH_PM10:
+        if (b->pm10_mean != AC_HIST_NODATA) *mean = *peak = b->pm10_mean / 10.0f;
+        break;
+    case AC_CH_CO2:
+        if (b->co2_mean != AC_HIST_NODATA) *mean = (float)b->co2_mean;
+        if (b->co2_max  != AC_HIST_NODATA) *peak = (float)b->co2_max;
+        break;
+    case AC_CH_VOC:
+        if (b->voc_mean != AC_HIST_NODATA) *mean = (float)b->voc_mean;
+        if (b->voc_max  != AC_HIST_NODATA) *peak = (float)b->voc_max;
+        break;
+    }
+}
+
+ac_window_stat_t ac_history_window(const ac_history_t *h, ac_channel_t ch,
+                                   uint32_t seconds)
+{
+    ac_window_stat_t r = { 0.0f, 0.0f, false };
+    size_t want = seconds / AC_HIST_FINE_BUCKET_S;
+    if (want > AC_HIST_FINE_N) want = AC_HIST_FINE_N;
+
+    double sum = 0.0;
+    uint32_t n = 0;
+    float peak = -1.0f;
+    for (size_t i = 0; i < want; i++) {
+        size_t idx = (h->fine_head + AC_HIST_FINE_N - 1 - i) % AC_HIST_FINE_N;
+        const ac_hist_bucket_t *b = &h->fine[idx];
+        if (b->n == 0) continue;
+        float m, p;
+        bucket_vals(b, ch, &m, &p);
+        if (m >= 0.0f) { sum += m; n++; }
+        if (p > peak) peak = p;
+    }
+
+    /* the bucket in progress */
+    const ac_hist_acc_t *a = &h->acc_fine;
+    switch (ch) {
+    case AC_CH_PM25:
+        if (a->n_pm) { sum += a->pm25 / a->n_pm; n++;
+                       if (a->pm25_max > peak) peak = a->pm25_max; }
+        break;
+    case AC_CH_PM10:
+        if (a->n_pm) { float m = (float)(a->pm10 / a->n_pm); sum += m; n++;
+                       if (m > peak) peak = m; }
+        break;
+    case AC_CH_CO2:
+        if (a->n_co2) { sum += a->co2 / a->n_co2; n++;
+                        if (a->co2_max > peak) peak = a->co2_max; }
+        break;
+    case AC_CH_VOC:
+        if (a->n_voc) { sum += a->voc / a->n_voc; n++;
+                        if (a->voc_max > peak) peak = a->voc_max; }
+        break;
+    }
+
+    if (n == 0) return r;
+    r.mean = (float)(sum / n);
+    r.peak = peak >= 0.0f ? peak : r.mean;
+    r.valid = true;
+    return r;
+}

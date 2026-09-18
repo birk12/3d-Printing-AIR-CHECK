@@ -4,7 +4,7 @@
 
 The electrical design is finished and machine-checked:
 `electronics/schematic/design.py` declares every part, every net and every
-connection, runs 371 rule checks over them, and emits a KiCad-compatible
+connection, runs 344 rule checks over them, and emits a KiCad-compatible
 netlist (`../schematic/aircheck.net`) plus a readable net list
 (`../schematic/NETLIST.md`).
 
@@ -17,19 +17,20 @@ untested, unrouted board file would be worse than shipping nothing.
 Nothing, for the RECOMMENDED build. It uses modules on a small piece of
 prototyping board or a hand-wired carrier, and `docs/ASSEMBLY.md` lists every
 connection explicitly. The design is deliberately small enough to wire by hand:
-one boost converter, three load switches, a button, two connectors and six
-passives.
+one boost converter, two load switches, a button, an RGB LED, two connectors
+and about a dozen passives.
 
 ## If you want to lay it out
 
 1. Import `../schematic/aircheck.net` into KiCad (File > Import > Netlist), or
    redraw the schematic from `../schematic/NETLIST.md` - it is about 25
    components.
-2. Board outline: **88 x 52 mm**, 1.6 mm FR4, two layers. Mounting holes on a
+2. Board outline: **70 x 35 mm**, 1.6 mm FR4, two layers. Mounting holes on a
    3.5 mm inset to match the standoffs in `cad/openscad/aircheck_params.scad`
    (`PCB_HOLE_INSET`).
 3. The Feather sits on 0.1 in female headers along the two long edges, with its
-   USB-C connector at the **left** edge of the board.
+   USB-C connector at the edge that faces the case's USB-C opening (model
+   X = 0; the right-hand side seen from the front of the finished device).
 4. Layout notes that matter:
    * keep the TPS61023's input capacitor, inductor and output capacitor in a
      tight loop - the SPS30 pulls 80 mA for the first 200 ms of every
@@ -38,6 +39,11 @@ passives.
      the boost
    * the SPS30 UART pair and its 330 R series resistors should not run under
      the boost's switching node
+   * the sensor bus goes to GPIO6/GPIO7 (the C6's fixed LP_I2C pads), with its
+     4.7k pull-ups to +3V3_SENS, never to 3V3 and never via the Feather's own
+     SDA/SCL (EDR-11)
+   * the LED (Adafruit 159) stands 8.6 mm off the board face; its common anode
+     goes to VBAT
    * ground pour on both layers, stitched around the boost
    * the SPS30's metal shield is internally tied to its GND pin - keep the
      shield floating mechanically, per the datasheet warning about unintended

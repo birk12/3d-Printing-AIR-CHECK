@@ -5,9 +5,14 @@
 // bare number that is not derived from one of these.
 //
 // Coordinate frame used throughout the model:
-//   X : 0 .. CASE_W   left -> right, seen from the front
+//   X : 0 .. CASE_W   left -> right, seen from the BACK (from inside the case)
 //   Y : 0 .. CASE_H   bottom -> top
 //   Z : 0 .. CASE_D   outer front face -> outer back face
+//
+// Z grows away from someone standing in front of the device, so seen from the
+// front X runs right -> left: the USB-C port at X = 0 is on the RIGHT-hand
+// side of the finished device, the particle sensor on the left.  Text on the
+// front face is mirrored in the model so that it reads correctly on the part.
 //
 // Component dimensions are from the manufacturer documents listed in
 // docs/ENGINEERING_DECISIONS.md.  Fit allowances follow the printing rules
@@ -25,8 +30,8 @@ CHAMFER_TOP       = 0.8;
 $fn               = 64;
 
 // ---------- overall case ---------------------------------------------
-CASE_W            = 122.0;
-CASE_H            = 114.0;
+CASE_W            =  98.0;   // v1.1: no display, portrait battery
+CASE_H            = 102.0;
 CASE_D            =  32.0;
 WALL              =   2.4;   // perimeter wall, 6 x 0.4 mm
 FACE              =   2.4;   // front and back faces
@@ -60,31 +65,26 @@ USBC_CLEAR_H      =   7.5;
 USBC_Y_FROM_PCB   =   1.2;   // underside of the shell above the PCB top
 
 // ---------- carrier board ACC-1 --------------------------------------
-PCB_W             =  96.0;
-PCB_H             =  38.0;
+PCB_W             =  70.0;
+PCB_H             =  35.0;
 PCB_T             =   1.6;
-PCB_X             =  13.0;   // lower-left corner
-PCB_Y             =  51.0;
-PCB_STANDOFF      =   2.5;   // clearance between the display module and the carrier
+PCB_X             =   3.5;   // lower-left corner; USB-C end at the left wall
+PCB_Y             =  54.0;
+
 PCB_HOLE_INSET    =   3.5;   // mounting hole centre inset from the PCB edges
 
-// ---------- 1.54 in e-paper (DS1) -------------------------------------
-// Waveshare module PCB; the SSD1681 panel behind it is 31.8 x 37.32 x 1.05 mm
-// with a 27.6 x 27.6 mm active area (Waveshare 1.54in e-Paper specification).
-EPD_MOD_W         =  48.0;
-EPD_MOD_H         =  33.0;
-EPD_MOD_T         =   3.6;   // PCB + panel + FPC bend
-EPD_ACTIVE        =  27.6;
-EPD_ACTIVE_DX     =   0.0;   // active-area centre offset from the module centre
-EPD_ACTIVE_DY     =   1.5;   // panel sits above the module centre line
-EPD_WIN_MARGIN    =   0.5;   // window is slightly larger than the active area
-EPD_CX            =  61.0;   // window centre
-EPD_CY            =  81.0;
-EPD_BEZEL_CHAMFER =   2.6;   // 45 deg, self supporting when printed face down
+// ---------- status LED (LED1, Adafruit 159, 5 mm RGB) ------------------
+// No window: the LED shines through a thin skin left in the front face.  Works
+// with white or natural filament; with a dark filament cut the skin out.
+LED_CX            =  49.0;
+LED_CY            =  80.0;
+LED_POCKET_D      =   5.4;   // 5 mm LED + clearance
+LED_SKIN          =   0.6;   // three 0.2 mm layers of front face left over it
+LED_BODY_H        =   8.6;   // dome tip to flange
 
 // ---------- user button ------------------------------------------------
-BTN_CX            =  61.0;
-BTN_CY            =  54.5;
+BTN_CX            =  49.0;
+BTN_CY            =  62.0;
 BTN_CAP_D         =   9.0;
 BTN_HOLE_D        =   7.4;   // through the front face
 BTN_TRAVEL        =   0.6;
@@ -103,7 +103,7 @@ BTN_GAP           =   0.3;   // gap between the cap post and the switch stem
 SPS30_W           =  41.2;
 SPS30_H           =  41.2;
 SPS30_T           =  12.2;
-SPS30_X           =  63.4;   // lower-left corner of its footprint
+SPS30_X           =  43.5;   // lower-left corner of its footprint
 SPS30_Y           =   4.4;
 SPS30_Z           =   4.0;   // fully inside the front shell
 // Position of the ports along the port face, measured from the outlet end.
@@ -124,14 +124,14 @@ GAS_BRK_H         =  17.7;
 GAS_BRK_T         =   6.0;
 GAS_BAY_X         =   4.4;
 GAS_BAY_Y         =   4.4;
-GAS_BAY_W         =  53.0;
+GAS_BAY_W         =  34.0;
 GAS_BAY_H         =  41.0;
 
 // ---------- battery (BT1) ---------------------------------------------
 // 606090 pouch: 6.0 x 60 x 90 mm plus the protection circuit and lead.
 BAT_T             =   6.0;
-BAT_W             =  90.0;   // cell laid on its side: 90 across, 60 up
-BAT_H             =  60.0;
+BAT_W             =  60.0;   // v1.1: cell upright, 60 across, 90 up
+BAT_H             =  90.0;
 BAT_PAD           =   1.0;   // foam either side
 BAT_CLEAR         =   1.5;   // extra room so a slightly fatter cell still fits
 
@@ -144,15 +144,18 @@ VENT_SLOT_GAP     =   2.0;
 KEYHOLE_D_BIG     =   8.0;
 KEYHOLE_D_SMALL   =   4.2;
 KEYHOLE_LEN       =   9.0;
-KEYHOLE_SPACING   =  80.0;
+KEYHOLE_SPACING   =  82.0;   // outside the battery bay, see asserts
+KEYHOLE_Y         =  52.0;
 
 // ---------- derived ----------------------------------------------------
 INNER_W           = CASE_W - 2 * WALL;
 INNER_H           = CASE_H - 2 * WALL;
 INNER_D           = CASE_D - 2 * FACE;
 
-// Z plane of the front face of the carrier board
-PCB_Z             = FACE + EPD_MOD_T + PCB_STANDOFF;
+// Z plane of the front face of the carrier board.  Set by the button: it puts
+// the 5.0 mm tactile's stem tip 3.5 mm behind the outer face, 0.3 mm under the
+// printed cap.
+PCB_Z             = 8.5;
 // Z plane of the top of the tallest thing on the carrier (Feather + parts)
 STACK_Z           = PCB_Z + PCB_T + HEADER_H + FEATHER_PCB_T + FEATHER_TOP_PARTS;
 // Z plane of the front face of the battery
@@ -164,22 +167,21 @@ BAT_Z             = CASE_D - FACE - BAT_T - 2 * BAT_PAD;
 // sensor bay; the electronics and the battery are outside the air path.
 SENSOR_BAY_TOP    =  47.0;   // Y of the sealed divider rib
 DIVIDER_T         =   2.0;
-GAS_PARTITION_X   =  59.0;   // sealed wall between the gas bay and the SPS30 bay
+GAS_PARTITION_X   =  38.7;   // sealed wall between the gas bay and the SPS30 bay
 GAS_PARTITION_T   =   2.0;
 
 BAT_X             = (CASE_W - BAT_W) / 2;
-BAT_Y             = 48.0;   // 0.5 mm of air between the bay wall and the top wall
+BAT_Y             =  6.0;   // bay walls end 0.5 mm short of the top and bottom walls
 
-EPD_WIN           = EPD_ACTIVE + 2 * EPD_WIN_MARGIN;
 
 // The seam sits between the front shell and the back shell:
 SEAM_Z            = FRONT_SHELL_D;
 
 // ---------- screw post positions --------------------------------------
-POST_XY = [[6.5, 6.5], [115.5, 6.5], [6.5, 57.0], [115.5, 57.0],
-           [6.5, 107.5], [115.5, 107.5]];
+POST_XY = [[6.5, 6.5], [CASE_W - 6.5, 6.5],
+           [6.5, CASE_H - 6.5], [CASE_W - 6.5, CASE_H - 6.5]];
 
 // ---------- gas sensor breakout placement ------------------------------
-SGP40_X = 14.0;  SGP40_Y = 8.0;
-SCD41_X = 14.0;  SCD41_Y = 28.0;
+SGP40_X = 12.0;  SGP40_Y = 5.5;
+SCD41_X = 12.0;  SCD41_Y = 25.0;
 GAS_STANDOFF = 4.0;

@@ -8,24 +8,31 @@
 #include "freertos/task.h"
 #include "hal/gpio_types.h"
 
-#if SOC_RTCIO_PIN_COUNT > 0
-#include "driver/rtc_io.h"
-#endif
-
 static const char *TAG = "ac_hal";
 
-i2c_master_bus_handle_t g_i2c;   /* shared by the sensor drivers */
+/* Two I2C buses since v1.1.
+ *
+ * g_i2c    sensor bus: SGP40 + SCD41 on the C6's LP_I2C (GPIO6/7, fixed pads),
+ *          with our own 4.7k pull-ups on the switched sensor rail.
+ * g_gauge  the Feather's own bus to its MAX17048 (GPIO19/18).  Its pull-ups
+ *          sit on VSENSOR, the LDO that GPIO20 switches - the same LDO that
+ *          feeds the Feather's WS2812B, which idles at around a milliamp.  So
+ *          this bus only exists while a battery read is in progress.
+ *
+ * See EDR-11 in docs/ENGINEERING_DECISIONS.md for how this was found. */
+i2c_master_bus_handle_t g_i2c;
+i2c_master_bus_handle_t g_gauge;
 
-static esp_err_t i2c_bus_open(void)
+static esp_err_t sensor_bus_open(void)
 {
     i2c_master_bus_config_t bus = {
-        .i2c_port = I2C_NUM_0,
-        .sda_io_num = AC_PIN_I2C_SDA,
-        .scl_io_num = AC_PIN_I2C_SCL,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = LP_I2C_NUM_0,
+        .sda_io_num = AC_PIN_SENS_SDA,
+        .scl_io_num = AC_PIN_SENS_SCL,
+        .lp_source_clk = LP_I2C_SCLK_DEFAULT,
         .glitch_ignore_cnt = 7,
-        /* The Feather already has 5k1 pull-ups to the always-on 3V3 rail.
-         * Enabling the internal ones as well would slow the edges. */
+        /* 4.7k on the carrier, to +3V3_SENS.  No internal pull-ups: they would
+         * stay connected to the always-on domain when the rail is off. */
         .flags.enable_internal_pullup = false,
     };
     return i2c_new_master_bus(&bus, &g_i2c);
@@ -47,23 +54,14 @@ static esp_err_t out_pin(int pin, int level)
 
 esp_err_t ac_hal_init(void)
 {
-    /* All three load switches start open.  The sensor rail is closed again a
-     * few lines down; keeping the order explicit means a reset never leaves
-     * the 5 V boost enabled while the firmware decides what to do. */
+    /* Both load switches start open, and the Feather's VSENSOR LDO starts
+     * off.  Keeping the order explicit means a reset never leaves the 5 V
+     * boost enabled while the firmware decides what to do. */
     ESP_ERROR_CHECK(out_pin(AC_PIN_EN_SPS30, 0));
     ESP_ERROR_CHECK(out_pin(AC_PIN_EN_SENS, 0));
-    ESP_ERROR_CHECK(out_pin(AC_PIN_EN_EPD, 0));
-    /* The Feather's second LDO feeds the NeoPixel and the STEMMA QT port.
-     * Neither is used, and leaving it on costs about 60 uA. */
-    ESP_ERROR_CHECK(out_pin(AC_PIN_STEMMA_PWR, 0));
-
-    esp_err_t err = i2c_bus_open();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "i2c bus: %s", esp_err_to_name(err));
-        return err;
-    }
-    ESP_ERROR_CHECK(ac_rail_sensors(true));
-    return ESP_OK;
+    ESP_ERROR_CHECK(out_pin(AC_PIN_I2C_PWR, 0));
+    ESP_ERROR_CHECK(ac_led_init());
+    return ac_rail_sensors(true);
 }
 
 esp_err_t ac_rail_sps30(bool on)
@@ -72,7 +70,7 @@ esp_err_t ac_rail_sps30(bool on)
     if (err != ESP_OK) return err;
     if (on) {
         /* TPS22918 turn-on plus TPS61023 soft start, then the SPS30's own
-         * boot.  The datasheet does not give a boot time, so we use the
+         * boot.  The datasheet does not give a boot time, so we allow the
          * documented 20 ms power-up plus margin before talking to it. */
         vTaskDelay(pdMS_TO_TICKS(120));
     }
@@ -82,29 +80,16 @@ esp_err_t ac_rail_sps30(bool on)
 esp_err_t ac_rail_sensors(bool on)
 {
     if (!on) {
-        /* With the rail down, the board's 5k1 pull-ups would push about
-         * 0.5 mA per line into the unpowered sensors' ESD clamps.  Holding
-         * both lines low removes the path entirely.  The bus has to be torn
-         * down first, otherwise the I2C peripheral still owns the pads and
-         * the GPIO writes do nothing.
-         *
-         * This is also why the rail is only ever switched off while the CPU is
-         * awake: GPIO18/19 are not RTC pins and cannot be held through deep
-         * sleep. In normal operation the rail stays up. */
-        /* Every device has to be detached before the bus can be deleted, and
-         * the drivers have to forget their handles or they would use a
-         * dangling one after the rail comes back. */
+        /* The pull-ups live on this rail, so switching it off also removes
+         * every path into the unpowered sensors - no need to hold the lines.
+         * Devices are detached first so the drivers do not keep handles to a
+         * bus that no longer exists. */
         ac_sgp40_detach();
         ac_scd41_detach();
-        ac_battery_detach();
         if (g_i2c) {
             i2c_del_master_bus(g_i2c);
             g_i2c = NULL;
         }
-        gpio_set_direction(AC_PIN_I2C_SDA, GPIO_MODE_OUTPUT);
-        gpio_set_direction(AC_PIN_I2C_SCL, GPIO_MODE_OUTPUT);
-        gpio_set_level(AC_PIN_I2C_SDA, 0);
-        gpio_set_level(AC_PIN_I2C_SCL, 0);
         return gpio_set_level(AC_PIN_EN_SENS, 0);
     }
 
@@ -112,23 +97,43 @@ esp_err_t ac_rail_sensors(bool on)
     if (err != ESP_OK) return err;
     vTaskDelay(pdMS_TO_TICKS(20));
     if (!g_i2c) {
-        err = i2c_bus_open();
-        if (err != ESP_OK) ESP_LOGE(TAG, "i2c reopen: %s", esp_err_to_name(err));
+        err = sensor_bus_open();
+        if (err != ESP_OK) ESP_LOGE(TAG, "sensor bus: %s", esp_err_to_name(err));
     }
     return err;
 }
 
-esp_err_t ac_rail_epd(bool on)
+esp_err_t ac_gauge_bus(bool on)
 {
-    esp_err_t err = gpio_set_level(AC_PIN_EN_EPD, on ? 1 : 0);
-    if (on) vTaskDelay(pdMS_TO_TICKS(10));
-    return err;
+    if (on) {
+        gpio_set_level(AC_PIN_I2C_PWR, 1);
+        vTaskDelay(pdMS_TO_TICKS(3));           /* LDO start-up */
+        if (g_gauge) return ESP_OK;
+        i2c_master_bus_config_t bus = {
+            .i2c_port = I2C_NUM_0,
+            .sda_io_num = AC_PIN_GAUGE_SDA,
+            .scl_io_num = AC_PIN_GAUGE_SCL,
+            .clk_source = I2C_CLK_SRC_DEFAULT,
+            .glitch_ignore_cnt = 7,
+            .flags.enable_internal_pullup = false,   /* R3 on the Feather */
+        };
+        return i2c_new_master_bus(&bus, &g_gauge);
+    }
+    ac_battery_detach();
+    if (g_gauge) {
+        i2c_del_master_bus(g_gauge);
+        g_gauge = NULL;
+    }
+    /* Release both lines: with VSENSOR off, R3 pulls them to ~0 V, and a line
+     * driven high here would back-feed VSENSOR (and the WS2812B) through R3. */
+    gpio_set_direction(AC_PIN_GAUGE_SDA, GPIO_MODE_INPUT);
+    gpio_set_direction(AC_PIN_GAUGE_SCL, GPIO_MODE_INPUT);
+    return gpio_set_level(AC_PIN_I2C_PWR, 0);
 }
 
 void ac_rail_hold(bool hold)
 {
-#if SOC_RTCIO_PIN_COUNT > 0
-    const int pins[] = { AC_PIN_EN_SPS30, AC_PIN_EN_SENS, AC_PIN_EN_EPD };
+    const int pins[] = { AC_PIN_EN_SPS30, AC_PIN_EN_SENS };
     for (unsigned i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
         if (hold) gpio_hold_en(pins[i]);
         else      gpio_hold_dis(pins[i]);
@@ -140,8 +145,5 @@ void ac_rail_hold(bool hold)
      * this API does not exist there. */
     if (hold) gpio_deep_sleep_hold_en();
     else      gpio_deep_sleep_hold_dis();
-#endif
-#else
-    (void)hold;
 #endif
 }

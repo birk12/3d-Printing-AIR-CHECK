@@ -71,6 +71,16 @@ size_t ac_history_recent_coarse(const ac_history_t *h, ac_hist_bucket_t *out, si
 float ac_history_pm25_trend(const ac_history_t *h, uint32_t minutes);
 size_t ac_history_bytes(void);
 
+/* Peak and mean over the last `seconds`, for the Matter PeakMeasuredValue and
+ * AverageMeasuredValue attributes that the dashboard reads.  Built from the
+ * 5 min ring plus the bucket still being filled, so a spike in the last few
+ * minutes is not missed.  PM10 only stores a mean per bucket, so its "peak" is
+ * the highest 5 min mean - documented, not hidden. */
+typedef enum { AC_CH_PM25 = 0, AC_CH_PM10, AC_CH_CO2, AC_CH_VOC } ac_channel_t;
+typedef struct { float peak; float mean; bool valid; } ac_window_stat_t;
+ac_window_stat_t ac_history_window(const ac_history_t *h, ac_channel_t ch,
+                                   uint32_t seconds);
+
 #ifdef __cplusplus
 }
 #endif

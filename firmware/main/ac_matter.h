@@ -6,17 +6,18 @@
  *   ep 0  Root Node          + Power Source (battery)
  *   ep 1  Air Quality Sensor 0x002C
  *           Air Quality                          0x005B
- *           PM2.5 Concentration Measurement      0x042A
- *           PM10  Concentration Measurement      0x042D
- *           PM1   Concentration Measurement      0x042C
- *           CO2   Concentration Measurement      0x040D
- *           TVOC  Concentration Measurement      0x042E
+ *           PM2.5 Concentration Measurement      0x042A  MEA + PEA + AVG (24 h)
+ *           PM10  Concentration Measurement      0x042D  MEA + PEA + AVG (24 h)
+ *           PM1   Concentration Measurement      0x042C  MEA
+ *           CO2   Concentration Measurement      0x040D  MEA + PEA + AVG (24 h)
+ *           TVOC  Concentration Measurement      0x042E  MEA + PEA + AVG (24 h)
  *   ep 2  Temperature Sensor 0x0302
  *   ep 3  Humidity Sensor    0x0307
  *
  * What Apple Home does and does not do with this is documented in
  * docs/APPLE_HOME.md, including the two known gaps (PM1 has no HomeKit
- * equivalent, and the VOC Index is not a concentration).
+ * equivalent, and the VOC Index is not a concentration).  What the dashboard
+ * reads, and how, is in docs/DASHBOARD_INTERFACE.md.
  */
 #pragma once
 
@@ -36,6 +37,10 @@ esp_err_t ac_matter_publish(const ac_engine_t *e);
 esp_err_t ac_matter_publish_battery(float percent, float volts, bool charging,
                                     bool low);
 bool ac_matter_is_commissioned(void);
+/* Called with true/false when a controller starts/stops Identify. */
+void ac_matter_set_identify_cb(void (*cb)(bool on));
+/* Publish the configured device name as Basic Information / NodeLabel. */
+esp_err_t ac_matter_set_label(const char *label);
 bool ac_matter_thread_attached(void);
 esp_err_t ac_matter_open_commissioning_window(void);
 esp_err_t ac_matter_factory_reset(void);

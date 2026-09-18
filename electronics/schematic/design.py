@@ -47,7 +47,6 @@ RAILS = {
     "+5V":        Rail("+5V", 4.90, 5.00, 5.10, "TPS61023 boost"),
     "+3V3":       Rail("+3V3", 3.20, 3.30, 3.40, "Feather RT9080/AP2112 LDO, always on"),
     "+3V3_SENS":  Rail("+3V3_SENS", 3.20, 3.30, 3.40, "+3V3 behind load switch SW2"),
-    "+3V3_EPD":   Rail("+3V3_EPD", 3.20, 3.30, 3.40, "+3V3 behind load switch SW3"),
     "GND":        Rail("GND", 0.0, 0.0, 0.0, "system ground"),
 }
 
@@ -97,7 +96,9 @@ PARTS: list[Part] = [
         why="ESP32-C6-MINI-1 (4 MB flash, 512 kB SRAM) with native 802.15.4 for Thread, "
             "USB-C, MCP73831 LiPo charger (R_PROG 5.1k -> ~196 mA), RT9080/AP2112 3V3 LDO "
             "and a MAX17048 fuel gauge already on board. Removes the three highest-risk "
-            "blocks (charger, fuel gauge, USB-C) from the DIY build.",
+            "blocks (charger, fuel gauge, USB-C) from the DIY build. NOTE, from Adafruit's "
+            "own schematic: the board's I2C pull-ups (R3, 10k) and its WS2812B sit on "
+            "VSENSOR, the second LDO switched by GPIO20. See EDR-11.",
         price_eur=22.0, supplier="Adafruit / Mouser / Digi-Key / Berrybase",
         vsupply_min=3.2, vsupply_max=5.5, io_vmax=3.6,
         datasheet="https://learn.adafruit.com/adafruit-esp32-c6-feather",
@@ -136,19 +137,6 @@ PARTS: list[Part] = [
         datasheet="Sensirion SCD4x Datasheet v1.5, July 2023",
     ),
     Part(
-        ref="DS1", value="1.54in e-Paper 200x200", mfr="Waveshare", mpn="12955 (SSD1681)",
-        footprint="module 48 x 33 mm, panel active area 27.6 x 27.6 mm",
-        pins={"VCC": "3.3V", "GND": "ground", "DIN": "SPI MOSI", "CLK": "SPI SCK",
-              "CS": "chip select", "DC": "data/command", "RST": "reset", "BUSY": "busy out"},
-        why="Bistable display: zero current to hold an image, so the screen can stay "
-            "readable forever without costing battery. 184 dpi is enough for a 6 mm "
-            "primary numeral at desk distance.",
-        price_eur=17.0, supplier="Waveshare / Berrybase / Amazon",
-        vsupply_min=2.5, vsupply_max=3.7, io_vmax=3.7,
-        i_typ_ma=8.0, i_max_ma=15.0,
-        datasheet="Waveshare 1.54inch e-Paper specification (SSD1681)",
-    ),
-    Part(
         ref="U4", value="TPS61023", mfr="Texas Instruments", mpn="TPS61023DRLR",
         footprint="SOT-563",
         pins={"1": "VIN", "2": "EN", "3": "GND", "4": "FB", "5": "SW", "6": "VOUT"},
@@ -177,15 +165,6 @@ PARTS: list[Part] = [
         price_eur=0.85, supplier="Mouser / Digi-Key",
         vsupply_min=0.8, vsupply_max=5.5, i_max_ma=2000.0,
     ),
-    Part(
-        ref="SW3", value="TPS22918", mfr="Texas Instruments", mpn="TPS22918DBVR",
-        footprint="SOT-23-6",
-        pins={"1": "VIN", "2": "GND", "3": "ON", "4": "CT", "5": "VOUT", "6": "VOUT"},
-        why="Removes the e-paper module's standby current and gives a clean recovery "
-            "from a latched/ghosted panel.",
-        price_eur=0.85, supplier="Mouser / Digi-Key",
-        vsupply_min=0.8, vsupply_max=5.5, i_max_ma=2000.0,
-    ),
     Part(ref="L1", value="2.2 uH, >=2 A sat", mfr="Murata", mpn="DFE252012F-2R2M",
          footprint="2520 (2.5 x 2.0 mm)", pins={"1": "a", "2": "b"},
          why="TPS61023 reference inductor.", price_eur=0.45, supplier="Mouser"),
@@ -204,9 +183,6 @@ PARTS: list[Part] = [
     Part(ref="C4", value="1 uF / 16 V X7R", mfr="Murata", mpn="GRM188R71C105KA12D",
          footprint="0603", pins={"1": "+", "2": "-"},
          why="+3V3_SENS decoupling.", price_eur=0.10, supplier="Mouser"),
-    Part(ref="C5", value="1 uF / 16 V X7R", mfr="Murata", mpn="GRM188R71C105KA12D",
-         footprint="0603", pins={"1": "+", "2": "-"},
-         why="+3V3_EPD decoupling.", price_eur=0.10, supplier="Mouser"),
     Part(ref="C6", value="100 nF / 16 V X7R", mfr="Murata", mpn="GRM188R71C104KA01D",
          footprint="0603", pins={"1": "+", "2": "-"},
          why="Button RC debounce with R3.", price_eur=0.05, supplier="Mouser"),
@@ -220,11 +196,8 @@ PARTS: list[Part] = [
     Part(ref="R3", value="100 k", mfr="Yageo", mpn="RC0603FR-07100KL", footprint="0603",
          pins={"1": "a", "2": "b"},
          why="Button pull-up to +3V3 (always-on rail, so the button can wake the MCU "
-             "out of deep sleep).", price_eur=0.02, supplier="Mouser"),
-    Part(ref="R4", value="100 k", mfr="Yageo", mpn="RC0603FR-07100KL", footprint="0603",
-         pins={"1": "a", "2": "b"},
-         why="Pull-down on EPD_BUSY so the MCU reads a defined level while the display "
-             "rail is switched off.", price_eur=0.02, supplier="Mouser"),
+             "out of deep sleep). The button is on GPIO1, an RTC pin.",
+         price_eur=0.02, supplier="Mouser"),
     Part(ref="R5", value="1 M", mfr="Yageo", mpn="RC0603FR-071ML", footprint="0603",
          pins={"1": "a", "2": "b"},
          why="Bleeder on +3V3_SENS so the rail actually collapses when SW2 opens.",
@@ -238,6 +211,34 @@ PARTS: list[Part] = [
              "3.5 mm behind the front face, leaving 0.3 mm of travel under the "
              "printed cap.",
          price_eur=0.30, supplier="Mouser / Reichelt"),
+    Part(ref="R6", value="4.7 k", mfr="Yageo", mpn="RC0603FR-074K7L", footprint="0603",
+         pins={"1": "a", "2": "b"},
+         why="SDA pull-up for the sensor bus, to the *switched* sensor rail: when the "
+             "rail is off there is no pull-up left to back-feed the unpowered sensors.",
+         price_eur=0.02, supplier="Mouser"),
+    Part(ref="R7", value="4.7 k", mfr="Yageo", mpn="RC0603FR-074K7L", footprint="0603",
+         pins={"1": "a", "2": "b"},
+         why="SCL pull-up for the sensor bus, same reasoning as R6.",
+         price_eur=0.02, supplier="Mouser"),
+    Part(ref="LED1", value="RGB LED 5 mm diffused, common anode", mfr="Adafruit",
+         mpn="159", footprint="THT 5 mm, 4 leads",
+         pins={"A": "common anode", "R": "red cathode", "G": "green cathode",
+               "B": "blue cathode"},
+         why="The only user-facing output now that the sensor has no display: air "
+             "quality at a glance, pairing mode, low battery. Anode on VBAT so green "
+             "and blue have forward-voltage headroom; the cathodes are sunk by GPIOs. "
+             "Shines through a 0.6 mm skin left in the front face, no hole.",
+         price_eur=1.20, supplier="Adafruit / Berrybase",
+         vsupply_min=0.0, vsupply_max=5.0),
+    Part(ref="R8", value="1 k", mfr="Yageo", mpn="RC0603FR-071KL", footprint="0603",
+         pins={"1": "a", "2": "b"},
+         why="Red: (3.8 V - 2.0 V) / 1k = 1.8 mA.", price_eur=0.02, supplier="Mouser"),
+    Part(ref="R9", value="330 R", mfr="Yageo", mpn="RC0603FR-07330RL", footprint="0603",
+         pins={"1": "a", "2": "b"},
+         why="Green: (3.8 V - 3.1 V) / 330R = 2.1 mA.", price_eur=0.02, supplier="Mouser"),
+    Part(ref="R10", value="330 R", mfr="Yageo", mpn="RC0603FR-07330RL", footprint="0603",
+         pins={"1": "a", "2": "b"},
+         why="Blue: as green.", price_eur=0.02, supplier="Mouser"),
     Part(ref="J1", value="JST ZHR-5 cable", mfr="JST", mpn="ZHR-5 + SZH-002T-P0.5",
          footprint="1.5 mm pitch, 5 way", pins={"1": "VDD", "2": "RX", "3": "TX",
                                                 "4": "SEL", "5": "GND"},
@@ -247,15 +248,16 @@ PARTS: list[Part] = [
          mpn="606090 / PL-606090-4000 class",
          footprint="6.0 x 60 x 90 mm + PCM, JST PH 2.0 lead",
          pins={"+": "positive", "-": "negative"},
-         why="Largest cell that fits a 120 x 104 mm case with a sane ~24 h charge time "
+         why="Largest cell that fits a 98 x 102 mm case upright, with a sane ~24 h charge time "
              "at the Feather's 196 mA charger. Must include a PCM (over-charge, "
              "over-discharge, over-current and short-circuit protection).",
          price_eur=18.0, supplier="Eremit / AKKUparts / Adafruit equivalent",
          vsupply_min=3.0, vsupply_max=4.2),
     Part(ref="PCB1", value="AIR CHECK carrier board (ACC-1)", mfr="JLCPCB/Aisler",
-         mpn="ACC-1 rev A", footprint="2-layer, 88 x 52 mm, 1.6 mm FR4",
-         pins={}, why="Carries the boost, the three load switches, the button, the "
-                      "SPS30 connector and the display header, and holds the Feather.",
+         mpn="ACC-1 rev B", footprint="2-layer, 70 x 35 mm, 1.6 mm FR4",
+         pins={}, why="Carries the boost, the two load switches, the button, the RGB "
+                      "LED, the sensor-bus pull-ups and the SPS30 connector, and "
+                      "holds the Feather.",
          price_eur=8.0, supplier="JLCPCB / Aisler / PCBWay"),
     # ---- optional ---------------------------------------------------------
     Part(ref="X1", value="M2.5 brass heat-set inserts (12x) + M2.5x8 screws",
@@ -283,41 +285,39 @@ PARTS_BY_REF = {p.ref: p for p in PARTS}
 
 NETS: dict[str, list[tuple[str, str]]] = {
     # ---- power ------------------------------------------------------------
-    "VBAT": [("M1", "BAT"), ("SW1", "1"), ("BT1", "+")],
-    "GND": [("M1", "GND"), ("U1", "5"), ("U2", "GND"), ("U3", "GND"), ("DS1", "GND"),
-            ("U4", "3"), ("SW1", "2"), ("SW2", "2"), ("SW3", "2"),
-            ("C1", "2"), ("C2", "2"), ("C3", "2"), ("C4", "2"), ("C5", "2"), ("C6", "2"),
-            ("R4", "2"), ("R5", "2"), ("SW4", "2"), ("J1", "5"), ("BT1", "-")],
+    "VBAT": [("M1", "BAT"), ("SW1", "1"), ("BT1", "+"), ("LED1", "A")],
+    "GND": [("M1", "GND"), ("U1", "5"), ("U2", "GND"), ("U3", "GND"),
+            ("U4", "3"), ("SW1", "2"), ("SW2", "2"),
+            ("C1", "2"), ("C2", "2"), ("C3", "2"), ("C4", "2"), ("C6", "2"),
+            ("R5", "2"), ("SW4", "2"), ("J1", "5"), ("BT1", "-")],
     "VBOOST_IN": [("SW1", "5"), ("SW1", "6"), ("U4", "1"), ("U4", "2"), ("C1", "1")],
     "+5V": [("U4", "6"), ("C2", "1"), ("C3", "1"), ("J1", "1")],
     "SW_NODE": [("U4", "5"), ("L1", "2")],
     "L1_IN": [("L1", "1")],          # tied to VBOOST_IN below, see ERC note
-    "+3V3": [("M1", "3V"), ("SW2", "1"), ("SW3", "1"), ("R3", "1")],
+    "+3V3": [("M1", "3V"), ("SW2", "1"), ("R3", "1")],
     "+3V3_SENS": [("SW2", "5"), ("SW2", "6"), ("U2", "VIN"), ("U3", "VIN"),
-                  ("C4", "1"), ("R5", "1")],
-    "+3V3_EPD": [("SW3", "5"), ("SW3", "6"), ("DS1", "VCC"), ("C5", "1")],
+                  ("C4", "1"), ("R5", "1"), ("R6", "1"), ("R7", "1")],
     # ---- control ----------------------------------------------------------
     "EN_SPS30_5V": [("M1", "A5"), ("SW1", "3")],          # GPIO2, RTC
     "EN_SENS_3V3": [("M1", "A4"), ("SW2", "3")],          # GPIO3, RTC
-    "EN_EPD_3V3":  [("M1", "A0"), ("SW3", "3")],          # GPIO1, RTC
     # ---- SPS30 over UART --------------------------------------------------
     "SPS30_RX": [("M1", "TX"), ("R1", "1")],              # GPIO16 -> sensor RX
     "SPS30_RX_S": [("R1", "2"), ("J1", "2")],
     "SPS30_TX": [("M1", "RX"), ("R2", "1")],              # GPIO17 <- sensor TX
     "SPS30_TX_S": [("R2", "2"), ("J1", "3")],
     "SPS30_SEL": [("J1", "4")],                           # left floating = UART mode
-    # ---- I2C --------------------------------------------------------------
-    "SDA": [("M1", "SDA"), ("U2", "SDA"), ("U3", "SDA")],  # GPIO19, 5k1 pull-up on M1
-    "SCL": [("M1", "SCL"), ("U2", "SCL"), ("U3", "SCL")],  # GPIO18, 5k1 pull-up on M1
-    # ---- display ----------------------------------------------------------
-    "EPD_SCK":  [("M1", "SCK"), ("DS1", "CLK")],          # GPIO21
-    "EPD_MOSI": [("M1", "MOSI"), ("DS1", "DIN")],         # GPIO22
-    "EPD_CS":   [("M1", "D12"), ("DS1", "CS")],           # GPIO14
-    "EPD_DC":   [("M1", "MISO"), ("DS1", "DC")],          # GPIO23 (display is write-only)
-    "EPD_RST":  [("M1", "D9"), ("DS1", "RST")],           # GPIO7, RTC
-    "EPD_BUSY": [("M1", "D11"), ("DS1", "BUSY"), ("R4", "1")],  # GPIO0
+    # ---- sensor I2C bus: LP_I2C, fixed pads GPIO6/GPIO7 on the C6 ---------
+    "SENS_SDA": [("M1", "A2"), ("U2", "SDA"), ("U3", "SDA"), ("R6", "2")],   # GPIO6
+    "SENS_SCL": [("M1", "D9"), ("U2", "SCL"), ("U3", "SCL"), ("R7", "2")],   # GPIO7
+    # ---- status LED, common anode on VBAT, cathodes sunk by GPIOs ---------
+    "LED_R": [("M1", "SCK"), ("R8", "1")],                # GPIO21
+    "LED_R_K": [("R8", "2"), ("LED1", "R")],
+    "LED_G": [("M1", "MOSI"), ("R9", "1")],               # GPIO22
+    "LED_G_K": [("R9", "2"), ("LED1", "G")],
+    "LED_B": [("M1", "MISO"), ("R10", "1")],              # GPIO23
+    "LED_B_K": [("R10", "2"), ("LED1", "B")],
     # ---- button -----------------------------------------------------------
-    "BTN": [("M1", "A2"), ("R3", "2"), ("SW4", "1"), ("C6", "1")],  # GPIO6, RTC wake
+    "BTN": [("M1", "A0"), ("R3", "2"), ("SW4", "1"), ("C6", "1")],  # GPIO1, RTC wake
 }
 
 # A few nets are shorted on the board; declare them so the ERC does not complain.
@@ -326,7 +326,7 @@ NET_ALIASES = [("L1_IN", "VBOOST_IN")]
 # Which rail each net belongs to (for the voltage-compatibility check)
 NET_RAIL = {
     "VBAT": "VBAT", "GND": "GND", "VBOOST_IN": "VBOOST_IN", "+5V": "+5V",
-    "+3V3": "+3V3", "+3V3_SENS": "+3V3_SENS", "+3V3_EPD": "+3V3_EPD",
+    "+3V3": "+3V3", "+3V3_SENS": "+3V3_SENS",
 }
 
 # --------------------------------------------------------------------------
@@ -349,25 +349,30 @@ C6_RTC_GPIO = set(range(0, 8))
 C6_STRAPPING = {4, 5, 8, 9, 15}
 
 GPIO_MAP = [
-    GpioUse(1,  "A0",   "EN_EPD_3V3",  "out", True,  False, "held LOW in deep sleep"),
+    GpioUse(1,  "A0",   "BTN",         "in",  True,  False, "EXT1 deep-sleep wake, active low"),
     GpioUse(2,  "A5",   "EN_SPS30_5V", "out", True,  False, "held LOW in deep sleep"),
     GpioUse(3,  "A4",   "EN_SENS_3V3", "out", True,  False, "held HIGH in deep sleep"),
-    GpioUse(6,  "A2/D6", "BTN",        "in",  True,  False, "EXT1 deep-sleep wake, active low"),
-    GpioUse(0,  "D11",  "EPD_BUSY",    "in",  True,  False, "100k pull-down"),
-    GpioUse(7,  "D9",   "EPD_RST",     "out", True,  False, ""),
-    GpioUse(14, "D12",  "EPD_CS",      "out", False, False, ""),
+    GpioUse(6,  "A2/D6", "SENS_SDA",   "bidir", True, False,
+            "LP_I2C SDA - a fixed IO_MUX pad on the C6, not remappable"),
+    GpioUse(7,  "D9",   "SENS_SCL",    "bidir", True, False,
+            "LP_I2C SCL - a fixed IO_MUX pad on the C6, not remappable"),
     GpioUse(16, "TX",   "SPS30_RX",    "out", False, False, "UART1 TX, Hi-Z in deep sleep"),
     GpioUse(17, "RX",   "SPS30_TX",    "in",  False, False, "UART1 RX, pull-up disabled"),
-    GpioUse(18, "SCL",  "SCL",         "bidir", False, False, "onboard 5k1 pull-up"),
-    GpioUse(19, "SDA",  "SDA",         "bidir", False, False, "onboard 5k1 pull-up"),
-    GpioUse(21, "SCK",  "EPD_SCK",     "out", False, False, ""),
-    GpioUse(22, "MOSI", "EPD_MOSI",    "out", False, False, ""),
-    GpioUse(23, "MISO", "EPD_DC",      "out", False, False, "repurposed: the panel is write-only"),
-    GpioUse(20, "-",    "NEOPIXEL_I2C_POWER", "out", False, False,
-            "driven LOW: disables the second LDO, the NeoPixel and the STEMMA QT port"),
+    GpioUse(18, "SCL",  "GAUGE_SCL",   "bidir", False, False,
+            "Feather-internal bus to the MAX17048; pull-up only while GPIO20 is high"),
+    GpioUse(19, "SDA",  "GAUGE_SDA",   "bidir", False, False,
+            "Feather-internal bus to the MAX17048; pull-up only while GPIO20 is high"),
+    GpioUse(20, "-",    "I2C_PWR",     "out", False, False,
+            "Feather VSENSOR LDO: gauge-bus pull-ups AND the WS2812B. Pulsed high "
+            "for ~50 ms per battery read, low otherwise"),
+    GpioUse(21, "SCK",  "LED_R",       "out", False, False, "sink, active low"),
+    GpioUse(22, "MOSI", "LED_G",       "out", False, False, "sink, active low"),
+    GpioUse(23, "MISO", "LED_B",       "out", False, False, "sink, active low"),
 ]
 
 RESERVED_GPIO = {
+    0:  "free (was EPD_BUSY in v1.0)",
+    14: "free (was EPD_CS in v1.0)",
     4:  "ESP32-C6 strapping pin (A1) - left unconnected",
     5:  "ESP32-C6 strapping pin (A3/D5) - left unconnected",
     8:  "ESP32-C6 strapping pin (D10) - left unconnected",
@@ -377,9 +382,11 @@ RESERVED_GPIO = {
     13: "native USB D+",
 }
 
-I2C_BUS = {0x36: "MAX17048 fuel gauge (on the Feather)",
-           0x59: "SGP40",
-           0x62: "SCD41"}
+# Two buses since v1.1 - see EDR-11.
+I2C_BUS = {0x59: "SGP40 (sensor bus, LP_I2C, GPIO6/7)",
+           0x62: "SCD41 (sensor bus, LP_I2C, GPIO6/7)"}
+GAUGE_BUS = {0x36: "MAX17048 fuel gauge (Feather bus, GPIO19/18)",
+             0x38: "AHT20, if fitted - it is on Adafruit's schematic (Feather bus)"}
 
 
 # --------------------------------------------------------------------------
@@ -429,7 +436,7 @@ def run_erc() -> Erc:
 
     # 4. supply-voltage compatibility for every powered part
     supply_of = {
-        "U1": "+5V", "U2": "+3V3_SENS", "U3": "+3V3_SENS", "DS1": "+3V3_EPD",
+        "U1": "+5V", "U2": "+3V3_SENS", "U3": "+3V3_SENS",
         "M1": "VBAT",
     }
     for ref, railname in supply_of.items():
@@ -447,18 +454,33 @@ def run_erc() -> Erc:
             "SPS30 VIH(min) 2.31 V must be below the MCU VOH at 3.3 V")
     e.check(PARTS_BY_REF["U1"].io_vmax >= 3.6,
             "SPS30 I/O must tolerate the 3.3 V MCU rail")
-    for ref in ("U2", "U3", "DS1"):
+    for ref in ("U2", "U3"):
         e.check(PARTS_BY_REF[ref].io_vmax >= 3.4,
                 f"{ref} I/O must tolerate the +3V3 rail at its maximum")
 
-    # 6. I2C address uniqueness
-    addrs = [p.i2c_addr for p in PARTS if p.i2c_addr is not None] + [0x36]
+    # 6. I2C address uniqueness, per bus
+    addrs = [p.i2c_addr for p in PARTS if p.i2c_addr is not None]
     e.check(len(addrs) == len(set(addrs)), f"duplicate I2C address in {addrs}")
-    for a in addrs:
+    e.check(set(addrs) == set(I2C_BUS), "sensor-bus table and parts disagree")
+    for a in list(I2C_BUS) + list(GAUGE_BUS):
         e.check(0x08 <= a <= 0x77, f"I2C address 0x{a:02x} outside the 7-bit range")
 
-    # 7. I2C pull-ups present exactly once
-    e.check(True, "I2C pull-ups: 5k1 to +3V3 on the Feather, none on the carrier")
+    # 7. I2C pull-ups: exactly one pair per bus, and on the rail that powers
+    #    the devices on that bus, so a switched-off rail leaves no pull-up
+    #    feeding unpowered sensors.
+    sda = NETS["SENS_SDA"]; scl = NETS["SENS_SCL"]
+    pu_sda = [r for r, _ in sda if r.startswith("R")]
+    pu_scl = [r for r, _ in scl if r.startswith("R")]
+    e.check(len(pu_sda) == 1 and len(pu_scl) == 1,
+            f"sensor bus needs exactly one pull-up per line, has {pu_sda} / {pu_scl}")
+    for r in pu_sda + pu_scl:
+        other = [n for n, c in NETS.items() if (r, "1") in c]
+        e.check(other == ["+3V3_SENS"],
+                f"{r} must pull up to +3V3_SENS, not {other}")
+    # the C6's LP_I2C is hard-wired to GPIO6 (SDA) and GPIO7 (SCL)
+    gm = {g.signal: g.gpio for g in GPIO_MAP}
+    e.check(gm.get("SENS_SDA") == 6 and gm.get("SENS_SCL") == 7,
+            "LP_I2C on the ESP32-C6 only exists on GPIO6 (SDA) / GPIO7 (SCL)")
 
     # 8. GPIO usage
     used = {}
@@ -494,7 +516,7 @@ def run_erc() -> Erc:
             f"charge current {i_charge_ma:.0f} mA gives an unusable charge time", warn=True)
 
     # 11. every load switch is driven by an RTC GPIO so it holds state in sleep
-    for sw, net in (("SW1", "EN_SPS30_5V"), ("SW2", "EN_SENS_3V3"), ("SW3", "EN_EPD_3V3")):
+    for sw, net in (("SW1", "EN_SPS30_5V"), ("SW2", "EN_SENS_3V3")):
         gp = [g for g in GPIO_MAP if g.signal == net]
         e.check(len(gp) == 1 and gp[0].gpio in C6_RTC_GPIO,
                 f"{sw} enable net {net} is not on an RTC GPIO")
@@ -551,9 +573,10 @@ def netlist_markdown() -> str:
     w("  `-- RT9080/AP2112 LDO --> +3V3 (always on)")
     w("")
     w("VBAT --[SW1 TPS22918, GPIO2]--> VBOOST_IN --[TPS61023 + L1]--> +5V --> SPS30")
-    w("+3V3 --[SW2 TPS22918, GPIO3]--> +3V3_SENS --> SGP40, SCD41")
-    w("+3V3 --[SW3 TPS22918, GPIO1]--> +3V3_EPD  --> 1.54in e-paper")
-    w("+3V3 ------------------------->  ESP32-C6, MAX17048, button pull-up")
+    w("+3V3 --[SW2 TPS22918, GPIO3]--> +3V3_SENS --> SGP40, SCD41, sensor-bus pull-ups")
+    w("+3V3 ------------------------->  ESP32-C6, button pull-up")
+    w("+3V3 --[Feather LDO U5, GPIO20]--> VSENSOR --> gauge-bus pull-ups, WS2812B (Feather)")
+    w("VBAT ------------------------->  MAX17048 (Feather), status LED anode")
     w("```")
     w("")
     w("## Rails")
@@ -578,12 +601,30 @@ def netlist_markdown() -> str:
     for gpio, why in sorted(RESERVED_GPIO.items()):
         w(f"| {gpio} | {why} |")
     w("")
-    w("## I2C bus (GPIO19 = SDA, GPIO18 = SCL, 5k1 pull-ups on the Feather, 100 kHz)")
+    w("## I2C buses")
+    w("")
+    w("**Sensor bus** - LP_I2C, GPIO6 = SDA, GPIO7 = SCL (fixed pads), 4.7k pull-ups "
+      "to +3V3_SENS on the carrier, 100 kHz:")
     w("")
     w("| address | device |")
     w("|---|---|")
     for a, d in sorted(I2C_BUS.items()):
         w(f"| 0x{a:02X} | {d} |")
+    w("")
+    w("**Gauge bus** - HP I2C, GPIO19 = SDA, GPIO18 = SCL, the Feather's own 10k "
+      "pull-ups on VSENSOR. Only usable while GPIO20 is high:")
+    w("")
+    w("| address | device |")
+    w("|---|---|")
+    for a, d in sorted(GAUGE_BUS.items()):
+        w(f"| 0x{a:02X} | {d} |")
+    w("")
+    w("Why two buses: on the Feather, the I2C pull-ups and the WS2812B share one "
+      "switched LDO. Keeping it on for the sensors would also keep the WS2812B "
+      "powered, and a WS2812B idles at around a milliamp - more than the whole "
+      "radio. So the sensors get their own bus with their own pull-ups, and the "
+      "Feather's LDO is only switched on for the few milliseconds a battery read "
+      "takes.")
     w("")
     w("The SPS30 is **not** on this bus. It uses its UART (SHDLC) interface, which "
       "Sensirion recommends for cabled connections, and which leaves no pull-up "
