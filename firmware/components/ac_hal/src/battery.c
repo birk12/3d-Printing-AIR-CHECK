@@ -1,104 +1,89 @@
-/* MAX17048 fuel gauge on the Adafruit ESP32-C6 Feather, I2C 0x36.
+/* Battery voltage and USB presence on the FireBeetle 2 ESP32-C6.
  *
- * A fuel gauge rather than a resistor divider because a LiPo's voltage says
- * almost nothing about its remaining charge over the flat middle of the
- * discharge curve, and a device that claims six months of runtime has to be
- * honest about where it actually is.
+ * DFRobot's DFR1075 schematic (v1.1): the cell (VBAT) goes through R15/R16,
+ * 1M/1M, with 100 nF (C18) across the lower leg, to GPIO0.  So the ADC sees
+ * VBAT/2, about 1.6..2.1 V, and the 100 nF is what lets a 500k source drive
+ * the ADC's sampling capacitor.  The divider costs ~1.9 uA permanently, and
+ * that is already inside DFRobot's 36 uA deep-sleep figure.
+ *
+ * USB presence comes from the carrier: the FireBeetle's VIN pin carries the
+ * USB 5 V (and nothing on battery), divided 68k/100k to ~3.0 V on GPIO18.
+ *
+ * There is no fuel gauge any more.  ac_core/ac_battery.c turns the voltage
+ * into a percentage and explains how far to trust it.
  */
 #include "ac_hal/ac_hal.h"
 
-#include "driver/i2c_master.h"
+#include "driver/gpio.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
+#include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 
-extern i2c_master_bus_handle_t g_gauge;
-static i2c_master_dev_handle_t s_dev;
+static const char *TAG = "battery";
 
-#define REG_VCELL   0x02
-#define REG_SOC     0x04
-#define REG_MODE    0x06
-#define REG_CRATE   0x16
-#define REG_HIBRT   0x0A
+#define DIVIDER_RATIO  2.0f     /* R15 = R16 = 1M */
+#define N_SAMPLES      16
 
-static esp_err_t read_reg(uint8_t reg, uint16_t *out)
+static adc_oneshot_unit_handle_t s_adc;
+static adc_cali_handle_t s_cali;
+static adc_channel_t s_chan;
+
+esp_err_t ac_battery_init(void)
 {
-    uint8_t rx[2];
-    esp_err_t err = i2c_master_transmit_receive(s_dev, &reg, 1, rx, 2, 100);
+    gpio_config_t io = {
+        .pin_bit_mask = 1ULL << AC_PIN_USB_SENSE,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,       /* the divider defines it */
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t err = gpio_config(&io);
     if (err != ESP_OK) return err;
-    *out = (uint16_t)((rx[0] << 8) | rx[1]);
-    return ESP_OK;
-}
 
-static esp_err_t write_reg(uint8_t reg, uint16_t v)
-{
-    uint8_t tx[3] = { reg, (uint8_t)(v >> 8), (uint8_t)v };
-    return i2c_master_transmit(s_dev, tx, 3, 100);
-}
-
-static esp_err_t read_all(float *volts, float *percent, bool *charging)
-{
-    if (!s_dev) {
-        i2c_device_config_t cfg = {
-            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-            .device_address = AC_I2C_ADDR_MAX17048,
-            .scl_speed_hz = 100000,
-        };
-        esp_err_t err = i2c_master_bus_add_device(g_gauge, &cfg, &s_dev);
-        if (err != ESP_OK) return err;
-    }
-    uint16_t v = 0, soc = 0, crate = 0;
-    esp_err_t err = read_reg(REG_VCELL, &v);
+    adc_unit_t unit;
+    err = adc_oneshot_io_to_channel(AC_PIN_BAT_ADC, &unit, &s_chan);
     if (err != ESP_OK) return err;
-    err = read_reg(REG_SOC, &soc);
+    adc_oneshot_unit_init_cfg_t ucfg = { .unit_id = unit };
+    err = adc_oneshot_new_unit(&ucfg, &s_adc);
     if (err != ESP_OK) return err;
-    read_reg(REG_CRATE, &crate);
+    /* 12 dB attenuation: full scale ~3.1 V, comfortably above VBAT/2. */
+    adc_oneshot_chan_cfg_t ccfg = {
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+    err = adc_oneshot_config_channel(s_adc, s_chan, &ccfg);
+    if (err != ESP_OK) return err;
 
-    if (volts) *volts = (float)v * 78.125e-6f;     /* 78.125 uV per LSB */
-    if (percent) {
-        float p = (float)soc / 256.0f;
-        if (p > 100.0f) p = 100.0f;
-        *percent = p;
-    }
-    if (charging) {
-        /* CRATE is signed, 0.208 % of capacity per hour per LSB.  A positive
-         * rate means the pack is gaining charge, which only happens on USB. */
-        int16_t signed_rate = (int16_t)crate;
-        *charging = signed_rate > 0;
+    adc_cali_curve_fitting_config_t cal = {
+        .unit_id = unit,
+        .chan = s_chan,
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+    if (adc_cali_create_scheme_curve_fitting(&cal, &s_cali) != ESP_OK) {
+        /* Uncalibrated readings can be off by 100 mV, which is most of the
+         * usable range of a LiPo.  Say so rather than report a guess. */
+        ESP_LOGE(TAG, "no ADC calibration in eFuse; battery level unavailable");
+        s_cali = NULL;
     }
     return ESP_OK;
 }
 
-/* The Feather's gauge bus only has pull-ups while GPIO20 is high (see
- * ac_hal.c), so every access is bracketed by switching it on and off again.
- * The MAX17048 itself runs from VBAT and keeps tracking the cell meanwhile. */
-esp_err_t ac_battery_read(float *volts, float *percent, bool *charging)
+esp_err_t ac_battery_read(float *volts, bool *usb_present)
 {
-    esp_err_t err = ac_gauge_bus(true);
-    if (err == ESP_OK) err = read_all(volts, percent, charging);
-    ac_gauge_bus(false);
-    return err;
-}
+    if (usb_present) *usb_present = gpio_get_level(AC_PIN_USB_SENSE) != 0;
+    if (!s_adc || !s_cali) return ESP_ERR_INVALID_STATE;
 
-/* Hibernate drops the gauge from ~23 uA to ~3 uA and slows its update to once
- * every 45 s, which is far more often than this device changes state anyway. */
-esp_err_t ac_battery_hibernate(bool on)
-{
-    esp_err_t err = ac_gauge_bus(true);
-    if (err != ESP_OK) { ac_gauge_bus(false); return err; }
-    if (!s_dev) {
-        float v, p; bool c;
-        err = read_all(&v, &p, &c);          /* attaches the device */
-        if (err != ESP_OK) { ac_gauge_bus(false); return err; }
+    int sum_mv = 0, n = 0;
+    for (int i = 0; i < N_SAMPLES; i++) {
+        int raw = 0, mv = 0;
+        if (adc_oneshot_read(s_adc, s_chan, &raw) != ESP_OK) continue;
+        if (adc_cali_raw_to_voltage(s_cali, raw, &mv) != ESP_OK) continue;
+        sum_mv += mv;
+        n++;
     }
-    err = write_reg(REG_HIBRT, on ? 0xFFFF : 0x0000);
-    ac_gauge_bus(false);
-    return err;
-}
-
-
-void ac_battery_detach(void)
-{
-    if (s_dev) {
-        i2c_master_bus_rm_device(s_dev);
-        s_dev = NULL;
-    }
+    if (n == 0) return ESP_FAIL;
+    if (volts) *volts = DIVIDER_RATIO * (float)sum_mv / (float)n / 1000.0f;
+    return ESP_OK;
 }

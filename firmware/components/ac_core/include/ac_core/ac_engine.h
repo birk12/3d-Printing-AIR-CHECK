@@ -21,39 +21,33 @@
 extern "C" {
 #endif
 
-/* Sensirion: "it is recommended to operate the sensor for a minimum of 30 s
- * before using the measurement outputs" and never below 8 s.  The engine
- * enforces both ends. */
-#define AC_SPS30_MIN_WINDOW_S   8u
-#define AC_SPS30_REC_WINDOW_S  30u
+/* SEN63C windows: AC_PM_MIN_WINDOW_S (ac_config.h) is the floor.  Continuous
+ * mode keeps the module running between windows, so each window there is just
+ * a reporting interval. */
 /* SGP40: "time until reliably detecting VOC events < 60 s", "time until the
  * specifications are met < 1 h".  We publish after the first, and flag the
  * reading as provisional until the second. */
 #define AC_SGP40_USABLE_S      60u
 #define AC_SGP40_SPEC_S      3600u
-/* SCD41 single shot: the first reading after a power cycle is discarded. */
-#define AC_SCD41_DISCARD_FIRST  1
-
 typedef enum {
     AC_ACT_NONE = 0,
-    AC_ACT_SAMPLE_PM,
+    AC_ACT_SAMPLE_PM,            /* one SEN63C window: PM + CO2 + T/RH */
     AC_ACT_SAMPLE_VOC,
-    AC_ACT_SAMPLE_CO2,
-    AC_ACT_FAN_CLEAN,
     AC_ACT_SAVE_STATE,
 } ac_action_t;
 
 typedef struct {
     ac_action_t action;
     uint32_t    pm_window_s;     /* only meaningful for AC_ACT_SAMPLE_PM */
+    bool        pm_keep_running; /* leave the SEN63C measuring afterwards */
     uint32_t    sleep_ms;        /* how long the caller may sleep */
     bool        status_dirty;
     bool        publish_dirty;   /* a reported Matter attribute changed */
 } ac_plan_t;
 
 typedef struct {
-    bool sps30_ok, sgp40_ok, scd41_ok, battery_ok;
-    uint16_t sps30_errors, sgp40_errors, scd41_errors;
+    bool sen6x_ok, sgp40_ok, battery_ok;
+    uint16_t sen6x_errors, sgp40_errors;
     char last_error[48];
 } ac_health_t;
 
@@ -75,9 +69,7 @@ typedef struct {
     ac_mode_t mode;
     ac_time_ms_t boot_ms;
     ac_time_ms_t state_since;
-    ac_time_ms_t next_pm, next_voc, next_co2;
-    ac_time_ms_t last_fan_clean;
-    ac_time_ms_t sps30_on_since;
+    ac_time_ms_t next_pm, next_voc;
 
     uint32_t voc_samples;
     bool     warm;               /* warm-up complete, values publishable */

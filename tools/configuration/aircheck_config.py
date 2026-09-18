@@ -9,6 +9,10 @@ firmware exposes over USB Serial/JTAG.
     python3 tools/configuration/aircheck_config.py --port ... set default_mode NORMAL
     python3 tools/configuration/aircheck_config.py --port ... baseline-reset
     python3 tools/configuration/aircheck_config.py --port ... events
+    python3 tools/configuration/aircheck_config.py --port ... frc 425
+
+The console only runs while the device has USB power - which it does, since
+this tool needs the cable.
 
 Every setting is validated on the device as well: ac_config_validate() clamps
 anything the sensor datasheets do not allow, so a typo here cannot produce a
@@ -21,7 +25,7 @@ import sys
 import time
 
 SETTINGS = {
-    "name":                 ("string", "shown on the display; Apple Home owns the other name"),
+    "name":                 ("string", "published as Matter NodeLabel; Apple Home keeps its own name"),
     "location":             ("string", "free text"),
     "default_mode":         ("ECO|NORMAL|ACTIVE|POST_PRINT|CONTINUOUS", "the mode to fall back to"),
     "pm25_elevated":        ("ug/m3", "threshold for ELEVATED"),
@@ -31,11 +35,12 @@ SETTINGS = {
     "co2_elevated":         ("ppm", "CO2 threshold"),
     "ev_sensitivity":       ("1..5", "event detection; 3 reproduces the defaults"),
     "post_event_s":         ("s", "how long POST_PRINT lasts"),
-    "display_timeout_s":    ("s", "how long the screen keeps refreshing after a press"),
+    "led_show_air_quality": ("bool", "a short press flashes the air quality colour"),
+    "battery_interval_s":   ("s", "how often the battery voltage is read (60..3600)"),
     "low_battery_pct":      ("%", "low battery warning"),
     "critical_battery_pct": ("%", "measurement stops below this"),
     "voc_publish_index_as_ppb": ("bool", "publish the VOC index as a Matter number"),
-    "co2_self_calibration": ("bool", "our substitute for the SCD41's own ASC"),
+    "co2_self_calibration": ("bool", "the SEN63C's own CO2 self calibration (stored in the sensor)"),
     "auto_escalate":        ("bool", "switch to ACTIVE on a detected event"),
 }
 
@@ -72,6 +77,8 @@ def main() -> int:
     sub.add_parser("baseline-reset", help="adopt the current air as the baseline")
     sub.add_parser("events", help="dump the stored event log")
     sub.add_parser("diag", help="dump the diagnostics")
+    f = sub.add_parser("frc", help="fresh-air CO2 calibration - outdoors only")
+    f.add_argument("ppm", nargs="?", default="425")
     a = ap.parse_args()
 
     if a.cmd == "list":
@@ -102,6 +109,13 @@ def main() -> int:
         print(command(port, "events dump"))
     elif a.cmd == "diag":
         print(command(port, "diag"))
+    elif a.cmd == "frc":
+        print("This rewrites the SEN63C's CO2 calibration. The device must be")
+        print("OUTDOORS or at a wide-open window, away from people and traffic.")
+        print("It runs 3 minutes first; the LED blinks cyan, then green or red.")
+        if input("continue? [y/N] ").strip().lower() != "y":
+            return 1
+        print(command(port, f"co2 frc {a.ppm}"))
     return 0
 
 

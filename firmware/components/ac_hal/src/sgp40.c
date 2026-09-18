@@ -59,18 +59,27 @@ static esp_err_t rx_words(uint16_t *out, size_t words)
     return ESP_OK;
 }
 
+static esp_err_t attach(void)
+{
+    if (s_dev) return ESP_OK;
+    if (!g_i2c) return ESP_ERR_INVALID_STATE;
+    i2c_device_config_t cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = AC_I2C_ADDR_SGP40,
+        .scl_speed_hz = 100000,         /* 100 kHz keeps the cable benign */
+    };
+    return i2c_master_bus_add_device(g_i2c, &cfg, &s_dev);
+}
+
 esp_err_t ac_sgp40_init(uint32_t sampling_interval_s)
 {
-    if (!s_dev) {
-        i2c_device_config_t cfg = {
-            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-            .device_address = AC_I2C_ADDR_SGP40,
-            .scl_speed_hz = 100000,     /* the SPS30 is not on this bus, but
-                                         * 100 kHz keeps the cable benign */
-        };
-        esp_err_t err = i2c_master_bus_add_device(g_i2c, &cfg, &s_dev);
-        if (err != ESP_OK) return err;
-    }
+    /* Prove the sensor is there once at boot; after that the rail is only up
+     * while a sample is being taken. */
+    esp_err_t err = ac_rail_sensors(true);
+    if (err == ESP_OK) err = attach();
+    if (err == ESP_OK) err = ac_sgp40_self_test();
+    ac_rail_sensors(false);
+    if (err != ESP_OK) return err;
     /* The algorithm is validated at 1 s and 10 s.  Anything else is outside
      * Sensirion's tested range, so the engine's config validator already
      * clamps the interval to 1..10 s. */
@@ -124,16 +133,22 @@ static esp_err_t heater_off(void)
     return tx(cmd, sizeof(cmd));
 }
 
-esp_err_t ac_sgp40_measure(float t_c, float rh, int32_t *raw_out,
-                           int32_t *index_out)
+esp_err_t ac_sgp40_measure(float t_c, float rh, bool pulse_rail,
+                           int32_t *raw_out, int32_t *index_out)
 {
+    esp_err_t err = ac_rail_sensors(true);
+    if (err == ESP_OK) err = attach();
+    if (err != ESP_OK) { if (pulse_rail) ac_rail_sensors(false); return err; }
+
     uint16_t raw = 0;
     /* first, discarded measurement: this is what turns the hotplate on */
-    esp_err_t err = measure_raw(t_c, rh, &raw);
-    if (err != ESP_OK) { heater_off(); return err; }
-    vTaskDelay(pdMS_TO_TICKS(135));    /* 170 ms total including the 35 above */
     err = measure_raw(t_c, rh, &raw);
+    if (err == ESP_OK) {
+        vTaskDelay(pdMS_TO_TICKS(135)); /* 170 ms total including the 35 above */
+        err = measure_raw(t_c, rh, &raw);
+    }
     heater_off();
+    if (pulse_rail) ac_rail_sensors(false);
     if (err != ESP_OK) return err;
 
     if (raw_out) *raw_out = raw;

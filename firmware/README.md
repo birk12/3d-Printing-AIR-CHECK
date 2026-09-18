@@ -9,7 +9,7 @@ components/ac_core/    platform-independent measurement core - no esp_* headers
 components/ac_hal/     ESP-IDF drivers
 components/sensirion_gas_index/   vendored VOC Index algorithm (BSD-3)
 main/                  app_main.cpp and the Matter data model
-test/host/             466 checks that run on a workstation
+test/host/             509 checks that run on a workstation
 ```
 
 The split is the point: `ac_core` decides what happens and when, `ac_hal`
@@ -33,11 +33,11 @@ not. Note that `esp-matter/examples/common` is deliberately **not** on
 handling.
 
 The first build takes a while: it compiles the whole Matter SDK. The result
-(v1.1):
+(v1.2):
 
 ```
-aircheck.bin   1 646 944 bytes, 16 % free in the 1.9 MB OTA partition
-DIRAM          210 484 bytes, 46.6 % of 452 112
+aircheck.bin   1 676 384 bytes, 15 % free in the 1.9 MB OTA partition
+DIRAM          210 084 bytes, 46.5 % of 452 112
 ```
 
 Almost half the RAM is gone before anything is allocated at runtime. That is

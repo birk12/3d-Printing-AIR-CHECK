@@ -6,20 +6,15 @@
  * checks that they still agree. */
 static const ac_profile_t k_profiles[AC_MODE_COUNT] = {
     /* ECO        */ { .pm_interval_s = 3600,     .pm_window_s = 40,
-                       .voc_interval_s = 10, .co2_interval_s = 3600,
-                       .icd_slow_poll_s = 15 },
+                       .voc_interval_s = 10, .icd_slow_poll_s = 15 },
     /* NORMAL     */ { .pm_interval_s = 15 * 60,  .pm_window_s = 60,
-                       .voc_interval_s = 10, .co2_interval_s = 15 * 60,
-                       .icd_slow_poll_s = 15 },
+                       .voc_interval_s = 10, .icd_slow_poll_s = 15 },
     /* ACTIVE     */ { .pm_interval_s = 2 * 60,   .pm_window_s = 60,
-                       .voc_interval_s = 10, .co2_interval_s = 5 * 60,
-                       .icd_slow_poll_s = 5 },
+                       .voc_interval_s = 10, .icd_slow_poll_s = 5 },
     /* POST_PRINT */ { .pm_interval_s = 5 * 60,   .pm_window_s = 60,
-                       .voc_interval_s = 10, .co2_interval_s = 10 * 60,
-                       .icd_slow_poll_s = 5 },
+                       .voc_interval_s = 10, .icd_slow_poll_s = 5 },
     /* CONTINUOUS */ { .pm_interval_s = 0,        .pm_window_s = 60,
-                       .voc_interval_s = 1,  .co2_interval_s = 5,
-                       .icd_slow_poll_s = 5 },
+                       .voc_interval_s = 1,  .icd_slow_poll_s = 5 },
 };
 
 void ac_config_defaults(ac_config_t *c)
@@ -66,7 +61,7 @@ void ac_config_defaults(ac_config_t *c)
     c->baseline_alpha    = 0.02f;
 
     c->led_show_air_quality  = true;
-    c->gauge_interval_s      = 300;
+    c->battery_interval_s    = 300;
 
     c->low_battery_pct      = 20.0f;
     c->critical_battery_pct = 5.0f;
@@ -135,18 +130,14 @@ int ac_config_validate(ac_config_t *c)
 
     for (int m = 0; m < AC_MODE_COUNT; m++) {
         ac_profile_t *p = &c->profile[m];
-        if (p->pm_interval_s != 0) {
+        if (p->pm_interval_s != 0)
             CLAMP(p->pm_interval_s, 60u, 24u * 3600u, n);
-            /* Sensirion: never use the output before 8 s in measurement mode,
-             * 30 s for a good compromise.  Refuse anything shorter than 8 s. */
-            CLAMP(p->pm_window_s, 8u, 300u, n);
-        }
+        /* A window shorter than this returns no CO2 at all and unsettled PM. */
+        CLAMP(p->pm_window_s, AC_PM_MIN_WINDOW_S, 300u, n);
         if (p->voc_interval_s != 0)
             /* SGP40 datasheet: SRAW_VOC sampling interval 0.5 .. 10 s.  The
              * Gas Index Algorithm is validated at 1 s and 10 s. */
             CLAMP(p->voc_interval_s, 1u, 10u, n);
-        if (p->co2_interval_s != 0)
-            CLAMP(p->co2_interval_s, 5u, 6u * 3600u, n);
         /* Matter 1.4: a SIT ICD must not exceed a 15 s slow poll. */
         CLAMP(p->icd_slow_poll_s, 1u, 15u, n);
     }
@@ -180,7 +171,7 @@ int ac_config_validate(ac_config_t *c)
     CLAMP(c->baseline_update_s, 60u, 6u * 3600u, n);
     CLAMP(c->baseline_alpha, 0.001f, 0.5f, n);
 
-    CLAMP(c->gauge_interval_s, 60u, 3600u, n);
+    CLAMP(c->battery_interval_s, 60u, 3600u, n);
 
     CLAMP(c->low_battery_pct, 5.0f, 50.0f, n);
     CLAMP(c->critical_battery_pct, 1.0f, 20.0f, n);

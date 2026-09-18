@@ -21,6 +21,7 @@
  */
 #pragma once
 
+#include "ac_core/ac_battery.h"
 #include "ac_core/ac_engine.h"
 #include "esp_err.h"
 
@@ -34,8 +35,8 @@ esp_err_t ac_matter_start(void);
  * changed: every attribute is compared before it is written, because a write
  * is what triggers a Thread transmission to every subscriber. */
 esp_err_t ac_matter_publish(const ac_engine_t *e);
-esp_err_t ac_matter_publish_battery(float percent, float volts, bool charging,
-                                    bool low);
+esp_err_t ac_matter_publish_battery(float percent, float volts,
+                                    ac_charge_state_t charge, bool low);
 bool ac_matter_is_commissioned(void);
 /* Called with true/false when a controller starts/stops Identify. */
 void ac_matter_set_identify_cb(void (*cb)(bool on));

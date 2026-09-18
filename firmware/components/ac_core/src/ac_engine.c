@@ -4,11 +4,9 @@
 #include <string.h>
 
 #define SEC(x) ((ac_time_ms_t)(x) * 1000u)
-/* The SPS30's auto-cleaning counter resets whenever the sensor is switched
- * off, and we switch it off after every measurement.  The datasheet is
- * explicit: "make sure to trigger a cleaning cycle at least every week if the
- * sensor is switched off and on periodically". */
-#define FAN_CLEAN_PERIOD_MS  SEC(7u * 24u * 3600u)
+/* No weekly fan cleaning since v1.2: the SEN6x keeps its optics clean with a
+ * sheath flow, and Sensirion dropped automatic cleaning from the family for
+ * that reason (SEN6x Mechanical Design-In Guidelines, FAQ 8). */
 
 static void set_state(ac_engine_t *e, ac_device_state_t s, ac_time_ms_t now)
 {
@@ -28,7 +26,7 @@ void ac_engine_init(ac_engine_t *e, const ac_config_t *cfg, ac_time_ms_t now)
     ac_history_init(&e->hist);
 
     /* Time constants: short enough that a print is still visible, long enough
-     * that a single noisy SPS30 window does not flip a state. */
+     * that a single noisy PM window does not flip a state. */
     ac_ema_init(&e->f_pm25, 120.0f);
     ac_ema_init(&e->f_pm10, 120.0f);
     ac_ema_init(&e->f_voc,  60.0f);
@@ -50,10 +48,8 @@ void ac_engine_init(ac_engine_t *e, const ac_config_t *cfg, ac_time_ms_t now)
     e->state_since = now;
     e->next_pm = now;          /* take one measurement of everything at once */
     e->next_voc = now;
-    e->next_co2 = now;
-    e->last_fan_clean = now;   /* a fresh boot counts as recently cleaned */
 
-    e->health.sps30_ok = e->health.sgp40_ok = e->health.scd41_ok = true;
+    e->health.sen6x_ok = e->health.sgp40_ok = true;
     e->health.battery_ok = true;
 }
 
@@ -75,8 +71,6 @@ void ac_engine_set_mode(ac_engine_t *e, ac_mode_t m, ac_time_ms_t now)
         e->next_pm = now;
     if (p->voc_interval_s && e->next_voc > now + SEC(p->voc_interval_s))
         e->next_voc = now;
-    if (p->co2_interval_s && e->next_co2 > now + SEC(p->co2_interval_s))
-        e->next_co2 = now;
 }
 
 void ac_engine_submit(ac_engine_t *e, const ac_sample_t *s)
@@ -147,16 +141,12 @@ void ac_engine_sensor_failed(ac_engine_t *e, ac_action_t which, const char *why)
 {
     switch (which) {
     case AC_ACT_SAMPLE_PM:
-        e->health.sps30_errors++;
-        if (e->health.sps30_errors >= 3) e->health.sps30_ok = false;
+        e->health.sen6x_errors++;
+        if (e->health.sen6x_errors >= 3) e->health.sen6x_ok = false;
         break;
     case AC_ACT_SAMPLE_VOC:
         e->health.sgp40_errors++;
         if (e->health.sgp40_errors >= 5) e->health.sgp40_ok = false;
-        break;
-    case AC_ACT_SAMPLE_CO2:
-        e->health.scd41_errors++;
-        if (e->health.scd41_errors >= 3) e->health.scd41_ok = false;
         break;
     default:
         break;
@@ -244,7 +234,7 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
     if (!e->warm) {
         bool voc_ready = (!e->health.sgp40_ok) || (e->cfg.profile[e->mode].voc_interval_s == 0) ||
                          (now - e->boot_ms >= SEC(AC_SGP40_USABLE_S));
-        bool pm_ready = (!e->health.sps30_ok) || (e->last.pm25 >= 0.0f);
+        bool pm_ready = (!e->health.sen6x_ok) || (e->last.pm25 >= 0.0f);
         if (voc_ready && pm_ready) {
             e->warm = true;
             plan.status_dirty = true;
@@ -292,7 +282,7 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
         e->state != AC_STATE_CRITICAL_BATTERY &&
         e->state != AC_STATE_COMMISSIONING &&
         e->state != AC_STATE_FACTORY_RESET) {
-        if (!e->health.sps30_ok && !e->health.sgp40_ok && !e->health.scd41_ok)
+        if (!e->health.sen6x_ok && !e->health.sgp40_ok)
             set_state(e, AC_STATE_ERROR, now);
         else if (e->usb_present)
             set_state(e, AC_STATE_CHARGING, now);
@@ -316,39 +306,24 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
         return plan;
     }
 
-    if (e->health.sps30_ok && now - e->last_fan_clean >= FAN_CLEAN_PERIOD_MS) {
-        plan.action = AC_ACT_FAN_CLEAN;
-        e->last_fan_clean = now;
+    if (e->health.sen6x_ok && p->pm_interval_s == 0) {
+        /* "Continuous" keeps the SEN63C in measurement mode and reports once
+         * per window.  Power-cycling it between windows would throw away the
+         * 22..24 s its CO2 channel needs after every start. */
+        plan.action = AC_ACT_SAMPLE_PM;
+        plan.pm_window_s = p->pm_window_s < AC_PM_MIN_WINDOW_S
+                           ? AC_PM_MIN_WINDOW_S : p->pm_window_s;
+        plan.pm_keep_running = true;
         plan.sleep_ms = 0;
         plan.publish_dirty = publish_changed(e);
         return plan;
     }
 
-    if (e->health.sps30_ok && p->pm_interval_s == 0) {
-        /* "Continuous" means back-to-back measurement windows, not a one
-         * second window: the SPS30 needs 30 s in measurement mode before its
-         * output is usable, so a short window would return numbers the
-         * datasheet says not to trust. */
+    if (e->health.sen6x_ok && now >= e->next_pm) {
         plan.action = AC_ACT_SAMPLE_PM;
-        plan.pm_window_s = p->pm_window_s >= AC_SPS30_REC_WINDOW_S
-                           ? p->pm_window_s : 60;
-        plan.sleep_ms = 0;
-        plan.publish_dirty = publish_changed(e);
-        return plan;
-    }
-
-    if (e->health.sps30_ok && now >= e->next_pm) {
-        plan.action = AC_ACT_SAMPLE_PM;
-        plan.pm_window_s = p->pm_window_s < AC_SPS30_MIN_WINDOW_S
-                           ? AC_SPS30_MIN_WINDOW_S : p->pm_window_s;
+        plan.pm_window_s = p->pm_window_s < AC_PM_MIN_WINDOW_S
+                           ? AC_PM_MIN_WINDOW_S : p->pm_window_s;
         e->next_pm = now + SEC(p->pm_interval_s);
-        plan.sleep_ms = 0;
-        plan.publish_dirty = publish_changed(e);
-        return plan;
-    }
-    if (e->health.scd41_ok && p->co2_interval_s && now >= e->next_co2) {
-        plan.action = AC_ACT_SAMPLE_CO2;
-        e->next_co2 = now + SEC(p->co2_interval_s);
         plan.sleep_ms = 0;
         plan.publish_dirty = publish_changed(e);
         return plan;
@@ -363,9 +338,8 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
 
     /* Nothing due: work out how long we may sleep. */
     ac_time_ms_t next = now + SEC(3600);
-    if (e->health.sps30_ok && p->pm_interval_s) next = soonest(next, e->next_pm);
+    if (e->health.sen6x_ok && p->pm_interval_s) next = soonest(next, e->next_pm);
     if (e->health.sgp40_ok && p->voc_interval_s) next = soonest(next, e->next_voc);
-    if (e->health.scd41_ok && p->co2_interval_s) next = soonest(next, e->next_co2);
     plan.action = AC_ACT_NONE;
     plan.sleep_ms = (next > now) ? (uint32_t)(next - now) : 0u;
     plan.publish_dirty = publish_changed(e);

@@ -11,16 +11,22 @@ extern "C" {
 #endif
 
 #define AC_CONFIG_MAGIC    0x41434B31u   /* "ACK1" */
-#define AC_CONFIG_VERSION  2   /* v2: no display on the sensor since v1.1 */
+#define AC_CONFIG_VERSION  3   /* v3: SEN63C, one window for PM + CO2 (v1.2) */
 #define AC_NAME_MAX        33
 
+/* Shortest SEN63C window worth having: its CO2 output reads "unknown" for the
+ * first 22..24 s of a measurement and its PM output needs 30 s (typ) to
+ * settle.  Sensirion SEN6x datasheet v0.5 Table 1, embedded-i2c-sen63c. */
+#define AC_PM_MIN_WINDOW_S  30u
+
 /* One measurement cadence.  Mirrors tools/battery_calculator/model.py - if you
- * change a number here, re-run the model before believing the runtime. */
+ * change a number here, re-run the model before believing the runtime.
+ * Since v1.2 one SEN63C window delivers PM, CO2, temperature and humidity
+ * together, so there is no separate CO2 cadence. */
 typedef struct {
     uint32_t pm_interval_s;    /* 0 = continuous */
-    uint32_t pm_window_s;      /* time in SPS30 measurement mode */
+    uint32_t pm_window_s;      /* time in SEN63C measurement mode */
     uint32_t voc_interval_s;   /* 0 = VOC off */
-    uint32_t co2_interval_s;   /* 0 = CO2 off */
     uint32_t icd_slow_poll_s;
 } ac_profile_t;
 
@@ -54,9 +60,9 @@ typedef struct {
     uint32_t baseline_update_s;
     float    baseline_alpha;       /* EMA weight per update, 0..1 */
 
-    /* status LED and battery gauge */
+    /* status LED and battery */
     bool     led_show_air_quality;  /* a button press flashes the air quality colour */
-    uint32_t gauge_interval_s;      /* how often the MAX17048 is read */
+    uint32_t battery_interval_s;    /* how often the battery voltage is read */
 
     /* battery */
     float low_battery_pct;
@@ -65,7 +71,7 @@ typedef struct {
     /* behaviour */
     bool voc_publish_index_as_ppb; /* see docs/MATTER.md - honest default is on,
                                     * with the caveat documented everywhere */
-    bool co2_self_calibration;     /* our own ASC, see docs/CALIBRATION.md */
+    bool co2_self_calibration;     /* the SEN63C's own ASC, docs/CALIBRATION.md */
     bool auto_escalate;            /* switch to ACTIVE on a detected event */
 
     uint32_t crc;

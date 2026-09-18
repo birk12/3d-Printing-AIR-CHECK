@@ -27,6 +27,13 @@ ac_led_pattern_t ac_status_pattern(const ac_engine_t *e, ac_led_event_t ev)
         return pat(AC_RGB_BLUE, 500, 1000, 300000);      /* slow blue, 5 min */
     case AC_LED_EVENT_BOOT:
         return pat(AC_RGB_WHITE, 300, 0, 300);
+    case AC_LED_EVENT_CALIBRATING:
+        /* slow cyan while the SEN63C breathes outdoor air for 3 min */
+        return pat(AC_RGB_CYAN, 250, 1000, 240000);
+    case AC_LED_EVENT_CAL_OK:
+        return pat(AC_RGB_GREEN, 2000, 0, 2000);
+    case AC_LED_EVENT_CAL_FAIL:
+        return pat(AC_RGB_RED, 100, 200, 2000);
     case AC_LED_EVENT_BUTTON:
         if (e->state == AC_STATE_ERROR)
             return pat(AC_RGB_RED, 100, 400, 3000);      /* red blink = fault */
@@ -50,6 +57,15 @@ ac_led_pattern_t ac_status_pattern(const ac_engine_t *e, ac_led_event_t ev)
     if (e->state == AC_STATE_ERROR)
         return pat(AC_RGB_RED, 50, 5000, 0);
     return pat(AC_RGB_OFF, 0, 0, 0);
+}
+
+ac_rgb_t ac_status_hold_colour(uint32_t held_ms)
+{
+    if (held_ms >= AC_HOLD_ABORT_MS)     return AC_RGB_OFF;
+    if (held_ms >= AC_HOLD_RESET_MS)     return AC_RGB_RED;
+    if (held_ms >= AC_HOLD_CALIBRATE_MS) return AC_RGB_CYAN;
+    if (held_ms >= AC_HOLD_PAIRING_MS)   return AC_RGB_BLUE;
+    return AC_RGB_OFF;
 }
 
 ac_rgb_t ac_status_level(const ac_led_pattern_t *p, uint32_t elapsed_ms)

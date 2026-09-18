@@ -50,7 +50,6 @@ static bool s_commissioned = false;
 
 /* last value written, so we never write the same number twice */
 static float s_last[16];
-static uint8_t s_last_aq = 0xFF;
 
 static esp_err_t write_float(uint16_t ep, uint32_t cluster, uint32_t attr,
                              float value, int slot)
@@ -372,8 +371,8 @@ esp_err_t ac_matter_publish(const ac_engine_t *e)
     return ESP_OK;
 }
 
-esp_err_t ac_matter_publish_battery(float percent, float volts, bool charging,
-                                    bool low)
+esp_err_t ac_matter_publish_battery(float percent, float volts,
+                                    ac_charge_state_t charge, bool low)
 {
     if (percent < 0.0f) return ESP_OK;
     /* BatPercentRemaining is in half percent units, spec 11.7.6.14 */
@@ -392,8 +391,8 @@ esp_err_t ac_matter_publish_battery(float percent, float volts, bool charging,
                       PowerSource::Attributes::BatChargeLevel::Id, &lvl);
 
     /* BatChargeState: 0 Unknown, 1 IsCharging, 2 IsAtFullCharge,
-     * 3 IsNotCharging */
-    uint8_t cs = charging ? (percent >= 99.0f ? 2 : 1) : 3;
+     * 3 IsNotCharging - the same order as ac_charge_state_t. */
+    uint8_t cs = (uint8_t)charge;
     esp_matter_attr_val_t chg = esp_matter_enum8(cs);
     attribute::update(0, PowerSource::Id,
                       PowerSource::Attributes::BatChargeState::Id, &chg);

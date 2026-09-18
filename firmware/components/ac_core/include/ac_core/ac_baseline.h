@@ -5,7 +5,7 @@
  *    otherwise the event quietly becomes the new normal;
  *  - resetting the baseline is not the same thing as calibrating the sensor.
  *    ac_baseline_reset() only touches our own reference numbers.  It never
- *    writes to a sensor.  Forced recalibration of the SCD41 is a separate,
+ *    writes to a sensor.  Forced recalibration of the SEN63C is a separate,
  *    separately documented operation in ac_hal.
  */
 #ifndef AC_BASELINE_H

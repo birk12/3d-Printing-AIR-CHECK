@@ -1,13 +1,14 @@
-/* One multifunction button on GPIO6, active low.
+/* One multifunction button on GPIO1, active low.
  *
- *   short press   (< 1 s)        wake the display / next screen
+ *   short press   (< 3 s)        show the air quality on the LED
  *   long press    (3 .. 8 s)     open commissioning
+ *   calibrate     (8 .. 12 s)    fresh-air CO2 calibration (take it outdoors)
  *   very long     (12 .. 20 s)   factory reset
  *   over 20 s                    ignored, so a jammed button cannot wipe the
  *                                device
  *
- * GPIO6 is one of the ESP32-C6's RTC pins, which is what lets it wake the chip
- * from deep sleep through EXT1.
+ * While it is held, the LED shows what letting go would do (ac_status).
+ * GPIO1 is an LP pad on the ESP32-C6, so it can also wake the chip.
  */
 #include "ac_hal/ac_hal.h"
 
@@ -34,6 +35,12 @@ esp_err_t ac_button_init(void)
 
 bool ac_button_pressed(void) { return gpio_get_level(AC_PIN_BUTTON) == 0; }
 
+uint32_t ac_button_held_ms(void)
+{
+    if (!s_was_down || !ac_button_pressed()) return 0;
+    return (uint32_t)((esp_timer_get_time() - s_down_us) / 1000);
+}
+
 ac_button_event_t ac_button_poll(void)
 {
     bool down = ac_button_pressed();
@@ -48,12 +55,13 @@ ac_button_event_t ac_button_poll(void)
         s_was_down = false;
         uint32_t held = (uint32_t)((now - s_down_us) / 1000);
         if (held < 40) return AC_BTN_NONE;              /* contact bounce */
-        if (held > AC_BTN_ABORT_MS) {
+        if (held > AC_HOLD_ABORT_MS) {
             ESP_LOGW(TAG, "held %lu ms, ignoring", (unsigned long)held);
             return AC_BTN_NONE;
         }
-        if (held >= AC_BTN_VERY_LONG_MS) return AC_BTN_VERY_LONG;
-        if (held >= AC_BTN_LONG_MS) return AC_BTN_LONG;
+        if (held >= AC_HOLD_RESET_MS) return AC_BTN_VERY_LONG;
+        if (held >= AC_HOLD_CALIBRATE_MS) return AC_BTN_CALIBRATE;
+        if (held >= AC_HOLD_PAIRING_MS) return AC_BTN_LONG;
         return AC_BTN_SHORT;
     }
     return AC_BTN_NONE;

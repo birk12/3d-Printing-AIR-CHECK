@@ -35,7 +35,17 @@ typedef enum {
     AC_LED_EVENT_PAIRING,     /* long press: commissioning window open */
     AC_LED_EVENT_RESET,       /* very long press: factory reset */
     AC_LED_EVENT_BOOT,
+    AC_LED_EVENT_CALIBRATING, /* 8-12 s press: fresh-air CO2 calibration running */
+    AC_LED_EVENT_CAL_OK,
+    AC_LED_EVENT_CAL_FAIL,
 } ac_led_event_t;
+
+/* Button hold thresholds, shared with ac_hal's button driver so the LED can
+ * tell someone holding the button what letting go would do. */
+#define AC_HOLD_PAIRING_MS    3000u
+#define AC_HOLD_CALIBRATE_MS  8000u
+#define AC_HOLD_RESET_MS     12000u
+#define AC_HOLD_ABORT_MS     20000u
 
 typedef struct {
     ac_rgb_t colour;
@@ -56,6 +66,11 @@ ac_rgb_t ac_status_level(const ac_led_pattern_t *p, uint32_t elapsed_ms);
 
 /* The air-quality colour on its own: green, yellow, red, purple. */
 ac_rgb_t ac_status_air_colour(ac_air_quality_t q);
+
+/* While the button is held: what releasing it now would do.  Dark below 3 s,
+ * blue for pairing, cyan for CO2 calibration, red for factory reset, dark
+ * again past 20 s (ignored). */
+ac_rgb_t ac_status_hold_colour(uint32_t held_ms);
 
 #ifdef __cplusplus
 }

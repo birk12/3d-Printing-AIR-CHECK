@@ -8,88 +8,98 @@
 #define AC_HAL_H
 
 #include "ac_core/ac_engine.h"
+#include "ac_core/ac_status.h"
 #include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* ---- pin map (Adafruit ESP32-C6 Feather + ACC-1 carrier, v1.1) --------
- * Only GPIO0..GPIO7 are RTC capable on the ESP32-C6, so everything that has
- * to hold a level through deep sleep or wake the chip lives there.  GPIO4, 5,
- * 8, 9 and 15 are strapping pins and are left alone. */
-#define AC_PIN_BUTTON        1   /* A0  - active low, EXT1 deep-sleep wake   */
-#define AC_PIN_EN_SPS30      2   /* A5  - load switch SW1, boost input       */
-#define AC_PIN_EN_SENS       3   /* A4  - load switch SW2, sensor rail       */
-#define AC_PIN_SENS_SDA      6   /* A2  - LP_I2C SDA, fixed pad on the C6    */
-#define AC_PIN_SENS_SCL      7   /* D9  - LP_I2C SCL, fixed pad on the C6    */
-#define AC_PIN_SPS30_TX     16   /* MCU -> sensor, 330 R in series           */
-#define AC_PIN_SPS30_RX     17   /* sensor -> MCU                            */
-#define AC_PIN_GAUGE_SCL    18   /* Feather-internal bus to the MAX17048     */
-#define AC_PIN_GAUGE_SDA    19
-#define AC_PIN_I2C_PWR      20   /* Feather VSENSOR LDO: gauge pull-ups + WS2812B */
-#define AC_PIN_LED_R        21   /* LED cathodes, active low                 */
+/* ---- pin map (DFRobot FireBeetle 2 ESP32-C6 + ACC-1 carrier, v1.2) ----
+ * From DFRobot's DFR1075 schematic (v1.1) and dimension drawing.  Only
+ * GPIO0..GPIO7 are LP (RTC) pads on the ESP32-C6.  GPIO4, 5, 8, 9 and 15 are
+ * strapping pins; 9 is also the BOOT button and 15 the board's green LED
+ * (to GND through 2k), so both are left alone.  GPIO0 is not on a header: the
+ * board wires it to its own 1M/1M battery divider. */
+#define AC_PIN_BAT_ADC       0   /* on-board VBAT/2 divider, ADC1 channel 0  */
+#define AC_PIN_BUTTON        1   /* active low, LP pad                      */
+#define AC_PIN_EN_SEN6X      2   /* load switch SW1, SEN63C supply          */
+#define AC_PIN_EN_SENS       3   /* load switch SW2, SGP40 breakout supply  */
+#define AC_PIN_SENS_SDA      6   /* LP_I2C SDA, fixed pad on the C6         */
+#define AC_PIN_SENS_SCL      7   /* LP_I2C SCL, fixed pad on the C6         */
+#define AC_PIN_BOARD_LED    15   /* FireBeetle D13, green, kept off         */
+#define AC_PIN_USB_SENSE    18   /* VIN through 68k/100k: high on USB       */
+#define AC_PIN_SEN6X_SDA    19   /* header "SDA"                            */
+#define AC_PIN_SEN6X_SCL    20   /* header "SCL"                            */
+#define AC_PIN_LED_R        21   /* LED cathodes, active low                */
 #define AC_PIN_LED_G        22
 #define AC_PIN_LED_B        23
 
 #define AC_I2C_ADDR_SGP40   0x59
-#define AC_I2C_ADDR_SCD41   0x62
-#define AC_I2C_ADDR_MAX17048 0x36
+#define AC_I2C_ADDR_SEN6X   0x6B   /* SEN6x datasheet 5.3 (SEN60 would be 0x6C) */
 
-/* ---- power rails ------------------------------------------------------ */
+/* ---- power rails ------------------------------------------------------
+ * Both sensors sit behind their own load switch and are unpowered most of the
+ * time: the SEN63C draws 3.3 mA even idle, and the SGP40 breakout carries an
+ * LDO and a power LED that together draw ~185 uA (EDR-14).  Each rail has its
+ * own I2C bus with its pull-ups on the switched side, so an unpowered sensor
+ * is never back-fed through a pull-up. */
 esp_err_t ac_hal_init(void);
-esp_err_t ac_rail_sps30(bool on);   /* also waits out the boost soft start  */
-esp_err_t ac_rail_sensors(bool on);
-/* Power the Feather's gauge bus (GPIO20 high, bus created) or drop it. */
-esp_err_t ac_gauge_bus(bool on);
-/* Latch the RTC GPIOs so the rails keep their state through deep sleep. */
+esp_err_t ac_rail_sen6x(bool on);    /* also creates / removes its I2C bus */
+esp_err_t ac_rail_sensors(bool on);  /* SGP40 rail and the LP_I2C bus */
+/* Latch the rail enables so they keep their state through deep sleep. */
 void ac_rail_hold(bool hold);
 
-/* ---- SPS30 over UART (SHDLC) ------------------------------------------ */
+/* ---- SEN63C: PM1/2.5/4/10, CO2, temperature, humidity -----------------
+ * Command IDs, timings and scaling from the SEN6x datasheet v0.5 and
+ * Sensirion's embedded-i2c-sen63c driver. */
 typedef struct {
-    float pm1, pm25, pm4, pm10;
-    float n05, n1, n25, n4, n10;
-    float typical_size;
-} ac_sps30_values_t;
+    float pm1, pm25, pm4, pm10;     /* ug/m3 */
+    float n05, n10;                 /* #/cm3, number concentration */
+    float co2;                      /* ppm, < 0 if the window was too short */
+    float temperature, humidity;    /* degC, %RH; < -100 / < 0 if unknown */
+    uint32_t status;                /* device status register */
+} ac_sen6x_values_t;
 
-esp_err_t ac_sps30_init(void);
-esp_err_t ac_sps30_start_measurement(void);
-esp_err_t ac_sps30_stop_measurement(void);
-esp_err_t ac_sps30_read(ac_sps30_values_t *out);
-esp_err_t ac_sps30_sleep(void);
-esp_err_t ac_sps30_wake(void);
-esp_err_t ac_sps30_start_fan_cleaning(void);
-esp_err_t ac_sps30_serial(char *out, size_t n);
-/* One complete duty-cycled measurement: power on, run for window_s, average
- * the last third, power off.  Blocks. */
-esp_err_t ac_sps30_measure_window(uint32_t window_s, ac_sps30_values_t *out);
+/* One measurement window.  Powers the module if it is not already running,
+ * measures for window_s, averages PM over the settled part, takes the last
+ * valid CO2 and T/RH, then stops and powers down - unless keep_running, in
+ * which case the next call continues without a restart.  Blocks. */
+esp_err_t ac_sen6x_measure_window(uint32_t window_s, bool keep_running,
+                                  ac_sen6x_values_t *out);
+/* Stop and power down if a keep_running window left the module on. */
+void      ac_sen6x_power_off(void);
+esp_err_t ac_sen6x_serial(char *out, size_t n);
+/* The module's own CO2 automatic self calibration.  Persistent inside the
+ * sensor; written only when it differs. */
+esp_err_t ac_sen6x_set_asc(bool on);
+/* Forced recalibration against a known reference, e.g. 425 ppm outdoors.
+ * Call it right after a >= 3 min keep_running window in that air; it stops
+ * the measurement, recalibrates and powers the module off. */
+esp_err_t ac_sen6x_forced_recalibration(uint16_t target_ppm, int16_t *correction);
 
 /* ---- SGP40 ------------------------------------------------------------ */
 esp_err_t ac_sgp40_init(uint32_t sampling_interval_s);
 esp_err_t ac_sgp40_self_test(void);
 /* Low-power sequence from Sensirion's own example: one discarded measurement
- * to fire the hotplate, the real one 170 ms later, then heater off. */
+ * to fire the hotplate, the real one 170 ms later, then heater off.  With
+ * pulse_rail the breakout is powered for just that sequence (~0.25 s); the
+ * SGP40 comes out of power-up in the same idle state the heater-off command
+ * leaves it in, so the sequence is the same either way.  The VOC Index
+ * algorithm state lives in the MCU and is untouched by the power cycle. */
 esp_err_t ac_sgp40_measure(float temperature_c, float humidity_pct,
-                           int32_t *raw_out, int32_t *index_out);
+                           bool pulse_rail, int32_t *raw_out, int32_t *index_out);
 esp_err_t ac_sgp40_serial(uint64_t *out);
 /* Detach from the I2C bus.  Must be called before the bus itself is torn
  * down, which ac_rail_sensors(false) does. */
 void ac_sgp40_detach(void);
 
-/* ---- SCD41 ------------------------------------------------------------ */
-esp_err_t ac_scd41_init(void);
-esp_err_t ac_scd41_single_shot(float *co2, float *t, float *rh);
-esp_err_t ac_scd41_power_down(void);
-esp_err_t ac_scd41_wake_up(void);
-esp_err_t ac_scd41_set_temperature_offset(float c);
-esp_err_t ac_scd41_forced_recalibration(uint16_t target_ppm, int16_t *correction);
-esp_err_t ac_scd41_serial(uint64_t *out);
-void ac_scd41_detach(void);
-
-/* ---- battery ---------------------------------------------------------- */
-esp_err_t ac_battery_read(float *volts, float *percent, bool *charging);
-esp_err_t ac_battery_hibernate(bool on);
-void ac_battery_detach(void);
+/* ---- battery ----------------------------------------------------------
+ * Cell voltage through the FireBeetle's own 1M/1M divider (GPIO0), and USB
+ * presence through the carrier's VIN divider (GPIO18).  No fuel gauge: the
+ * percentage is derived from the voltage in ac_core/ac_battery.h. */
+esp_err_t ac_battery_init(void);
+esp_err_t ac_battery_read(float *volts, bool *usb_present);
 
 /* ---- status LED -------------------------------------------------------
  * Common anode on VBAT, cathodes sunk by GPIO21/22/23.  "Off" releases the
@@ -101,18 +111,17 @@ void      ac_led_set(uint8_t rgb_bits);
 /* ---- button ----------------------------------------------------------- */
 typedef enum {
     AC_BTN_NONE = 0,
-    AC_BTN_SHORT,       /*  < 1.0 s  show the air quality on the LED */
-    AC_BTN_LONG,        /*  3 .. 8 s setup / commissioning */
+    AC_BTN_SHORT,       /*  < 3 s    show the air quality on the LED */
+    AC_BTN_LONG,        /*  3 .. 8 s  setup / commissioning */
+    AC_BTN_CALIBRATE,   /*  8 .. 12 s fresh-air CO2 calibration */
     AC_BTN_VERY_LONG,   /* 12 .. 20 s factory reset       */
 } ac_button_event_t;
 
-#define AC_BTN_LONG_MS        3000
-#define AC_BTN_VERY_LONG_MS  12000
-#define AC_BTN_ABORT_MS      20000   /* held longer than this = ignored */
-
+/* thresholds: AC_HOLD_* in ac_core/ac_status.h, so the LED can show them */
 esp_err_t ac_button_init(void);
 ac_button_event_t ac_button_poll(void);
 bool ac_button_pressed(void);
+uint32_t ac_button_held_ms(void);   /* 0 when not pressed */
 
 /* ---- persistent storage ----------------------------------------------- */
 esp_err_t ac_store_init(void);

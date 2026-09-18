@@ -4,10 +4,10 @@ Five printed parts. Nothing needs support. Everything fits a 250 x 210 mm bed.
 
 | part | file | orientation | material | est. time | filament |
 |---|---|---|---|---|---|
-| Front shell | `cad/stl/aircheck_front.stl` | **front face down on the bed**, as exported | PETG, **white or natural** | ~4 h 30 | ~61 g |
-| Back shell | `cad/stl/aircheck_back.stl` | **outer back face down**, as exported | PETG | ~3 h 30 | ~51 g |
+| Front shell | `cad/stl/aircheck_front.stl` | **front face down on the bed**, as exported | PETG, **white or natural** | ~5 h 30 | ~78 g |
+| Lid (back shell) | `cad/stl/aircheck_back.stl` | **outer back face down**, as exported | PETG | ~2 h 30 | ~43 g |
 | Button cap | `cad/stl/aircheck_button.stl` | disc face down | PETG | ~3 min | <1 g |
-| Battery cover | `cad/stl/aircheck_batcover.stl` | flat, as exported | PETG | ~25 min | ~8 g |
+| Battery cover | `cad/stl/aircheck_batcover.stl` | plate down, as exported | PETG | ~20 min | ~6 g |
 | Desk stand | `cad/stl/aircheck_stand.stl` | on its back face, as exported | PETG | ~1 h 15 | ~16–31 g |
 
 **The front shell's colour matters.** The status LED has no hole. It shines
@@ -31,14 +31,15 @@ typical 0.4 mm / 0.2 mm profile; your slicer's number is the real one.
 | perimeters | 4 (walls are 2.4 mm, so they fill anyway) | |
 | top / bottom layers | 5 / 5 | |
 | infill | 25 % gyroid | only the screw posts and the stand have any bulk |
-| supports | **none** | the model is designed so that nothing overhangs more than 45 deg. `stl_check.py` measures 1.6 % overhang on the front shell and 0.4 % on the back shell, all of it self-supporting chamfers |
-| brim | 5 mm on the front shell if your bed adhesion is marginal | 126 cm2 of bed contact, it should not need one |
+| supports | **none** | nothing overhangs more than 45 deg except the roofs of the slots in the side walls, which are bridges of at most 9.5 mm. `stl_check.py` measures 2.0 % overhang on the front shell (those bridges and chamfers) and 0.5 % on the lid |
+| bridges | your slicer's bridge settings, fan 100 % | the SEN63C port slots and the gas-bay vents are 2.4 mm tall slots whose roofs print as bridges |
+| brim | 5 mm on the front shell if your bed adhesion is marginal | 110 cm2 of bed contact, it should not need one |
 | seam | "aligned" or "rear" | there is a vertical corner at each of the four case corners for it to hide in |
 
 ## Materials
 
-* **PETG** - the recommended choice. Tough, takes heat-set inserts well, does
-  not creep under the battery cover's preload. Print at 235 / 80 C.
+* **PETG** - the recommended choice. Tough, takes heat-set inserts well, and
+  the battery cover's skirt keeps its grip. Print at 235 / 80 C.
 * **PLA** - fine for a first fit check. Do **not** use it for the final build:
   the case sits near a 3D printer, and PLA softens around 55 C. Heat-set
   inserts in PLA also relax.
@@ -51,10 +52,10 @@ typical 0.4 mm / 0.2 mm profile; your slicer's number is the real one.
 Four M2.5 brass inserts go into the front shell's corner posts, entered from
 the seam side. Hole is 3.84 mm diameter, 6 mm deep - sized for PETG per the
 manufacturer chart, not guessed. Set the iron to 220 C, press until the insert
-is flush, keep it square. There are twelve in the BOM because you will ruin a
-couple learning the feel.
+is flush, keep it square. The pack in the BOM is 70; you will ruin a couple
+learning the feel.
 
-The carrier board and the two gas breakouts use **direct screws** into 2.1 mm
+The carrier board and the SGP40 breakout use **direct screws** into 2.1 mm
 cores instead, because they are fitted once and never touched again. Inserts
 are only worth it where a joint is opened repeatedly.
 
@@ -64,10 +65,10 @@ are only worth it where a joint is opened repeatedly.
    evenly. If the skin is patchy, print the first layers slower.
 2. Does the button cap move freely in its counterbore and return? If it binds,
    raise `FIT_SLIDE`; if it rattles, lower it.
-3. Does the SPS30 slide into its cradle and sit flat against the duct ribs?
-   With the 1.5 mm foam strip in place it should need light thumb pressure.
-4. Do the two shells close with an even shadow gap all the way round?
-5. Hold the assembled case up to a light with the ducts facing you: you should
-   **not** be able to see from the inlet opening to the outlet opening. If you
-   can, the separating rib is not sealing and the PM readings will read low.
-6. Does the battery cover sit flat over the cell without pressing on it?
+3. Does the SEN63C slide into its cradle, port face against the left wall?
+   With the foam frames on its port face it should need light thumb pressure.
+4. Are all the port slots in the left wall open, with clean bridge roofs? A
+   sagging roof narrows the slot and cuts the open area Sensirion require.
+5. Does the lid close with an even shadow gap all the way round?
+6. Does the battery cover's skirt grip the bay walls, and does the cover sit
+   flat over the cell without pressing on it?

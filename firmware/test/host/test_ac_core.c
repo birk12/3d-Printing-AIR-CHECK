@@ -7,6 +7,7 @@
  */
 #include "ac_core/ac_airquality.h"
 #include "ac_core/ac_baseline.h"
+#include "ac_core/ac_battery.h"
 #include "ac_core/ac_config.h"
 #include "ac_core/ac_status.h"
 #include "ac_core/ac_engine.h"
@@ -71,8 +72,8 @@ static void test_config(void)
     CASE("every profile obeys the sensor datasheets");
     for (int m = 0; m < AC_MODE_COUNT; m++) {
         const ac_profile_t *p = &c.profile[m];
-        if (p->pm_interval_s)
-            CHECK(p->pm_window_s >= AC_SPS30_MIN_WINDOW_S);
+        /* SEN63C: no CO2 for 22..24 s after start, PM settles in 30 s */
+        CHECK(p->pm_window_s >= AC_PM_MIN_WINDOW_S);
         if (p->voc_interval_s)
             CHECK(p->voc_interval_s >= 1 && p->voc_interval_s <= 10);
         /* Matter 1.4 caps a SIT ICD slow poll at 15 s */
@@ -117,14 +118,14 @@ static void test_config(void)
     ac_config_t wild;
     ac_config_defaults(&wild);
     wild.pm25_high = 1.0f;          /* below elevated */
-    wild.gauge_interval_s = 99999;
-    wild.profile[AC_MODE_ECO].pm_window_s = 2;   /* below the SPS30 minimum */
+    wild.battery_interval_s = 99999;
+    wild.profile[AC_MODE_ECO].pm_window_s = 20;  /* too short for any CO2 */
     wild.profile[AC_MODE_ECO].icd_slow_poll_s = 900;
     int fixed = ac_config_validate(&wild);
     CHECK(fixed >= 4);
     CHECK(wild.pm25_high > wild.pm25_elevated);
-    CHECK(wild.gauge_interval_s <= 3600);
-    CHECK(wild.profile[AC_MODE_ECO].pm_window_s >= AC_SPS30_MIN_WINDOW_S);
+    CHECK(wild.battery_interval_s <= 3600);
+    CHECK(wild.profile[AC_MODE_ECO].pm_window_s >= AC_PM_MIN_WINDOW_S);
     CHECK(wild.profile[AC_MODE_ECO].icd_slow_poll_s <= 15);
 }
 
@@ -498,7 +499,8 @@ static void test_engine(void)
     CASE("a cold engine asks for a measurement straight away");
     ac_plan_t p = ac_engine_tick(&e, t);
     CHECK(p.action == AC_ACT_SAMPLE_PM);
-    CHECK(p.pm_window_s >= AC_SPS30_MIN_WINDOW_S);
+    CHECK(p.pm_window_s >= AC_PM_MIN_WINDOW_S);
+    CHECK(!p.pm_keep_running);
     CHECK(e.state == AC_STATE_WARMUP);
 
     CASE("values are not published during warm-up");
@@ -514,8 +516,8 @@ static void test_engine(void)
     CHECK(ac_engine_values_valid(&e));
     CHECK(e.state == AC_STATE_NORMAL);
 
-    CASE("ECO schedules the SPS30 an hour out, not sooner");
-    /* drain the immediate CO2/VOC work first */
+    CASE("ECO schedules the SEN63C an hour out, not sooner");
+    /* drain the immediate VOC work first */
     for (int i = 0; i < 6; i++) ac_engine_tick(&e, t);
     p = ac_engine_tick(&e, t);
     CHECK(p.action == AC_ACT_NONE || p.action == AC_ACT_SAMPLE_VOC);
@@ -571,38 +573,45 @@ static void test_engine(void)
     CHECK(p.action == AC_ACT_NONE);
     CHECK(p.sleep_ms >= 60000);
 
-    CASE("a dead SPS30 does not stop the other channels");
+    CASE("a dead SEN63C does not stop the VOC channel");
     ac_engine_t e3;
     ac_engine_init(&e3, &c, 0);
     for (int i = 0; i < 5; i++)
-        ac_engine_sensor_failed(&e3, AC_ACT_SAMPLE_PM, "no reply on UART");
-    CHECK(!e3.health.sps30_ok);
+        ac_engine_sensor_failed(&e3, AC_ACT_SAMPLE_PM, "no ACK at 0x6B");
+    CHECK(!e3.health.sen6x_ok);
     ac_time_ms_t w = 61000;
-    ac_sample_t q = mk(w, -1.0f, 100, 600.0f);
+    ac_sample_t q = mk(w, -1.0f, 100, -1.0f);
     ac_engine_submit(&e3, &q);
     p = ac_engine_tick(&e3, w);
-    CHECK(p.action == AC_ACT_SAMPLE_CO2 || p.action == AC_ACT_SAMPLE_VOC);
+    CHECK(p.action == AC_ACT_SAMPLE_VOC);
     CHECK(e3.state != AC_STATE_ERROR);
 
-    CASE("all three sensors dead is an ERROR, not silence");
-    for (int i = 0; i < 10; i++) {
+    CASE("both sensors dead is an ERROR, not silence");
+    for (int i = 0; i < 10; i++)
         ac_engine_sensor_failed(&e3, AC_ACT_SAMPLE_VOC, "nack");
-        ac_engine_sensor_failed(&e3, AC_ACT_SAMPLE_CO2, "nack");
-    }
     ac_engine_tick(&e3, w);
     CHECK(e3.state == AC_STATE_ERROR);
     CHECK(strlen(e3.health.last_error) > 0);
 
-    CASE("the fan is cleaned weekly because we power cycle the sensor");
+    CASE("no weekly fan cleaning: the SEN6x does not need it");
     ac_engine_t e4;
     ac_engine_init(&e4, &c, 0);
     ac_time_ms_t week = 7ull * 24ull * 3600ull * 1000ull + 1000;
-    bool saw_clean = false;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 6; i++) {
         p = ac_engine_tick(&e4, week);
-        if (p.action == AC_ACT_FAN_CLEAN) saw_clean = true;
+        CHECK(p.action == AC_ACT_NONE || p.action == AC_ACT_SAMPLE_PM ||
+              p.action == AC_ACT_SAMPLE_VOC);
     }
-    CHECK(saw_clean);
+
+    CASE("one PM window is the only CO2 source: no separate CO2 action");
+    ac_engine_t e8;
+    ac_engine_init(&e8, &c, 0);
+    int pm_windows = 0;
+    for (ac_time_ms_t tt = 0; tt < 2ull * 3600ull * 1000ull; tt += 1000) {
+        p = ac_engine_tick(&e8, tt);
+        if (p.action == AC_ACT_SAMPLE_PM) pm_windows++;
+    }
+    CHECK(pm_windows == 2);      /* ECO: one at boot, one an hour later */
 
     CASE("publishing is rate limited by a real change, not by the clock");
     ac_engine_t e5;
@@ -622,24 +631,25 @@ static void test_engine(void)
     p = ac_engine_tick(&e5, z);
     CHECK(p.publish_dirty);
 
-    CASE("continuous mode asks for a full window, not a one second one");
+    CASE("continuous mode keeps the SEN63C running between windows");
     ac_config_t cont = c;
     cont.default_mode = AC_MODE_CONTINUOUS;
     ac_engine_t e7;
     ac_engine_init(&e7, &cont, 0);
     p = ac_engine_tick(&e7, 0);
     CHECK(p.action == AC_ACT_SAMPLE_PM);
-    CHECK(p.pm_window_s >= AC_SPS30_REC_WINDOW_S);
+    CHECK(p.pm_window_s >= AC_PM_MIN_WINDOW_S);
+    CHECK(p.pm_keep_running);
 
     CASE("factory reset returns every setting to default");
     ac_engine_t e6;
     ac_config_t weird = c;
-    weird.gauge_interval_s = 120;
+    weird.battery_interval_s = 120;
     strncpy(weird.name, "Printer", AC_NAME_MAX - 1);
     ac_engine_init(&e6, &weird, 0);
-    CHECK(e6.cfg.gauge_interval_s == 120);
+    CHECK(e6.cfg.battery_interval_s == 120);
     ac_engine_factory_reset(&e6, 0);
-    CHECK(e6.cfg.gauge_interval_s == c.gauge_interval_s);
+    CHECK(e6.cfg.battery_interval_s == c.battery_interval_s);
     CHECK(strcmp(e6.cfg.name, "AIR CHECK") == 0);
     CHECK(e6.state == AC_STATE_FACTORY_RESET);
 }
@@ -711,13 +721,36 @@ static void test_status(void)
     CHECK(on > 0);
     CHECK(on <= 60000 / 10000 * 50 + 10);
 
+    CASE("holding the button shows what letting go would do");
+    CHECK(ac_status_hold_colour(0) == AC_RGB_OFF);
+    CHECK(ac_status_hold_colour(2999) == AC_RGB_OFF);
+    CHECK(ac_status_hold_colour(3000) == AC_RGB_BLUE);
+    CHECK(ac_status_hold_colour(7999) == AC_RGB_BLUE);
+    CHECK(ac_status_hold_colour(8000) == AC_RGB_CYAN);
+    CHECK(ac_status_hold_colour(11999) == AC_RGB_CYAN);
+    CHECK(ac_status_hold_colour(12000) == AC_RGB_RED);
+    CHECK(ac_status_hold_colour(19999) == AC_RGB_RED);
+    CHECK(ac_status_hold_colour(20000) == AC_RGB_OFF);  /* ignored: dark */
+
+    CASE("calibration shows progress and a clear result");
+    ac_engine_t ce;
+    ac_engine_init(&ce, &c, 0);
+    p = ac_status_pattern(&ce, AC_LED_EVENT_CALIBRATING);
+    CHECK(p.colour == AC_RGB_CYAN);
+    CHECK(p.duration_ms >= 180000);          /* outlasts the 3 min run */
+    CHECK(lit_ms(&p, 10000) > 0 && lit_ms(&p, 10000) < 10000);
+    p = ac_status_pattern(&ce, AC_LED_EVENT_CAL_OK);
+    CHECK(p.colour == AC_RGB_GREEN && ac_status_level(&p, 1000) == AC_RGB_GREEN);
+    p = ac_status_pattern(&ce, AC_LED_EVENT_CAL_FAIL);
+    CHECK(p.colour == AC_RGB_RED && p.period_ms > 0);
+    CHECK(ac_status_level(&p, 5000) == AC_RGB_OFF);
+
     CASE("a dead device blinks red unprompted");
     ac_engine_t dead;
     ac_engine_init(&dead, &c, 0);
     for (int i = 0; i < 10; i++) {
         ac_engine_sensor_failed(&dead, AC_ACT_SAMPLE_PM, "x");
         ac_engine_sensor_failed(&dead, AC_ACT_SAMPLE_VOC, "x");
-        ac_engine_sensor_failed(&dead, AC_ACT_SAMPLE_CO2, "x");
     }
     ac_engine_tick(&dead, 61000);
     p = ac_status_pattern(&dead, AC_LED_EVENT_NONE);
@@ -772,6 +805,53 @@ static void test_window(void)
     CHECK_NEAR(w.peak, 42.0, 0.01);
 }
 
+/* ---------------- battery from voltage ------------------------------ */
+
+static void test_battery(void)
+{
+    CASE("the voltage curve is monotonic and spans 0..100 %");
+    float prev = -1.0f;
+    bool monotonic = true, bounded = true;
+    for (float v = 3.0f; v <= 4.3f; v += 0.005f) {
+        float p = ac_battery_soc(v);
+        if (p < prev) monotonic = false;
+        if (p < 0.0f || p > 100.0f) bounded = false;
+        prev = p;
+    }
+    CHECK(monotonic);
+    CHECK(bounded);
+    CHECK(ac_battery_soc(3.0f) == 0.0f);
+    CHECK(ac_battery_soc(4.25f) == 100.0f);
+    CHECK(ac_battery_soc(0.0f / 0.0f) == 0.0f);      /* NaN from a dead ADC */
+
+    CASE("the decision points sit where the curve is steep");
+    CHECK_NEAR(ac_battery_soc(3.73f), 20.0, 0.01);   /* low battery */
+    CHECK(ac_battery_soc(3.60f) < 5.0f);             /* critical */
+    CHECK_NEAR(ac_battery_soc(3.84f), 50.0, 0.01);
+    CHECK_NEAR(ac_battery_soc(3.835f), 48.75, 0.01); /* interpolated */
+
+    CASE("charge state follows USB and the termination voltage");
+    CHECK(ac_battery_charge_state(3.9f, false) == AC_CHG_DISCHARGING);
+    CHECK(ac_battery_charge_state(3.9f, true) == AC_CHG_CHARGING);
+    CHECK(ac_battery_charge_state(4.18f, true) == AC_CHG_FULL);
+    CHECK(ac_battery_charge_state(0.0f, true) == AC_CHG_UNKNOWN);
+
+    CASE("on battery the reported value never climbs back on noise");
+    ac_batt_track_t t;
+    ac_batt_track_init(&t);
+    float a = ac_batt_track_update(&t, 3.87f, false);   /* 60 % */
+    float b = ac_batt_track_update(&t, 3.85f, false);   /* 55 % */
+    float c = ac_batt_track_update(&t, 3.87f, false);   /* warm again: 60 % */
+    CHECK_NEAR(a, 60.0, 0.01);
+    CHECK_NEAR(b, 55.0, 0.01);
+    CHECK_NEAR(c, 55.0, 0.01);
+
+    CASE("a freshly charged cell is recognised, charging is followed");
+    CHECK_NEAR(ac_batt_track_update(&t, 4.11f, false), 90.0, 0.01);
+    CHECK_NEAR(ac_batt_track_update(&t, 3.73f, false), 20.0, 0.01);
+    CHECK_NEAR(ac_batt_track_update(&t, 3.80f, true), 40.0, 0.01);
+}
+
 /* ------------------------------------------------------------------ */
 
 int main(void)
@@ -786,6 +866,7 @@ int main(void)
     test_engine();
     test_status();
     test_window();
+    test_battery();
     printf("\n%d checks, %d failure(s)\n", g_run, g_fail);
     return g_fail ? 1 : 0;
 }
