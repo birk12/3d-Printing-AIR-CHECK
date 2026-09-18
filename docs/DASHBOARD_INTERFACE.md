@@ -50,6 +50,33 @@ Alternatively, a 3–8 s button press opens the sensor's own commissioning
 window (5 minutes, the LED blinks blue). Its code is in the serial log and on
 the label.
 
+### If the controller is a Raspberry Pi (python-matter-server)
+
+A dashboard design can move the Matter work off the battery-powered display
+onto an always-on Raspberry Pi running the Open Home Foundation's
+`python-matter-server`. The Pi becomes the second controller, renders the
+pages, and the display only fetches them. That works with this sensor
+unchanged, and is the better fit: a mains-powered controller can simply hold a
+subscription.
+
+- **Commission with the shared code** from "Turn On Pairing Mode":
+  `commission_with_code(code, network_only=True)`. The sensor is already on
+  Thread, so it is on-network commissioning and no Bluetooth is involved.
+- **The Pi must learn the route to the Thread network.** The HomePod
+  advertises the Thread prefix in IPv6 router advertisements (Route
+  Information Option). Linux ignores those by default, and then the Pi simply
+  cannot reach any Thread device, with no clear error. On the Pi's LAN
+  interface:
+  ```
+  net.ipv6.conf.<iface>.accept_ra = 1          # 2 if IPv6 forwarding is on
+  net.ipv6.conf.<iface>.accept_ra_rt_info_max_plen = 64
+  ```
+- **Keep the subscription the server sets up.** Apple Home already holds one;
+  a second subscriber means one extra report per attribute change. Changes
+  are already rate-limited by the deadbands below. That is roughly the same
+  traffic as the 15-minute reads the energy model budgets (0.33 mAh/day), and
+  well inside the margin.
+
 ## What to read
 
 All values are standard clusters on four endpoints. No vendor extensions.
@@ -128,6 +155,9 @@ poll**. Its parent router holds any message for it until it next wakes up.
   Holding a subscription means staying on Wi-Fi. If the dashboard is on mains
   power, subscribe with a max interval of a few minutes instead.
 - **Every 15 min is plenty.** PM only changes hourly in ECO anyway.
+- If a mains-powered controller sits in between (the Raspberry Pi case above),
+  let *it* talk Matter and let the battery display fetch rendered pages. The
+  display then never has to wait out the sensor's 15 s poll.
 
 ### What it costs the sensor
 
