@@ -3,6 +3,60 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-09-18
+
+The sensor becomes a headless, three-month device that feeds a separate
+e-ink dashboard. Same single hardware design, still identical for every unit.
+
+### Changed
+
+- **No display on the sensor.** Numbers live in Apple Home and on a separate
+  e-ink dashboard that reads the sensors over Matter multi-admin, locally,
+  through the HomePod mini (EDR-12).
+- **Three-month target instead of six**, spent on hourly particle readings in
+  ECO instead of four-hourly. ECO: 3.0 months with a 25 % margin, including a
+  dashboard read every 15 minutes. The six-month setting stays available as
+  `ECO_LONG`.
+- **Enclosure 98 x 102 x 32 mm** (was 122 x 114 x 32): the cell stands
+  upright in the back layer under a printed cover; four corner screws.
+- Button moved from GPIO6 to GPIO1. One RGB status LED (Adafruit 159) shines
+  through a 0.6 mm skin of the front face, with no hole.
+- The energy model uses an independent PPK2 measurement of an ESP32-C6 Matter
+  ICD at a 15 s poll (121.9 µA) instead of the lower figure derived from
+  Espressif's 5 s trace (EDR-13).
+
+### Added
+
+- `docs/DASHBOARD_INTERFACE.md`: pairing via multi-admin, every attribute
+  with its ID (checked against the Matter SDK headers), timing, and what a
+  read costs the sensor's battery.
+- 24 h PeakMeasuredValue and AverageMeasuredValue on PM2.5, PM10, CO2 and VOC.
+- The configured name is published as Basic Information / NodeLabel.
+- Identify blinks the LED white.
+- State, mode and air-quality changes are logged, since there is no screen.
+
+### Fixed
+
+- **I2C could not have worked in v1.0.** On the Adafruit ESP32-C6 Feather, the
+  I2C pull-ups and a WS2812B share the LDO that GPIO20 switches; v1.0 switched
+  it off. The gas sensors now have their own LP_I2C bus (GPIO6/7) with pull-ups
+  on the switched sensor rail. GPIO20 is only pulsed for battery reads (EDR-11).
+- The engraved wordmark was mirrored on the part: the model's X axis runs
+  right to left seen from the front. Text is now mirrored in the model, and
+  the docs say which side is which.
+
+### Removed
+
+- e-paper display, its load switch, driver, fonts and screen renderer.
+
+### Verification
+
+- 466 host checks (was 455), including the LED logic and 24 h statistics
+- 344 electrical rule checks, now including one pull-up pair per bus on the
+  rail that powers it, and the C6's fixed LP_I2C pads
+- firmware: 1.65 MB (16 % OTA headroom), 46.6 % of RAM
+- still nothing verified on assembled hardware
+
 ## [1.0.0] - 2026-09-17
 
 First release. V1 is the final hardware design: one device, built as many

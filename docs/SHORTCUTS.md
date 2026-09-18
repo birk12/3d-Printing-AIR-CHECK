@@ -61,7 +61,7 @@ discover from their electricity bill.
 
 ## 3. VOC rising, before particles do
 
-In ECO mode the device only samples particles every four hours, but VOC every
+In ECO mode the device only samples particles once an hour, but VOC every
 ten seconds. VOC is the early warning.
 
 ```
@@ -137,6 +137,6 @@ Automation: Home > "When PM2.5 of 3D Printer rises above 25"
 * **A value can be unavailable.** During warm-up, or if a sensor has failed,
   the attribute is not published. Guard with `If [value] has any value`
   before comparing, or the Shortcut fails silently.
-* **In ECO mode PM2.5 updates every four hours.** A Shortcut that polls it
-  every five minutes will see the same number 48 times. Trigger on change
+* **In ECO mode PM2.5 updates once an hour.** A Shortcut that polls it
+  every five minutes will see the same number 12 times. Trigger on change
   instead.

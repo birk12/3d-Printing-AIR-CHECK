@@ -12,15 +12,15 @@
 ## Adding a device
 
 ```
-POWER ON  ->  WARMING UP screen  ->  Home app, "Add Accessory"
+POWER ON  ->  LED blinks blue  ->  Home app, "Add Accessory"
           ->  scan the QR code on the back of the case
           ->  the device joins your Thread network
           ->  name it, put it in a room
 ```
 
 If the device was already commissioned and you want to re-open the
-commissioning window, hold the button for 3 to 8 seconds. The screen switches
-to the pairing screen and shows the manual code.
+commissioning window, hold the button for 3 to 8 seconds. The LED blinks
+blue for 5 minutes; the manual code is on the label (and in the serial log).
 
 ## What Apple Home shows
 
@@ -29,7 +29,7 @@ to the pairing screen and shows the manual code.
 | overall air quality | Air Quality `0x005B` | **yes** - the accessory tile reads Excellent / Good / Fair / Inferior / Poor |
 | PM2.5 | PM2.5 Concentration `0x042A` | **yes**, in ug/m3 |
 | PM10 | PM10 Concentration `0x042D` | **yes**, in ug/m3 |
-| PM1.0 | PM1 Concentration `0x042C` | **no.** HomeKit has no PM1 characteristic. The value is published and any full Matter controller can read it; Apple simply does not surface it. It is on screen 2 of the device. |
+| PM1.0 | PM1 Concentration `0x042C` | **no.** HomeKit has no PM1 characteristic. The value is published and any full Matter controller can read it; Apple simply does not surface it. It is on the dashboard (docs/DASHBOARD_INTERFACE.md). |
 | CO2 | CO2 Concentration `0x040D` | **yes**, in ppm |
 | VOC | TVOC Concentration `0x042E` | **yes, but read the caveat below** |
 | temperature | Temperature Measurement | **yes**, as a separate sensor in the same accessory |
@@ -72,9 +72,10 @@ renders with its own words:
 | HIGH | 4 Poor | Inferior |
 | VERY HIGH | 5 VeryPoor | Poor |
 
-The device's own screen always says *why*: "HIGH - PM2.5 + VOC". Apple Home
-does not carry that reason, which is one of the reasons the device has a
-screen.
+The device keeps a reason for every state ("HIGH - PM2.5 + VOC") in its log.
+Matter has no attribute for it, so neither Apple Home nor the dashboard gets
+it directly. The dashboard can recompute it from the values and the
+thresholds in docs/DASHBOARD_INTERFACE.md.
 
 ## Automations that work
 
@@ -112,16 +113,17 @@ editor. `docs/SHORTCUTS.md` has working recipes for:
 ## Known limitations
 
 1. **PM1 is invisible in Apple Home.** No HomeKit characteristic exists. Use
-   the device screen, or a full Matter controller.
+   the dashboard, or any other full Matter controller.
 2. **The VOC number is an index, not a concentration.** See above.
 3. **Reaction time is up to 15 seconds.** The device is a Matter ICD with a
    15 s slow poll - the longest a Short Idle Time ICD is allowed. A command or
    a subscription update waits for the next poll. This is the direct price of
    the battery life.
-4. **PM2.5 in ECO mode updates every four hours.** Apple Home will show the
-   same number for hours at a time and that is correct behaviour, not a stuck
-   sensor. Switch to NORMAL if you want a fresher number and can charge the
-   device every three weeks.
+4. **PM2.5 in ECO mode updates once an hour.** Apple Home will show the
+   same number for an hour at a time, and that is correct behaviour, not a
+   stuck sensor. During a detected print it updates every 2 minutes. Switch to
+   NORMAL for a 15-minute cadence if you can charge the device every three
+   weeks.
 5. **The air-quality *reason* is not exported.** Matter has nowhere to put it.
 6. **Everything in this table should be verified against your own setup.**
    Apple changes what Home surfaces between iOS releases. Nothing here has
@@ -141,7 +143,8 @@ They are two completely independent Matter accessories. There is no pairing
 between them, no master, no synchronisation, and nothing in the firmware knows
 that a second unit exists. You can build a third and a fourth.
 
-The one thing to watch: both ship with the same default name on the display.
+The one thing to watch: both ship with the same default name.
 Rename them in the config (or accept that the Home app name is the one that
-matters) so the diagnostics screen tells them apart - it shows a serial number
+matters) so the dashboard, which reads it as Matter NodeLabel, tells them
+apart. The serial log also shows a serial number
 derived from the MAC, which is unique per unit.

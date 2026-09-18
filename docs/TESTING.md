@@ -17,13 +17,14 @@ believed.
 
 | area | status | evidence |
 |---|---|---|
-| measurement core logic | SIMULATED, 455 checks | `firmware/test/host/test_ac_core.c` |
-| display rendering | BUILD-VERIFIED | all ten screens rendered and visually reviewed, `docs/images/` |
+| measurement core logic | SIMULATED, 466 checks | `firmware/test/host/test_ac_core.c` |
+| status LED logic | SIMULATED | part of the 466; every pattern and its timing |
 | energy model | BUILD-VERIFIED | `tools/battery_calculator/model.py`, inputs traced to datasheets |
-| electrical design | BUILD-VERIFIED | 371 rule checks in `electronics/schematic/design.py` |
-| enclosure | BUILD-VERIFIED | OpenSCAD asserts + `tools/diagnostics/stl_check.py`: manifold, fits the bed, 1.6 % overhang |
-| firmware build | BUILD-VERIFIED | full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6: 1.69 MB image (14 % free in the OTA slot), 224 kB DIRAM (49.7 %) |
+| electrical design | BUILD-VERIFIED | 344 rule checks in `electronics/schematic/design.py` |
+| enclosure | BUILD-VERIFIED | OpenSCAD asserts + `tools/diagnostics/stl_check.py`: manifold, fits the bed, 1.7 % overhang |
+| firmware build | BUILD-VERIFIED | full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6: 1.65 MB image (16 % free in the OTA slot), 210 kB DIRAM (46.6 %) |
 | sensor drivers | **untested** | register addresses and timings read from datasheets |
+| Matter attribute IDs in DASHBOARD_INTERFACE.md | BUILD-VERIFIED | checked against the Matter SDK's generated `AttributeIds.h` / `ClusterId.h` |
 | Thread / Matter / Apple Home | **untested** | no controller has ever seen this device |
 
 ## Automated tests
@@ -36,7 +37,7 @@ cc -std=c99 -Wall -Wextra -O1 -Ifirmware/components/ac_core/include \
    -lm -o /tmp/ac_test && /tmp/ac_test
 ```
 
-455 checks in about 20 ms. What they cover:
+466 checks in about 20 ms. What they cover:
 
 | area | examples |
 |---|---|
@@ -46,8 +47,9 @@ cc -std=c99 -Wall -Wextra -O1 -Ifirmware/components/ac_core/include \
 | air quality | the worst channel decides; two channels at the same level are both named; a steep rise escalates GOOD but never further; nothing measured is UNKNOWN, not GOOD |
 | events | ordinary room noise never triggers; a single spike arms but does not confirm; a short dip does not end an event; the completed record carries the right peaks and durations; nothing can trigger without a baseline |
 | history | a spike survives aggregation in the max field; the ring wraps without corrupting; trends are right for a ramp and for a flat room |
-| engine | a cold engine measures immediately but publishes nothing; warm-up ends after the SGP40's documented 60 s; ECO schedules four hours out; an event escalates to ACTIVE; USB switches to continuous; critical battery stops measuring; one dead sensor does not stop the others; all three dead is an ERROR; the fan is cleaned weekly; publishing is driven by change, not by the clock; factory reset restores every default |
-| display | every screen renders with ink on it and is not a black rectangle; rendering is deterministic; missing values print as `--` |
+| engine | a cold engine measures immediately but publishes nothing; warm-up ends after the SGP40's documented 60 s; ECO schedules the SPS30 one hour out; an event escalates to ACTIVE; USB switches to continuous; critical battery stops measuring; one dead sensor does not stop the others; all three dead is an ERROR; the fan is cleaned weekly; publishing is driven by change, not by the clock; factory reset restores every default |
+| status LED | dark in normal operation; a press shows the air-quality colour for exactly 3 s; pairing blinks blue and times out with the commissioning window; warm-up, low battery, critical battery and fault each have their own pattern; the unprompted critical-battery blip stays under 50 ms per 10 s |
+| 24 h statistics | no history means no value, not zero; a one-minute spike survives into the 24 h peak; a 1 h window ending before the spike does not see it; the bucket in progress is included |
 
 The suite was checked against a deliberately injected bug (inverting one
 air-quality comparison) to confirm it fails when it should.
@@ -58,11 +60,18 @@ air-quality comparison) to confirm it fails when it should.
 python3 electronics/schematic/design.py
 ```
 
-371 checks: every pin exists on its part, no net has one connection, no pin is
+344 checks: every pin exists on its part, no net has one connection, no pin is
 on two nets, every supply is within its part's range, logic levels cross
-correctly, I2C addresses are unique, no strapping pin is used, every load
-switch is on an RTC GPIO, the boost can start the fan, the charge current is a
-sane C-rate.
+correctly, I2C addresses are unique per bus, each bus has exactly one pull-up
+pair **on the rail that powers its devices**, the sensor bus sits on the only
+pads the C6's LP_I2C can use, no strapping pin is used, every load switch is on
+an RTC GPIO, the boost can start the fan, the charge current is a sane C-rate.
+
+What the ERC could **not** catch is the v1.0 bug in EDR-11: the Feather's I2C
+pull-ups live on a regulator that the firmware switched off. The Feather was
+modelled as a black box with "pull-ups to 3V3", taken from the learn guide.
+Only reading Adafruit's actual schematic showed otherwise. The rule check is
+only as good as the facts fed into it.
 
 ### Enclosure
 
@@ -73,7 +82,7 @@ python3 tools/diagnostics/stl_check.py cad/stl/aircheck_front.stl
 
 The OpenSCAD model asserts on every render: the Feather stack cannot collide
 with the battery, the SPS30 cannot cross the shell seam or the sensor bay
-divider, the carrier board fits, the battery fits, the display cannot overlap
+divider, the carrier board fits, the battery bay fits both ways, no screw post hits the carrier, the SPS30 cradle, a gas breakout or the battery bay, no keyhole puts a screw head against the cell, the LED and button sit over the carrier and cannot overlap
 the button. The STL checker reports mesh closure, bounding box, mass and
 overhang area.
 
@@ -88,18 +97,16 @@ idf.py set-target esp32c6 build
 Result:
 
 ```
-aircheck.bin binary size 0x19bc40 bytes.
-Smallest app partition is 0x1e0000 bytes. 0x443c0 bytes (14%) free.
-
-DIRAM   224 636 bytes used (49.69 %), 227 476 remaining of 452 112
-LP SRAM     124 bytes used (0.76 %)
+v1.1  aircheck.bin 0x192160 bytes, 0x4dea0 (16 %) free in the 0x1e0000 app slot
+      DIRAM 210 484 bytes used (46.56 %), 241 628 remaining of 452 112
+v1.0  aircheck.bin 0x19bc40 bytes (14 % free), DIRAM 224 636 bytes (49.69 %)
 ```
 
 Cross-compiling found five bugs the host compiler and the host tests did not:
 
 | | |
 |---|---|
-| `%u` against a `uint32_t`, which is `unsigned long` on riscv32 | `ac_display.c` |
+| `%u` against a `uint32_t`, which is `unsigned long` on riscv32 | `ac_display.c` (v1.0) |
 | `gpio_deep_sleep_hold_en()` does not exist on parts that hold individual pads | `ac_hal.c` |
 | missing `PRIV_REQUIRES` - the Matter headers were not on the include path | `main/CMakeLists.txt` |
 | the Power Source cluster validates its features in `create()`, so adding them afterwards left the cluster aborted | `ac_matter.cpp` |
@@ -120,12 +127,12 @@ These need hardware and are the first thing to do once you have it.
 | B4 | SGP40 self test | `ac_sgp40_self_test()` returns 0xD400 |
 | B5 | SGP40 response | breathing on it moves the raw signal, the index follows within a minute |
 | B6 | SCD41 single shot | 400-600 ppm in a ventilated room; breathing on it goes over 2000 |
-| B7 | display | all six screens render and are readable at arm's length |
+| B7 | status LED | white at boot, all three colours on a press, blue when pairing, readable through the 0.6 mm skin in daylight |
 | B8 | button | short, long and very long all do the right thing; over 20 s does nothing |
-| B9 | battery gauge | the percentage tracks a charge and a discharge |
-| B10 | charging | the charge LED comes on, the device shows CHARGING, it keeps measuring |
+| B9 | battery gauge | the percentage tracks a charge and a discharge **across a whole day** with GPIO20 only pulsed (EDR-11: MAX17048 bus-low sleep) |
+| B10 | charging | the Feather's charge LED comes on, the log shows CHARGING, it keeps measuring |
 | B11 | rails | measure that the 5 V rail really is 0 V between PM measurements |
-| B12 | **quiescent current** | with a PPK II: the idle floor. This is the number the whole battery claim rests on. The model says 62 uA for the carrier plus 55 uA for the MCU. |
+| B12 | **quiescent current** | with a PPK II: the idle floor. This is the number the whole battery claim rests on. The model says about 100 uA (39 uA MCU floor + 61 uA carrier). A reading near 1 mA means the Feather's WS2812B is powered (EDR-11). |
 | B13 | sleep/wake | the device survives a night; uptime and history are continuous |
 | B14 | watchdog | hold a sensor line low; the device recovers rather than hanging |
 | B15 | NVS | reboot; baseline and history come back |
@@ -138,7 +145,7 @@ These need hardware and are the first thing to do once you have it.
 | N2 | attributes | PM2.5, PM10, CO2, VOC, temperature, humidity and battery all appear |
 | N3 | reporting | a change at the sensor reaches the Home app within about 15 s |
 | N4 | reconnect | power-cycle the HomePod; the device re-attaches on its own |
-| N5 | offline | unplug the border router; the device keeps measuring and the screen keeps working |
+| N5 | offline | unplug the border router; the device keeps measuring and its history keeps filling |
 | N6 | automation | an Apple Home threshold automation fires |
 | N7 | factory reset | 12 s press; the device leaves the fabric and re-advertises |
 

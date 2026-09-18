@@ -26,7 +26,7 @@ not a health assessment.
 * Calibration is against a TSI DustTrak DRX 8533 with a specific test aerosol.
   Plastic fume is not that aerosol. Absolute values for printer emissions carry
   a systematic uncertainty nobody has quantified.
-* In ECO mode the particle channel samples every four hours. Short particle
+* In ECO mode the particle channel samples once an hour. Short particle
   events that produce no VOC will be missed. This is a deliberate trade for
   battery life and is explained in `docs/BATTERY_LIFE.md`.
 
@@ -64,13 +64,13 @@ not a health assessment.
   vendor-published measurements. **None of it has been measured on an
   assembled device**, because no device has been assembled.
 * The least certain line is the carrier board's quiescent current, estimated
-  at 62 uA. If the real board is at 150 uA, ECO falls from 6.4 months to about
-  5.3.
+  at 61 uA. If the real board is at 150 uA, ECO falls from 3.0 months to about
+  2.8. Setting particles to every 2 h recovers that with room to spare.
 * The second least certain is the Thread radio, taken from Espressif's own
   ICD example. A different Thread network, a weaker link or more retries all
   cost more than the trace shows.
 * LiPo capacity falls with age and with cold. A cell at 0 degC delivers well
-  under its rated capacity. The six month figure is for a room at 20 degC with
+  under its rated capacity. The three-month figure is for a room at 20 degC with
   a healthy cell.
 
 ---
@@ -120,7 +120,7 @@ not a health assessment.
 ## Firmware
 
 * `ac_core` - the scheduling, filtering, baseline, classification, event
-  detection, history and display - is covered by 455 host checks that run on
+  detection, history, 24 h statistics and LED logic - is covered by 466 host checks that run on
   every build.
 * `ac_hal` - the actual sensor drivers - is **not covered by any automated
   test**. It cannot be, without hardware. Every register address, command

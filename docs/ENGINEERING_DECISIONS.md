@@ -29,14 +29,14 @@ out to be the decisive number rather than a comfort margin. The finished
 firmware reports:
 
 ```
-DIRAM   224 636 bytes used (49.7 %), 227 476 free of 452 112
-Flash   1 690 176 byte image, 14 % free in a 1.9 MB OTA partition
+v1.0 (with display)  DIRAM 224 636 bytes (49.7 %), image 1.69 MB
+v1.1 (headless)      DIRAM 210 484 bytes (46.6 %), image 1.65 MB, 16 % OTA headroom
 ```
 
-That is with four endpoints, six clusters on one of them, a 5 kB framebuffer,
-a 5.6 kB history structure and the whole Matter stack. Half the C6's usable
-RAM is gone before any runtime allocation. The H2 has 130 kB less to start
-with, so this build would be somewhere between very tight and impossible - and
+That is with four endpoints, six clusters on one of them (four now with
+24 h peak and average), a 5.6 kB history structure and the whole Matter stack.
+Almost half the C6's usable RAM is gone before any runtime allocation. The H2
+has 130 kB less to start with, so this build would be very tight on it - and
 that is *before* someone adds a feature.
 
 The second reason is boring and decisive for a DIY project: there is a
@@ -77,7 +77,10 @@ checksum instead of `i2c_master_transmit_receive`. About 300 lines.
 
 ---
 
-## EDR-3: e-paper, not OLED or memory LCD
+## EDR-3: e-paper, not OLED or memory LCD — *superseded by EDR-12 in v1.1*
+
+> Kept for the record. Since v1.1 the sensor has no display; numbers are shown
+> on a separate e-ink dashboard and in Apple Home.
 
 **Decision.** 1.54 in 200x200, SSD1681 controller.
 
@@ -130,10 +133,11 @@ room that is never ventilated, the CO2 channel will read low over time.
 
 ---
 
-## EDR-5: VOC every 10 s, PM every 4 hours
+## EDR-5: VOC every 10 s as the tripwire, PM on a slow clock
 
 **Decision.** In ECO, the cheap channel watches continuously and the expensive
-channel measures on demand.
+channel measures on a slow clock: every 4 h in v1.0, **every hour since v1.1**
+(EDR-12).
 
 **The numbers.** One 40 s SPS30 window costs about 0.9 mAh. A VOC sample in
 Sensirion's low-power sequence costs about 0.017 mAh - fifty times less. Four
@@ -145,9 +149,9 @@ into ACTIVE, where PM samples every two minutes. Printing raises VOC long
 before a four-hourly PM sample would have noticed anything.
 
 **Cost.** A particle event that produces no VOC - sweeping, a dusty draught -
-can be missed in ECO. That is the honest limitation and it is in
-`docs/BATTERY_LIFE.md` in as many words. NORMAL mode removes it at the cost of
-roughly three weeks of runtime instead of six months.
+can fall between two particle samples in ECO. That is the honest limitation
+and it is in `docs/BATTERY_LIFE.md` in as many words. NORMAL mode narrows it
+to 15 minutes at the cost of roughly three weeks of runtime.
 
 ---
 
@@ -212,8 +216,11 @@ electronics.
 
 The battery is in the back layer, outside the air path entirely.
 
-**Cost.** The case is 114 mm tall, taller than the brief's 70-100 mm target,
-because the sensor bay and the 60 x 90 mm cell cannot share the same band.
+**Cost.** In v1.0 the case was 122 x 114 mm because the display, the sensor
+bay and the cell each needed their own band. Without the display (v1.1) it
+is **98 x 102 x 32 mm**: the cell stands upright in the back layer, behind the
+sensor bay and the electronics, under a printed cover that keeps the
+sensor-bay air off it.
 
 ---
 
@@ -259,3 +266,107 @@ rather have no number than a mislabelled one.
 **Cost.** A number in Apple Home labelled "VOC" whose unit is wrong. This is
 the least comfortable decision in the project and it is deliberately the
 easiest one to reverse.
+
+---
+
+## EDR-11: two I2C buses, because the Feather's pull-ups share a regulator with an LED
+
+**Found in v1.1, and it is a real v1.0 bug.** Adafruit's own schematic for the
+ESP32-C6 Feather shows that the board's I2C pull-ups (R3, a 10 kΩ network, not
+the 5 kΩ the learn guide mentions) and its WS2812B RGB LED both sit on
+**VSENSOR**, the output of the second LDO, which GPIO20 switches. The MAX17048
+fuel gauge is on the same bus.
+
+v1.0 drove GPIO20 low to save power, which removed the only pull-ups on the
+bus the SGP40 and SCD41 were on. That firmware could not have talked to its gas
+sensors or its fuel gauge. The fix is not simply "keep GPIO20 high" either: a
+WS2812B idles at roughly a milliamp even when dark. That is 24 mAh/day, more
+than everything except the particle sensor.
+
+**Decision.**
+
+* **Sensor bus**: SGP40 + SCD41 on the C6's **LP_I2C**. Its pads are fixed at
+  GPIO6 (SDA) and GPIO7 (SCL) (`LP_I2C_SDA_IOMUX_PAD` / `..._SCL_...` in
+  ESP-IDF's `hal/esp32c6/include/hal/i2c_ll.h`). The carrier has its own
+  4.7 kΩ pull-ups there, to the **switched** sensor rail, so switching the
+  rail off leaves nothing to back-feed the sensors.
+* **Gauge bus**: the Feather's own bus on GPIO19/18 stays as it is. GPIO20 is
+  switched on for the few milliseconds of a battery read, every 5 minutes, and
+  off again. The WS2812B is lit for as long as a read takes, and dark (and
+  unpowered) otherwise.
+* The **button** moves from GPIO6 to **GPIO1**, which is also RTC-capable and
+  still wakes the chip from deep sleep.
+
+**Cost.** Two buses instead of one, and a caveat from ESP-IDF: LP_I2C has no
+sleep-retention module. The LP domain stays powered in light sleep, so this
+should not matter, but it is on the bench-test list (B5).
+
+**Unverified.** The MAX17048 datasheet describes a sleep mode entered when SDA
+and SCL are held low; with GPIO20 off, R3 pulls both lines to about 0 V.
+Adafruit's own low-power guidance switches the same rail off, so the gauge
+should keep tracking, but bench test B9 must confirm that the percentage keeps
+moving across a day.
+
+---
+
+## EDR-12: the sensor has no display; a separate dashboard shows the numbers
+
+**Decision (2026-09-18).** The sensor is a headless, battery-powered box with
+one button and an RGB status LED. Numbers are shown on a separate e-ink
+dashboard (built elsewhere) and in Apple Home. The battery target changes from
+six months to **three**. That buys hourly particle measurements instead of
+four-hourly.
+
+**How the dashboard gets the data.** Apple Home has no local API, so the
+dashboard cannot ask the HomePod. It uses **Matter multi-admin**: each sensor
+is shared from the Home app ("Turn On Pairing Mode") into the dashboard's own
+fabric, and the dashboard reads the sensors directly. The HomePod mini is the
+Thread border router in between, so it routes the traffic but does not
+interpret it. The full contract, attribute IDs included, is in
+`docs/DASHBOARD_INTERFACE.md`.
+
+**What the sensor adds for it.**
+
+* PeakMeasuredValue and AverageMeasuredValue over 24 h on PM2.5, PM10, CO2 and
+  VOC. These are standard features of the concentration clusters, so a
+  dashboard that sleeps most of the time can still show "worst today".
+* The configured name as Basic Information / NodeLabel. Apple Home's names
+  never reach a second fabric.
+* Identify blinks the LED white, which is how you find out which of two
+  identical boxes you are looking at.
+
+**What it removes.** The e-paper panel and its load switch, the SSD1681 driver,
+three bitmap fonts and the screen renderer. The case goes from 122 x 114 to
+98 x 102 mm, the BOM drops by about EUR 17, and RAM use from 49.7 % to 46.6 %.
+
+**Cost.** Nothing to read at the printer without a phone or the dashboard.
+The LED answers a button press with the air-quality colour (green, yellow,
+red, purple), and otherwise stays dark.
+
+---
+
+## EDR-13: a measured ICD figure replaces the vendor one
+
+**Input.** Microamp Home (YouTube `KE7bOYCYETM`, repo
+`uamphome/matter_sensor_xiao_nrf52840`) measured an ESP32-C6 DevKit as a Matter
+SIT ICD at **our exact configuration**, a 15 s slow poll, with a PPK2 over one
+hour: **121.9 µA average, 39.3 µA sleep floor**. Our model had derived about
+95 µA at 15 s from Espressif's 5 s trace.
+
+**Decision.** Use the measured 121.9 µA. It is independent, at our poll rate,
+and the more conservative of the two. It moved ECO from 3.1 to 3.0 months with
+margin.
+
+**Also from that video, considered and not adopted:**
+
+* **Long Idle Time ICD with a 5 minute slow poll** got the author's
+  nRF52840 + SHT41 sensor to 17.5 µA. For us the radio is about 9 % of the
+  budget, so LIT would buy about 6 % more runtime. The catch: a LIT device
+  without a registered ICD client must behave as SIT, and whether Apple Home
+  registers is unverified. It stays in `sdkconfig.defaults.lit`, experimental.
+* **nRF52840 instead of the ESP32-C6.** Better radio power, but it would mean
+  rewriting the whole stack on nRF Connect SDK to save about 2.5 mAh/day on a
+  31.5 mAh/day budget. Not worth it while the SPS30 is two thirds of the bill.
+* **Board overhead matters more than the chip.** He measured XIAO- and other
+  C6 boards at 226-549 µA against 122 µA for the bare DevKit. This is exactly
+  the kind of overhead EDR-11 is about, and why bench test B12 comes first.

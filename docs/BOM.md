@@ -8,9 +8,9 @@ Prices are single-unit European retail including VAT, rounded, as of September 2
 
 | build | electronics total | what you give up |
 |---|---|---|
-| BUDGET BUILD - no CO2 | **EUR 145.75** | CO2 measurement |
-| RECOMMENDED BUILD | **EUR 189.75** | nothing; ~8 mm thicker than the SMD build |
-| CUSTOM PCB BUILD | **EUR 171.25** | needs reflow equipment |
+| BUDGET BUILD - no CO2 | **EUR 129.08** | CO2 measurement |
+| RECOMMENDED BUILD | **EUR 173.08** | nothing; ~8 mm thicker than the SMD build |
+| CUSTOM PCB BUILD | **EUR 154.58** | needs reflow equipment |
 
 ### On the EUR 150 target
 
@@ -28,35 +28,37 @@ Everything except the SCD41. PM, VOC, temperature and humidity still work, and t
 
 | ref | qty | part | MPN | supplier | EUR | why this part |
 |---|---|---|---|---|---|---|
-| M1 | 1 | ESP32-C6 Feather | `5933` | Adafruit / Mouser / Digi-Key / Berrybase | 22.00 | ESP32-C6-MINI-1 (4 MB flash, 512 kB SRAM) with native 802.15.4 for Thread, USB-C, MCP73831 LiPo charger (R_PROG 5.1k -> ~196 mA), RT9080/AP2112 3V3 LDO and a MAX17048 fuel gauge already on board. Removes the three highest-risk blocks (charger, fuel gauge, USB-C) from the DIY build. |
+| M1 | 1 | ESP32-C6 Feather | `5933` | Adafruit / Mouser / Digi-Key / Berrybase | 22.00 | ESP32-C6-MINI-1 (4 MB flash, 512 kB SRAM) with native 802.15.4 for Thread, USB-C, MCP73831 LiPo charger (R_PROG 5.1k -> ~196 mA), RT9080/AP2112 3V3 LDO and a MAX17048 fuel gauge already on board. Removes the three highest-risk blocks (charger, fuel gauge, USB-C) from the DIY build. NOTE, from Adafruit's own schematic: the board's I2C pull-ups (R3, 10k) and its WS2812B sit on VSENSOR, the second LDO switched by GPIO20. See EDR-11. |
 | U1 | 1 | SPS30 | `SPS30` | Mouser / Digi-Key / Farnell | 38.00 | Factory-calibrated optical PM sensor with PM1/PM2.5/PM4/PM10 mass and number concentration, >10 year rated life, documented low-power duty cycling. |
 | U2 | 1 | SGP40 breakout | `4829` | Adafruit / Berrybase | 14.00 | SGP40 MOX VOC sensor with Sensirion's VOC Index algorithm and on-chip humidity compensation. Breakout avoids hand-soldering a 2.44 mm DFN. |
-| DS1 | 1 | 1.54in e-Paper 200x200 | `12955 (SSD1681)` | Waveshare / Berrybase / Amazon | 17.00 | Bistable display: zero current to hold an image, so the screen can stay readable forever without costing battery. 184 dpi is enough for a 6 mm primary numeral at desk distance. |
 | U4 | 1 | TPS61023 | `TPS61023DRLR` | Mouser / Digi-Key | 1.60 | 3.3 V -> 5 V boost for the SPS30 at ~92 % efficiency at 55 mA, 2 A switch so the 80 mA fan-start inrush is not close to any limit. |
 | SW1 | 1 | TPS22918 | `TPS22918DBVR` | Mouser / Digi-Key | 0.85 | Load switch on the *input* of the boost converter, so the boost quiescent current disappears completely when the SPS30 is not measuring. |
 | SW2 | 1 | TPS22918 | `TPS22918DBVR` | Mouser / Digi-Key | 0.85 | Hard power cycle for the I2C sensor rail: the only reliable recovery from a sensor that has hung the bus, and the shutdown path at critical battery. |
-| SW3 | 1 | TPS22918 | `TPS22918DBVR` | Mouser / Digi-Key | 0.85 | Removes the e-paper module's standby current and gives a clean recovery from a latched/ghosted panel. |
 | L1 | 1 | 2.2 uH, >=2 A sat | `DFE252012F-2R2M` | Mouser | 0.45 | TPS61023 reference inductor. |
 | C1 | 1 | 22 uF / 10 V X7R | `GRM21BR71A226ME44L` | Mouser | 0.25 | Boost input bulk. |
 | C2 | 1 | 47 uF / 10 V X5R | `GRM21BR61A476ME15L` | Mouser | 0.35 | Boost output bulk; holds the rail through the SPS30 fan-start step. |
 | C3 | 1 | 100 uF / 10 V | `EEE-FT1A101AP` | Mouser | 0.40 | Local reservoir at the SPS30 connector; the sensor is at the end of a cable and pulls 80 mA for the first 200 ms. |
 | C4 | 1 | 1 uF / 16 V X7R | `GRM188R71C105KA12D` | Mouser | 0.10 | +3V3_SENS decoupling. |
-| C5 | 1 | 1 uF / 16 V X7R | `GRM188R71C105KA12D` | Mouser | 0.10 | +3V3_EPD decoupling. |
 | C6 | 1 | 100 nF / 16 V X7R | `GRM188R71C104KA01D` | Mouser | 0.05 | Button RC debounce with R3. |
 | R1 | 1 | 330 R | `RC0603FR-07330RL` | Mouser | 0.02 | Series resistor in the SPS30 UART TX line: limits any current injected into the unpowered sensor and damps the cable. |
 | R2 | 1 | 330 R | `RC0603FR-07330RL` | Mouser | 0.02 | Same for the SPS30 UART RX line. |
-| R3 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Button pull-up to +3V3 (always-on rail, so the button can wake the MCU out of deep sleep). |
-| R4 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Pull-down on EPD_BUSY so the MCU reads a defined level while the display rail is switched off. |
+| R3 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Button pull-up to +3V3 (always-on rail, so the button can wake the MCU out of deep sleep). The button is on GPIO1, an RTC pin. |
 | R5 | 1 | 1 M | `RC0603FR-071ML` | Mouser | 0.02 | Bleeder on +3V3_SENS so the rail actually collapses when SW2 opens. |
 | SW4 | 1 | tactile switch 6 x 6 x 5.0 mm, through hole | `B3F-4050 (or any 6x6x5.0 mm THT tactile)` | Mouser / Reichelt | 0.30 | Single multifunction user button. The 5.0 mm overall height is what the enclosure is dimensioned around: it puts the stem tip 3.5 mm behind the front face, leaving 0.3 mm of travel under the printed cap. |
+| R6 | 1 | 4.7 k | `RC0603FR-074K7L` | Mouser | 0.02 | SDA pull-up for the sensor bus, to the *switched* sensor rail: when the rail is off there is no pull-up left to back-feed the unpowered sensors. |
+| R7 | 1 | 4.7 k | `RC0603FR-074K7L` | Mouser | 0.02 | SCL pull-up for the sensor bus, same reasoning as R6. |
+| LED1 | 1 | RGB LED 5 mm diffused, common anode | `159` | Adafruit / Berrybase | 1.20 | The only user-facing output now that the sensor has no display: air quality at a glance, pairing mode, low battery. Anode on VBAT so green and blue have forward-voltage headroom; the cathodes are sunk by GPIOs. Shines through a 0.6 mm skin left in the front face, no hole. |
+| R8 | 1 | 1 k | `RC0603FR-071KL` | Mouser | 0.02 | Red: (3.8 V - 2.0 V) / 1k = 1.8 mA. |
+| R9 | 1 | 330 R | `RC0603FR-07330RL` | Mouser | 0.02 | Green: (3.8 V - 3.1 V) / 330R = 2.1 mA. |
+| R10 | 1 | 330 R | `RC0603FR-07330RL` | Mouser | 0.02 | Blue: as green. |
 | J1 | 1 | JST ZHR-5 cable | `ZHR-5 + SZH-002T-P0.5` | Mouser / Digi-Key | 1.50 | Mating connector for the SPS30, per its datasheet. |
-| BT1 | 1 | LiPo 3.7 V 4000 mAh, protected, 606090 | `606090 / PL-606090-4000 class` | Eremit / AKKUparts / Adafruit equivalent | 18.00 | Largest cell that fits a 120 x 104 mm case with a sane ~24 h charge time at the Feather's 196 mA charger. Must include a PCM (over-charge, over-discharge, over-current and short-circuit protection). |
-| PCB1 | 1 | AIR CHECK carrier board (ACC-1) | `ACC-1 rev A` | JLCPCB / Aisler / PCBWay | 8.00 | Carries the boost, the three load switches, the button, the SPS30 connector and the display header, and holds the Feather. |
+| BT1 | 1 | LiPo 3.7 V 4000 mAh, protected, 606090 | `606090 / PL-606090-4000 class` | Eremit / AKKUparts / Adafruit equivalent | 18.00 | Largest cell that fits a 98 x 102 mm case upright, with a sane ~24 h charge time at the Feather's 196 mA charger. Must include a PCM (over-charge, over-discharge, over-current and short-circuit protection). |
+| PCB1 | 1 | AIR CHECK carrier board (ACC-1) | `ACC-1 rev B` | JLCPCB / Aisler / PCBWay | 8.00 | Carries the boost, the two load switches, the button, the RGB LED, the sensor-bus pull-ups and the SPS30 connector, and holds the Feather. |
 | X1 | 1 | M2.5 brass heat-set inserts (12x) + M2.5x8 screws | `M2.5 x 4.0 x 4.6 knurled` | Amazon / Ruthex | 6.00 | Serviceable, re-openable enclosure. |
 | X2 | 1 | acoustic foam / EPDM strip 2 mm | `-` | local | 3.00 | Sensirion recommends decoupling the SPS30 mechanically to stop the fan exciting the case. |
 | X3 | 1 | silicone wire 26 AWG + JST PH 2.0 pigtail | `-` | local | 4.00 | Battery lead and internal wiring. |
 | - | 1 | SHT40 temperature/humidity breakout (Adafruit 4885) | `4885` | - | 8.00 | variant-specific |
-| | | | | | **145.75** | |
+| | | | | | **129.08** | |
 
 ## RECOMMENDED BUILD
 
@@ -64,35 +66,37 @@ Breakout modules on a carrier board. No fine-pitch soldering anywhere: the small
 
 | ref | qty | part | MPN | supplier | EUR | why this part |
 |---|---|---|---|---|---|---|
-| M1 | 1 | ESP32-C6 Feather | `5933` | Adafruit / Mouser / Digi-Key / Berrybase | 22.00 | ESP32-C6-MINI-1 (4 MB flash, 512 kB SRAM) with native 802.15.4 for Thread, USB-C, MCP73831 LiPo charger (R_PROG 5.1k -> ~196 mA), RT9080/AP2112 3V3 LDO and a MAX17048 fuel gauge already on board. Removes the three highest-risk blocks (charger, fuel gauge, USB-C) from the DIY build. |
+| M1 | 1 | ESP32-C6 Feather | `5933` | Adafruit / Mouser / Digi-Key / Berrybase | 22.00 | ESP32-C6-MINI-1 (4 MB flash, 512 kB SRAM) with native 802.15.4 for Thread, USB-C, MCP73831 LiPo charger (R_PROG 5.1k -> ~196 mA), RT9080/AP2112 3V3 LDO and a MAX17048 fuel gauge already on board. Removes the three highest-risk blocks (charger, fuel gauge, USB-C) from the DIY build. NOTE, from Adafruit's own schematic: the board's I2C pull-ups (R3, 10k) and its WS2812B sit on VSENSOR, the second LDO switched by GPIO20. See EDR-11. |
 | U1 | 1 | SPS30 | `SPS30` | Mouser / Digi-Key / Farnell | 38.00 | Factory-calibrated optical PM sensor with PM1/PM2.5/PM4/PM10 mass and number concentration, >10 year rated life, documented low-power duty cycling. |
 | U2 | 1 | SGP40 breakout | `4829` | Adafruit / Berrybase | 14.00 | SGP40 MOX VOC sensor with Sensirion's VOC Index algorithm and on-chip humidity compensation. Breakout avoids hand-soldering a 2.44 mm DFN. |
 | U3 | 1 | SCD41 breakout | `5190` | Adafruit / Berrybase | 52.00 | True NDIR CO2 (photoacoustic) plus temperature and humidity, with a single-shot mode that makes 43 uA average possible at a 1 h cadence. |
-| DS1 | 1 | 1.54in e-Paper 200x200 | `12955 (SSD1681)` | Waveshare / Berrybase / Amazon | 17.00 | Bistable display: zero current to hold an image, so the screen can stay readable forever without costing battery. 184 dpi is enough for a 6 mm primary numeral at desk distance. |
 | U4 | 1 | TPS61023 | `TPS61023DRLR` | Mouser / Digi-Key | 1.60 | 3.3 V -> 5 V boost for the SPS30 at ~92 % efficiency at 55 mA, 2 A switch so the 80 mA fan-start inrush is not close to any limit. |
 | SW1 | 1 | TPS22918 | `TPS22918DBVR` | Mouser / Digi-Key | 0.85 | Load switch on the *input* of the boost converter, so the boost quiescent current disappears completely when the SPS30 is not measuring. |
 | SW2 | 1 | TPS22918 | `TPS22918DBVR` | Mouser / Digi-Key | 0.85 | Hard power cycle for the I2C sensor rail: the only reliable recovery from a sensor that has hung the bus, and the shutdown path at critical battery. |
-| SW3 | 1 | TPS22918 | `TPS22918DBVR` | Mouser / Digi-Key | 0.85 | Removes the e-paper module's standby current and gives a clean recovery from a latched/ghosted panel. |
 | L1 | 1 | 2.2 uH, >=2 A sat | `DFE252012F-2R2M` | Mouser | 0.45 | TPS61023 reference inductor. |
 | C1 | 1 | 22 uF / 10 V X7R | `GRM21BR71A226ME44L` | Mouser | 0.25 | Boost input bulk. |
 | C2 | 1 | 47 uF / 10 V X5R | `GRM21BR61A476ME15L` | Mouser | 0.35 | Boost output bulk; holds the rail through the SPS30 fan-start step. |
 | C3 | 1 | 100 uF / 10 V | `EEE-FT1A101AP` | Mouser | 0.40 | Local reservoir at the SPS30 connector; the sensor is at the end of a cable and pulls 80 mA for the first 200 ms. |
 | C4 | 1 | 1 uF / 16 V X7R | `GRM188R71C105KA12D` | Mouser | 0.10 | +3V3_SENS decoupling. |
-| C5 | 1 | 1 uF / 16 V X7R | `GRM188R71C105KA12D` | Mouser | 0.10 | +3V3_EPD decoupling. |
 | C6 | 1 | 100 nF / 16 V X7R | `GRM188R71C104KA01D` | Mouser | 0.05 | Button RC debounce with R3. |
 | R1 | 1 | 330 R | `RC0603FR-07330RL` | Mouser | 0.02 | Series resistor in the SPS30 UART TX line: limits any current injected into the unpowered sensor and damps the cable. |
 | R2 | 1 | 330 R | `RC0603FR-07330RL` | Mouser | 0.02 | Same for the SPS30 UART RX line. |
-| R3 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Button pull-up to +3V3 (always-on rail, so the button can wake the MCU out of deep sleep). |
-| R4 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Pull-down on EPD_BUSY so the MCU reads a defined level while the display rail is switched off. |
+| R3 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Button pull-up to +3V3 (always-on rail, so the button can wake the MCU out of deep sleep). The button is on GPIO1, an RTC pin. |
 | R5 | 1 | 1 M | `RC0603FR-071ML` | Mouser | 0.02 | Bleeder on +3V3_SENS so the rail actually collapses when SW2 opens. |
 | SW4 | 1 | tactile switch 6 x 6 x 5.0 mm, through hole | `B3F-4050 (or any 6x6x5.0 mm THT tactile)` | Mouser / Reichelt | 0.30 | Single multifunction user button. The 5.0 mm overall height is what the enclosure is dimensioned around: it puts the stem tip 3.5 mm behind the front face, leaving 0.3 mm of travel under the printed cap. |
+| R6 | 1 | 4.7 k | `RC0603FR-074K7L` | Mouser | 0.02 | SDA pull-up for the sensor bus, to the *switched* sensor rail: when the rail is off there is no pull-up left to back-feed the unpowered sensors. |
+| R7 | 1 | 4.7 k | `RC0603FR-074K7L` | Mouser | 0.02 | SCL pull-up for the sensor bus, same reasoning as R6. |
+| LED1 | 1 | RGB LED 5 mm diffused, common anode | `159` | Adafruit / Berrybase | 1.20 | The only user-facing output now that the sensor has no display: air quality at a glance, pairing mode, low battery. Anode on VBAT so green and blue have forward-voltage headroom; the cathodes are sunk by GPIOs. Shines through a 0.6 mm skin left in the front face, no hole. |
+| R8 | 1 | 1 k | `RC0603FR-071KL` | Mouser | 0.02 | Red: (3.8 V - 2.0 V) / 1k = 1.8 mA. |
+| R9 | 1 | 330 R | `RC0603FR-07330RL` | Mouser | 0.02 | Green: (3.8 V - 3.1 V) / 330R = 2.1 mA. |
+| R10 | 1 | 330 R | `RC0603FR-07330RL` | Mouser | 0.02 | Blue: as green. |
 | J1 | 1 | JST ZHR-5 cable | `ZHR-5 + SZH-002T-P0.5` | Mouser / Digi-Key | 1.50 | Mating connector for the SPS30, per its datasheet. |
-| BT1 | 1 | LiPo 3.7 V 4000 mAh, protected, 606090 | `606090 / PL-606090-4000 class` | Eremit / AKKUparts / Adafruit equivalent | 18.00 | Largest cell that fits a 120 x 104 mm case with a sane ~24 h charge time at the Feather's 196 mA charger. Must include a PCM (over-charge, over-discharge, over-current and short-circuit protection). |
-| PCB1 | 1 | AIR CHECK carrier board (ACC-1) | `ACC-1 rev A` | JLCPCB / Aisler / PCBWay | 8.00 | Carries the boost, the three load switches, the button, the SPS30 connector and the display header, and holds the Feather. |
+| BT1 | 1 | LiPo 3.7 V 4000 mAh, protected, 606090 | `606090 / PL-606090-4000 class` | Eremit / AKKUparts / Adafruit equivalent | 18.00 | Largest cell that fits a 98 x 102 mm case upright, with a sane ~24 h charge time at the Feather's 196 mA charger. Must include a PCM (over-charge, over-discharge, over-current and short-circuit protection). |
+| PCB1 | 1 | AIR CHECK carrier board (ACC-1) | `ACC-1 rev B` | JLCPCB / Aisler / PCBWay | 8.00 | Carries the boost, the two load switches, the button, the RGB LED, the sensor-bus pull-ups and the SPS30 connector, and holds the Feather. |
 | X1 | 1 | M2.5 brass heat-set inserts (12x) + M2.5x8 screws | `M2.5 x 4.0 x 4.6 knurled` | Amazon / Ruthex | 6.00 | Serviceable, re-openable enclosure. |
 | X2 | 1 | acoustic foam / EPDM strip 2 mm | `-` | local | 3.00 | Sensirion recommends decoupling the SPS30 mechanically to stop the fan exciting the case. |
 | X3 | 1 | silicone wire 26 AWG + JST PH 2.0 pigtail | `-` | local | 4.00 | Battery lead and internal wiring. |
-| | | | | | **189.75** | |
+| | | | | | **173.08** | |
 
 ## CUSTOM PCB BUILD
 
@@ -100,36 +104,38 @@ Bare sensors reflowed onto the carrier board instead of breakouts. About 8 mm th
 
 | ref | qty | part | MPN | supplier | EUR | why this part |
 |---|---|---|---|---|---|---|
-| M1 | 1 | ESP32-C6 Feather | `5933` | Adafruit / Mouser / Digi-Key / Berrybase | 22.00 | ESP32-C6-MINI-1 (4 MB flash, 512 kB SRAM) with native 802.15.4 for Thread, USB-C, MCP73831 LiPo charger (R_PROG 5.1k -> ~196 mA), RT9080/AP2112 3V3 LDO and a MAX17048 fuel gauge already on board. Removes the three highest-risk blocks (charger, fuel gauge, USB-C) from the DIY build. |
+| M1 | 1 | ESP32-C6 Feather | `5933` | Adafruit / Mouser / Digi-Key / Berrybase | 22.00 | ESP32-C6-MINI-1 (4 MB flash, 512 kB SRAM) with native 802.15.4 for Thread, USB-C, MCP73831 LiPo charger (R_PROG 5.1k -> ~196 mA), RT9080/AP2112 3V3 LDO and a MAX17048 fuel gauge already on board. Removes the three highest-risk blocks (charger, fuel gauge, USB-C) from the DIY build. NOTE, from Adafruit's own schematic: the board's I2C pull-ups (R3, 10k) and its WS2812B sit on VSENSOR, the second LDO switched by GPIO20. See EDR-11. |
 | U1 | 1 | SPS30 | `SPS30` | Mouser / Digi-Key / Farnell | 38.00 | Factory-calibrated optical PM sensor with PM1/PM2.5/PM4/PM10 mass and number concentration, >10 year rated life, documented low-power duty cycling. |
 | U2 | 1 | SGP40 (bare DFN) | `SGP40-D-R4` | Adafruit / Berrybase | 7.50 | SGP40 MOX VOC sensor with Sensirion's VOC Index algorithm and on-chip humidity compensation. Breakout avoids hand-soldering a 2.44 mm DFN. |
 | U3 | 1 | SCD41 (bare LGA) | `SCD41-D-R2` | Adafruit / Berrybase | 32.00 | True NDIR CO2 (photoacoustic) plus temperature and humidity, with a single-shot mode that makes 43 uA average possible at a 1 h cadence. |
-| DS1 | 1 | 1.54in e-Paper 200x200 | `12955 (SSD1681)` | Waveshare / Berrybase / Amazon | 17.00 | Bistable display: zero current to hold an image, so the screen can stay readable forever without costing battery. 184 dpi is enough for a 6 mm primary numeral at desk distance. |
 | U4 | 1 | TPS61023 | `TPS61023DRLR` | Mouser / Digi-Key | 1.60 | 3.3 V -> 5 V boost for the SPS30 at ~92 % efficiency at 55 mA, 2 A switch so the 80 mA fan-start inrush is not close to any limit. |
 | SW1 | 1 | TPS22918 | `TPS22918DBVR` | Mouser / Digi-Key | 0.85 | Load switch on the *input* of the boost converter, so the boost quiescent current disappears completely when the SPS30 is not measuring. |
 | SW2 | 1 | TPS22918 | `TPS22918DBVR` | Mouser / Digi-Key | 0.85 | Hard power cycle for the I2C sensor rail: the only reliable recovery from a sensor that has hung the bus, and the shutdown path at critical battery. |
-| SW3 | 1 | TPS22918 | `TPS22918DBVR` | Mouser / Digi-Key | 0.85 | Removes the e-paper module's standby current and gives a clean recovery from a latched/ghosted panel. |
 | L1 | 1 | 2.2 uH, >=2 A sat | `DFE252012F-2R2M` | Mouser | 0.45 | TPS61023 reference inductor. |
 | C1 | 1 | 22 uF / 10 V X7R | `GRM21BR71A226ME44L` | Mouser | 0.25 | Boost input bulk. |
 | C2 | 1 | 47 uF / 10 V X5R | `GRM21BR61A476ME15L` | Mouser | 0.35 | Boost output bulk; holds the rail through the SPS30 fan-start step. |
 | C3 | 1 | 100 uF / 10 V | `EEE-FT1A101AP` | Mouser | 0.40 | Local reservoir at the SPS30 connector; the sensor is at the end of a cable and pulls 80 mA for the first 200 ms. |
 | C4 | 1 | 1 uF / 16 V X7R | `GRM188R71C105KA12D` | Mouser | 0.10 | +3V3_SENS decoupling. |
-| C5 | 1 | 1 uF / 16 V X7R | `GRM188R71C105KA12D` | Mouser | 0.10 | +3V3_EPD decoupling. |
 | C6 | 1 | 100 nF / 16 V X7R | `GRM188R71C104KA01D` | Mouser | 0.05 | Button RC debounce with R3. |
 | R1 | 1 | 330 R | `RC0603FR-07330RL` | Mouser | 0.02 | Series resistor in the SPS30 UART TX line: limits any current injected into the unpowered sensor and damps the cable. |
 | R2 | 1 | 330 R | `RC0603FR-07330RL` | Mouser | 0.02 | Same for the SPS30 UART RX line. |
-| R3 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Button pull-up to +3V3 (always-on rail, so the button can wake the MCU out of deep sleep). |
-| R4 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Pull-down on EPD_BUSY so the MCU reads a defined level while the display rail is switched off. |
+| R3 | 1 | 100 k | `RC0603FR-07100KL` | Mouser | 0.02 | Button pull-up to +3V3 (always-on rail, so the button can wake the MCU out of deep sleep). The button is on GPIO1, an RTC pin. |
 | R5 | 1 | 1 M | `RC0603FR-071ML` | Mouser | 0.02 | Bleeder on +3V3_SENS so the rail actually collapses when SW2 opens. |
 | SW4 | 1 | tactile switch 6 x 6 x 5.0 mm, through hole | `B3F-4050 (or any 6x6x5.0 mm THT tactile)` | Mouser / Reichelt | 0.30 | Single multifunction user button. The 5.0 mm overall height is what the enclosure is dimensioned around: it puts the stem tip 3.5 mm behind the front face, leaving 0.3 mm of travel under the printed cap. |
+| R6 | 1 | 4.7 k | `RC0603FR-074K7L` | Mouser | 0.02 | SDA pull-up for the sensor bus, to the *switched* sensor rail: when the rail is off there is no pull-up left to back-feed the unpowered sensors. |
+| R7 | 1 | 4.7 k | `RC0603FR-074K7L` | Mouser | 0.02 | SCL pull-up for the sensor bus, same reasoning as R6. |
+| LED1 | 1 | RGB LED 5 mm diffused, common anode | `159` | Adafruit / Berrybase | 1.20 | The only user-facing output now that the sensor has no display: air quality at a glance, pairing mode, low battery. Anode on VBAT so green and blue have forward-voltage headroom; the cathodes are sunk by GPIOs. Shines through a 0.6 mm skin left in the front face, no hole. |
+| R8 | 1 | 1 k | `RC0603FR-071KL` | Mouser | 0.02 | Red: (3.8 V - 2.0 V) / 1k = 1.8 mA. |
+| R9 | 1 | 330 R | `RC0603FR-07330RL` | Mouser | 0.02 | Green: (3.8 V - 3.1 V) / 330R = 2.1 mA. |
+| R10 | 1 | 330 R | `RC0603FR-07330RL` | Mouser | 0.02 | Blue: as green. |
 | J1 | 1 | JST ZHR-5 cable | `ZHR-5 + SZH-002T-P0.5` | Mouser / Digi-Key | 1.50 | Mating connector for the SPS30, per its datasheet. |
-| BT1 | 1 | LiPo 3.7 V 4000 mAh, protected, 606090 | `606090 / PL-606090-4000 class` | Eremit / AKKUparts / Adafruit equivalent | 18.00 | Largest cell that fits a 120 x 104 mm case with a sane ~24 h charge time at the Feather's 196 mA charger. Must include a PCM (over-charge, over-discharge, over-current and short-circuit protection). |
-| PCB1 | 1 | AIR CHECK carrier board (ACC-1) | `ACC-1 rev A` | JLCPCB / Aisler / PCBWay | 8.00 | Carries the boost, the three load switches, the button, the SPS30 connector and the display header, and holds the Feather. |
+| BT1 | 1 | LiPo 3.7 V 4000 mAh, protected, 606090 | `606090 / PL-606090-4000 class` | Eremit / AKKUparts / Adafruit equivalent | 18.00 | Largest cell that fits a 98 x 102 mm case upright, with a sane ~24 h charge time at the Feather's 196 mA charger. Must include a PCM (over-charge, over-discharge, over-current and short-circuit protection). |
+| PCB1 | 1 | AIR CHECK carrier board (ACC-1) | `ACC-1 rev B` | JLCPCB / Aisler / PCBWay | 8.00 | Carries the boost, the two load switches, the button, the RGB LED, the sensor-bus pull-ups and the SPS30 connector, and holds the Feather. |
 | X1 | 1 | M2.5 brass heat-set inserts (12x) + M2.5x8 screws | `M2.5 x 4.0 x 4.6 knurled` | Amazon / Ruthex | 6.00 | Serviceable, re-openable enclosure. |
 | X2 | 1 | acoustic foam / EPDM strip 2 mm | `-` | local | 3.00 | Sensirion recommends decoupling the SPS30 mechanically to stop the fan exciting the case. |
 | X3 | 1 | silicone wire 26 AWG + JST PH 2.0 pigtail | `-` | local | 4.00 | Battery lead and internal wiring. |
 | - | 1 | SMD stencil for ACC-1 | `-` | - | 8.00 | variant-specific |
-| | | | | | **171.25** | |
+| | | | | | **154.58** | |
 
 ## Optional but recommended
 

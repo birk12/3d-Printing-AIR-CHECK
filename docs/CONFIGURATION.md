@@ -14,7 +14,7 @@ python3 tools/configuration/aircheck_config.py --port ... set name "3D Printer"
 
 | setting | default | |
 |---|---|---|
-| `name` | `AIR CHECK` | shown on the display. Apple Home keeps its own name; this one is what distinguishes two units on their screens |
+| `name` | `AIR CHECK` | published as Matter NodeLabel. Apple Home keeps its own name; this is the one the dashboard sees, so it is what tells two units apart there |
 | `location` | empty | free text |
 
 ## Measurement
@@ -22,7 +22,7 @@ python3 tools/configuration/aircheck_config.py --port ... set name "3D Printer"
 | setting | default | |
 |---|---|---|
 | `default_mode` | `ECO` | what the device falls back to. `NORMAL` if it stands next to a printer and you will charge it monthly |
-| `profile[mode].pm_interval_s` | ECO 4 h, NORMAL 15 min | how often the SPS30 runs |
+| `profile[mode].pm_interval_s` | ECO 1 h, NORMAL 15 min | how often the SPS30 runs. ECO at 4 h (14400) is the six-month setting |
 | `profile[mode].pm_window_s` | 40 s / 60 s | how long it runs. **Never below 8 s** - Sensirion say not to, and the validator enforces it |
 | `profile[mode].voc_interval_s` | 10 s | clamped to 1-10 s, the range the Gas Index Algorithm is validated at |
 | `profile[mode].co2_interval_s` | ECO 1 h | the SCD41's average current is a direct function of this |
@@ -73,13 +73,12 @@ it is the one to reach for first.
 The baseline stops learning while an event is in progress. That is not
 configurable, on purpose.
 
-## Display
+## Status LED and battery gauge
 
 | setting | default | |
 |---|---|---|
-| `display_timeout_s` | 20 s | how long after a button press the device keeps refreshing. The image stays on screen either way - e-paper holds it at zero current |
-| `display_start_screen` | 0 (overview) | |
-| `display_show_delta` | true | show the delta against baseline on the particle screen |
+| `led_show_air_quality` | true | a short button press shows the air-quality colour for 3 s. Off: it only blinks green once, as a sign of life |
+| `gauge_interval_s` | 300 s | how often the MAX17048 is read. Each read powers the Feather's VSENSOR LDO for a few milliseconds (EDR-11) |
 
 ## Battery
 
@@ -100,8 +99,8 @@ configurable, on purpose.
 The only settings worth differing between two devices:
 
 ```
-unit A:  name = "3D Printer",  default_mode = NORMAL,  ev_sensitivity = 3
-unit B:  name = "Room",        default_mode = ECO,     ev_sensitivity = 2
+unit A:  name = "3D Printer",  default_mode = ECO,  ev_sensitivity = 3
+unit B:  name = "Room",        default_mode = ECO,  ev_sensitivity = 2
 ```
 
 Same firmware binary on both. Nothing is compiled per unit.

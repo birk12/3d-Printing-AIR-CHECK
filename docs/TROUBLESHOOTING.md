@@ -2,24 +2,58 @@
 
 Work down the list. Almost everything is one of the first five.
 
-## Nothing on the screen
+## The LED does nothing
 
 | check | |
 |---|---|
 | is the battery plugged in? | the JST PH 2.0 at the Feather |
-| does USB-C bring it up? | if yes, the cell is flat or its protection has tripped - charge it for an hour |
-| is the e-paper ribbon seated? | the connector latch has to be flipped closed |
-| does the serial log say anything? | `idf.py monitor`; if the banner appears the MCU is fine and the panel is not |
+| does USB-C bring it up? | if yes, the cell is flat or its protection has tripped: charge it for an hour |
+| does it flash white at power-on? | if not, check the LED's orientation: long lead (anode) to VBAT |
+| does the serial log show the banner? | `idf.py monitor`; if yes the MCU runs and the problem is the LED |
 
-An e-paper panel holds its last image with no power at all. A **blank white**
-screen means the panel was cleared or never written. A screen still showing
-old values means the device stopped refreshing - check the log, not the panel.
+In normal operation the LED is **meant** to be dark. Press the button once:
+it should show the air-quality colour for 3 seconds.
 
-## `e-paper init failed` in the log
+| LED | meaning |
+|---|---|
+| white flash at boot | alive |
+| blue, slow blink | pairing mode (5 min): not commissioned yet, or you held the button 3–8 s |
+| green / yellow / red / purple for 3 s after a press | air quality good / elevated / high / very high |
+| white pulse after a press | still warming up (first minute after power-on) |
+| yellow short blinks after a press | battery low |
+| red blip every 10 s, unprompted | battery critical, measurement paused |
+| red blip every 5 s, unprompted | all sensors failed: check the log |
+| fast red for 3 s | factory reset in progress |
+| white fast blink | a controller sent Identify |
 
-The `BUSY` line is stuck high. Usually the ribbon, occasionally the 100 k
-pull-down not being fitted. The firmware gives up after 2 s rather than
-hanging, so the rest of the device keeps working with a stale screen.
+## One colour is missing
+
+A missing green or blue channel is almost always the LED fitted the wrong way
+round, or a wrong resistor. Green and blue need about 3 V, so they only light
+because the anode is on VBAT (3.3–4.2 V), not on 3V3.
+
+## SGP40 / SCD41 never answer (`SGP40 init failed`, `SCD41 init failed`)
+
+1. The sensors must be on the **sensor bus**: GPIO6 = SDA, GPIO7 = SCL. Those
+   are the only pads the C6's LP_I2C can use. The Feather's own SDA/SCL
+   (GPIO19/18) and its STEMMA QT port are the gauge bus, which is only
+   powered for a few milliseconds every 5 minutes. A sensor plugged in there
+   will never answer.
+2. The 4.7 kΩ pull-ups R6/R7 must go to **+3V3_SENS**. Measure 3.3 V on SDA
+   and SCL with the device running.
+3. Is +3V3_SENS up? GPIO3 drives its load switch.
+
+## The battery percentage never changes
+
+The MAX17048 is read every 5 minutes with GPIO20 switched on briefly (EDR-11).
+If the value is stuck across a day:
+
+1. `battery` errors in the log mean the gauge bus did not come up. Check that
+   nothing on the carrier holds GPIO19/18.
+2. A value that reads but never moves may be the gauge's bus-low sleep mode.
+   With GPIO20 off, both lines sit near 0 V. Set `gauge_interval_s` to 60 and
+   see whether it starts tracking. Report it either way: this is an open
+   verification item.
 
 ## PM2.5 reads 0.0, or never changes
 
@@ -30,8 +64,8 @@ hanging, so the rest of the device keeps working with a stale screen.
 3. `SPS30: ESP_ERR_TIMEOUT` in the log means the UART is not getting replies.
    Check TX and RX are not swapped, and that **SEL is left floating**. SEL
    pulled to ground selects I2C and the sensor will never answer on UART.
-4. In ECO mode PM2.5 legitimately updates **every four hours**. A number that
-   has not changed since this morning is correct behaviour.
+4. In ECO mode PM2.5 legitimately updates **once an hour**. A number that has
+   not changed for an hour is correct behaviour.
 
 ## PM2.5 always reads low
 
@@ -55,7 +89,7 @@ It also takes time to settle: Sensirion specify under 60 s before VOC events
 are reliably detected, and up to an hour before the sensor meets its full
 specification. After a power cycle the whole algorithm starts again.
 
-If the raw signal on the diagnostics screen does not move when you breathe on
+If the raw signal in the serial log does not move when you breathe on
 it, that is a real fault - check the sensor rail is up.
 
 ## CO2 reads 400-ish and never moves
@@ -94,7 +128,7 @@ measurement of this enclosure.
 ## It shows up in Apple Home, then goes "No Response"
 
 1. Range. Thread is 2.4 GHz and this is a low-power end device. Check the
-   diagnostics screen's link quality; below about -85 dBm it will be flaky.
+   link quality in the serial log; below about -85 dBm it will be flaky.
 2. The border router rebooted. The device re-attaches on its own, usually in
    seconds - give it a minute.
 3. A 15 s gap is normal. The device polls every 15 s by design; the Home app
@@ -102,19 +136,19 @@ measurement of this enclosure.
 4. Critical battery. Below 5 % the device stops measuring and only reports
    battery.
 
-## Battery drains far faster than six months
+## Battery drains far faster than three months
 
 In order of likelihood:
 
-1. **It is not in ECO mode.** The status line, top right, says which mode. If
+1. **It is not in ECO mode.** The serial log prints the mode on every change. If
    it says NORMAL, that is three weeks and it is working correctly. If it says
-   ACTIVE, something is triggering event detection - lower `ev_sensitivity`.
+   ACTIVE, something is triggering event detection: lower `ev_sensitivity`.
 2. **It never leaves ACTIVE.** A workshop with a permanently raised VOC level
    will re-trigger constantly. Reset the baseline once the room is at its
    normal state.
 3. **Measure the idle current.** With a PPK II, the floor should be around
-   120 uA. If it is milliamps, something is not being switched off - the most
-   likely culprits are the STEMMA QT rail (GPIO20 should be low) or a load
+   100 uA. If it is about a milliamp or more, the Feather's WS2812B is
+   powered, meaning GPIO20 is stuck high (EDR-11). Otherwise look for a load
    switch whose RTC hold is not being applied.
 4. **The cell.** A tired or counterfeit LiPo will not deliver its rating.
 

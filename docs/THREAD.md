@@ -66,7 +66,7 @@ idf.py menuconfig
      -> Thread Radio TX power
 ```
 
-Check the link quality on the diagnostics screen afterwards. Below about
+Check the link quality in the serial log afterwards. Below about
 -85 dBm you are trading reliability for a fraction of a percent of runtime,
 which is a bad trade.
 
@@ -75,11 +75,11 @@ which is a bad trade.
 Commissioning hands the device the network's operational dataset, which is
 stored in NVS. After a power cut it re-attaches on its own, typically within a
 few seconds. If it cannot find its parent it retries with a backoff; the
-status line on every screen shows `THREAD` when attached and `OFFLINE` when
-not.
+serial log shows the attach state. A dashboard notices a detached sensor
+because its reads time out.
 
 Losing the Thread network does not stop anything. The device keeps measuring,
-keeps updating its baseline, keeps recording events and keeps its screen
+keeps updating its baseline, keeps recording events and keeps its history
 current. It catches up when the network comes back - but note that Matter has
 no store-and-forward: readings taken while offline are not backfilled into
 Apple Home. They are in the device's own 7 day history.

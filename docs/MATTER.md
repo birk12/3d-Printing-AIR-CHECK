@@ -14,7 +14,7 @@ you turn it on, `ac_matter.cpp` needs the generated names.
 
 | ep | device type | id | clusters (server) |
 |---|---|---|---|
-| 0 | Root Node | `0x0016` | Descriptor, Basic Information, General Commissioning, Network Commissioning, ICD Management, **Power Source** |
+| 0 | Root Node | `0x0016` | Descriptor, Basic Information (**NodeLabel = configured name**), General Commissioning, Network Commissioning, ICD Management, **Power Source** |
 | 1 | Air Quality Sensor | `0x002C` | Descriptor, Identify, **Air Quality** `0x005B`, **PM2.5** `0x042A`, **PM10** `0x042D`, **PM1** `0x042C`, **CO2** `0x040D`, **TVOC** `0x042E` |
 | 2 | Temperature Sensor | `0x0302` | Descriptor, Identify, Temperature Measurement `0x0402` |
 | 3 | Humidity Sensor | `0x0307` | Descriptor, Identify, Relative Humidity Measurement `0x0405` |
@@ -42,8 +42,11 @@ misleading.
 
 ### Concentration measurement clusters
 
-All five are created with the `NumericMeasurement` (`MEA`) feature only, with
-`MeasurementMedium` = Air.
+All five have the `NumericMeasurement` (`MEA`) feature and `MeasurementMedium`
+= Air. PM2.5, PM10, CO2 and TVOC also have `PeakMeasurement` (`PEA`) and
+`AverageMeasurement` (`AVG`) with 24 h windows. They are computed from the
+device's own 5-minute history, so a dashboard that sleeps can still show
+"worst today" (EDR-12).
 
 | cluster | unit attribute | range advertised | source |
 |---|---|---|---|
@@ -60,7 +63,7 @@ in a cluster that expects ppb, because a controller that gets no number can
 build no automation, and the brief explicitly asks for VOC automations.
 
 This is written down in four places - here, in `docs/APPLE_HOME.md`, in
-`ac_matter.cpp` and on the device's own screen - and it is switchable with
+`ac_matter.cpp` and in `docs/DASHBOARD_INTERFACE.md` - and it is switchable with
 `voc_publish_index_as_ppb`. See EDR-10 in `docs/ENGINEERING_DECISIONS.md` for
 the full argument.
 
@@ -116,11 +119,23 @@ the firmware compares before it writes:
 | battery | 1 % |
 | air quality | any change of state |
 
+## Multi-admin (the dashboard)
+
+The sensor can belong to several fabrics at once (`CONFIG_MAX_FABRICS=5`).
+Apple Home is one; the e-ink dashboard is another. Share the sensor from the
+Home app with "Turn On Pairing Mode". Everything the dashboard needs is in
+`docs/DASHBOARD_INTERFACE.md`.
+
+## Identify
+
+Identify blinks the status LED white. With two identical units, that is how
+to tell which box is which.
+
 ## Commissioning
 
 Standard Matter BLE commissioning. On first boot the device advertises for
 15 minutes; afterwards a 3 to 8 second button press re-opens the window for
-5 minutes and puts the manual pairing code on the screen.
+5 minutes (the LED blinks blue) and prints the manual pairing code to the serial log.
 
 **The pairing code is not hard-coded.** The build uses esp-matter's default
 test credentials for development, and
