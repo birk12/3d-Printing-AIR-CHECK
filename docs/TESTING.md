@@ -22,7 +22,7 @@ believed.
 | energy model | BUILD-VERIFIED | `tools/battery_calculator/model.py`, inputs traced to datasheets |
 | electrical design | BUILD-VERIFIED | 371 rule checks in `electronics/schematic/design.py` |
 | enclosure | BUILD-VERIFIED | OpenSCAD asserts + `tools/diagnostics/stl_check.py`: manifold, fits the bed, 1.6 % overhang |
-| firmware build | BUILD-VERIFIED | full ESP-IDF + esp-matter build for esp32c6 |
+| firmware build | BUILD-VERIFIED | full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6: 1.69 MB image (14 % free in the OTA slot), 224 kB DIRAM (49.7 %) |
 | sensor drivers | **untested** | register addresses and timings read from datasheets |
 | Thread / Matter / Apple Home | **untested** | no controller has ever seen this device |
 
@@ -85,8 +85,28 @@ cd firmware
 idf.py set-target esp32c6 build
 ```
 
-This found a real bug that the host compiler did not: a `%u` format against a
-`uint32_t`, which is `unsigned long` on riscv32.
+Result:
+
+```
+aircheck.bin binary size 0x19bc40 bytes.
+Smallest app partition is 0x1e0000 bytes. 0x443c0 bytes (14%) free.
+
+DIRAM   224 636 bytes used (49.69 %), 227 476 remaining of 452 112
+LP SRAM     124 bytes used (0.76 %)
+```
+
+Cross-compiling found five bugs the host compiler and the host tests did not:
+
+| | |
+|---|---|
+| `%u` against a `uint32_t`, which is `unsigned long` on riscv32 | `ac_display.c` |
+| `gpio_deep_sleep_hold_en()` does not exist on parts that hold individual pads | `ac_hal.c` |
+| missing `PRIV_REQUIRES` - the Matter headers were not on the include path | `main/CMakeLists.txt` |
+| the Power Source cluster validates its features in `create()`, so adding them afterwards left the cluster aborted | `ac_matter.cpp` |
+| esp-matter's default data model is the legacy one, whose cluster namespaces differ from the generated one | `ac_matter.cpp` |
+
+None of these were findable without an actual cross-compile, which is the
+argument for doing one even when no hardware exists to run it on.
 
 ## Bench tests, before the case is closed
 

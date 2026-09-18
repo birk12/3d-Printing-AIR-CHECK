@@ -162,7 +162,7 @@ AIR CHECK has been built. What *has* been done:
 | electrical design | 371 automated rule checks over the netlist |
 | enclosure | OpenSCAD asserts, manifold check, 1.6 % overhang, fits a 250 x 210 bed |
 | display | all ten screens rendered and reviewed - see the image at the top |
-| firmware | full ESP-IDF + esp-matter build for esp32c6 |
+| firmware | full ESP-IDF + esp-matter build for esp32c6: 1.69 MB, 14 % free in the OTA slot, 49.7 % of RAM |
 | **sensor drivers** | **untested**; every register and timing read from a datasheet |
 | **Thread, Matter, Apple Home** | **untested**; no controller has seen this device |
 

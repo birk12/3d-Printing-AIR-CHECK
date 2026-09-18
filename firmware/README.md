@@ -32,7 +32,16 @@ not. Note that `esp-matter/examples/common` is deliberately **not** on
 `espressif/button` from the registry, and this project has its own button
 handling.
 
-The first build takes a while: it compiles the whole Matter SDK.
+The first build takes a while: it compiles the whole Matter SDK. The result:
+
+```
+aircheck.bin   1 690 176 bytes, 14 % free in the 1.9 MB OTA partition
+DIRAM          224 636 bytes, 49.7 % of 452 112
+```
+
+Half the RAM is gone before anything is allocated at runtime, which is the
+measured reason this is an ESP32-C6 and not an ESP32-H2 - see EDR-1 in
+`docs/ENGINEERING_DECISIONS.md`.
 
 ## Host tests
 

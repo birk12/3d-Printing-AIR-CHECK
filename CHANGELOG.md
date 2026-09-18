@@ -50,7 +50,9 @@ times as you want places to measure.
 - 455 host checks over the measurement core
 - 371 electrical rule checks
 - OpenSCAD asserts plus an STL checker (manifold, bounding box, overhang)
-- full ESP-IDF + esp-matter build for esp32c6
+- full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6 (1.69 MB image,
+  14 % free in the OTA slot, 49.7 % of RAM), which found five bugs the host
+  tests could not
 
 ### Known limitations
 

@@ -24,14 +24,25 @@ their own Matter ICD example on both chips, at the same 5 s poll rate and
 The H2 is genuinely better, by about 70 uA. Over 183 days that is 310 mAh,
 roughly 8 % of the pack.
 
-**Why the C6 anyway.** 512 kB of SRAM against the H2's 320 kB. This node
-carries four endpoints, six clusters on one of them, a 5 kB framebuffer, a
-5.6 kB history structure and the Matter stack. The H2 can do it; the C6 does
-it with room to change something later. The second reason is boring and
-decisive for a DIY project: there is a well-supported, in-production Feather
-board with a USB-C connector, a LiPo charger and a MAX17048 fuel gauge already
-on it for the C6, and there is not one for the H2. Building those three blocks
-badly would cost more than 70 uA.
+**Why the C6 anyway.** 512 kB of SRAM against the H2's 320 kB - and this turned
+out to be the decisive number rather than a comfort margin. The finished
+firmware reports:
+
+```
+DIRAM   224 636 bytes used (49.7 %), 227 476 free of 452 112
+Flash   1 690 176 byte image, 14 % free in a 1.9 MB OTA partition
+```
+
+That is with four endpoints, six clusters on one of them, a 5 kB framebuffer,
+a 5.6 kB history structure and the whole Matter stack. Half the C6's usable
+RAM is gone before any runtime allocation. The H2 has 130 kB less to start
+with, so this build would be somewhere between very tight and impossible - and
+that is *before* someone adds a feature.
+
+The second reason is boring and decisive for a DIY project: there is a
+well-supported, in-production Feather board with a USB-C connector, a LiPo
+charger and a MAX17048 fuel gauge already on it for the C6, and there is not
+one for the H2. Building those three blocks badly would cost more than 70 uA.
 
 **Cost.** About 8 % of the battery life. Documented, not hidden. If someone
 later spins the custom carrier with a bare module on it, the H2 is the right
