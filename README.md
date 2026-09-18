@@ -8,7 +8,8 @@ dashboard: locally, with no cloud, no account and no hub beyond the HomePod
 mini you already have.
 
 <p align="center">
-  <img src="cad/drawings/exploded.png" alt="Exploded view of the enclosure" width="60%">
+  <img src="cad/drawings/front_iso.png" alt="The finished case, seen from the front" width="48%">
+  <img src="cad/drawings/open_view.png" alt="Inside: SEN63C, VOC bay, carrier with FireBeetle" width="48%">
 </p>
 
 ---
@@ -17,10 +18,10 @@ mini you already have.
 
 | | |
 |---|---|
-| **Particles** | PM1.0, PM2.5, PM4, PM10 and number concentration: Sensirion SPS30 |
+| **Particles** | PM1.0, PM2.5, PM4, PM10 and number concentration: Sensirion SEN63C |
+| **CO₂** | true CO₂ measurement, ±(100 ppm + 10 %): SEN63C |
+| **Climate** | temperature and relative humidity: SEN63C |
 | **VOC** | Sensirion VOC Index, 1–500: SGP40 |
-| **CO₂** | true NDIR photoacoustic: SCD41 |
-| **Climate** | temperature and relative humidity |
 | **Itself** | battery level, charging state, Thread and Matter status |
 
 It classifies the air as **GOOD / ELEVATED / HIGH / VERY HIGH** and keeps a
@@ -42,8 +43,9 @@ sensors directly over Matter. That route is standard, local, and needs no
 extra hub; [docs/DASHBOARD_INTERFACE.md](docs/DASHBOARD_INTERFACE.md) is the
 complete contract for building one.
 
-The power budget is built around one idea. The particle sensor costs about a
-hundred times more to run than everything else, so it runs **once an hour**.
+The power budget is built around one idea. The particle/CO₂ module costs
+about a hundred times more to run than everything else, so it runs **40 s
+once an hour**.
 **VOC is watched every ten seconds** for almost nothing, and when the VOC index
 climbs the sensor escalates itself to a particle reading every two minutes.
 Printing raises VOC long before an hourly sample would notice.
@@ -58,26 +60,27 @@ ECO  --VOC rises-->  ACTIVE  --air clears-->  POST-PRINT  -->  ECO
 
 | mode | particles every | runtime |
 |---|---|---|
-| **ECO** (default) | 1 h | **3.0 months** |
-| ECO_LONG | 4 h | 6.0 months |
+| **ECO** (default) | 1 h | **3.2 months** (2.7 at the sensor's worst-case current) |
+| ECO_LONG | 4 h | 7.0 months |
 | NORMAL | 15 min | 3 weeks |
 | ACTIVE | 2 min | 3 days (automatic, time-limited) |
 
 These figures include a dashboard reading the sensor every 15 minutes. Every
 input is traced to a datasheet or a measurement in
 [docs/BATTERY_LIFE.md](docs/BATTERY_LIFE.md), which is generated from a model
-you can re-run.
+you can re-run. (v1.1 claimed 3.0 months here and was wrong - two sensor
+breakouts carried an LDO and an LED the model did not count. EDR-14.)
 
 ## Hardware
 
 | | |
 |---|---|
-| MCU | Adafruit ESP32-C6 Feather (ESP32-C6-MINI-1, 4 MB) |
-| Sensors | SPS30 on UART, SGP40 + SCD41 on their own LP-I²C bus |
+| MCU | DFRobot FireBeetle 2 ESP32-C6 (charger on board, 36 µA deep sleep) |
+| Sensors | SEN63C and SGP40, each on its own switched rail and its own I²C bus |
 | Status | one button, one diffused RGB LED behind a 0.6 mm skin of the front face |
-| Battery | 1S LiPo 4000 mAh with protection, user replaceable |
-| Case | **98 × 102 × 32 mm**, two-part PETG, no supports |
-| Cost | EUR 129 without CO₂, EUR 155 all-SMD, EUR 173 with breakouts |
+| Battery | 1S LiPo 4000 mAh with protection, user replaceable, 8 h to charge |
+| Case | **112 × 102 × 32 mm**, PETG front shell + lid, no supports |
+| Cost | **about EUR 95** in parts (v1.1: EUR 173), EUR 110 with the carrier assembled by JLCPCB |
 
 Full parts list with manufacturer part numbers: [docs/BOM.md](docs/BOM.md).
 
@@ -87,10 +90,12 @@ Full parts list with manufacturer part numbers: [docs/BOM.md](docs/BOM.md).
 |---|---|
 | short | the LED shows the air quality for 3 s: 🟢 good, 🟡 elevated, 🔴 high, 🟣 very high |
 | 3–8 s | pairing mode, the LED blinks blue for 5 minutes |
+| 8–12 s | fresh-air CO₂ calibration - **outdoors only**; cyan for 3 min, then green |
 | 12–20 s | factory reset, the LED blinks red fast |
 | over 20 s | ignored, so a jammed button cannot wipe the device |
 
-Unprompted, the LED stays dark. The exceptions are a short red blip every
+While you hold the button the LED shows what letting go would do: blue,
+cyan, red. Unprompted, the LED stays dark. The exceptions are a short red blip every
 10 s at critical battery or on a hardware fault. "Identify" from the Home app
 or the dashboard blinks it white.
 
@@ -108,7 +113,7 @@ PARTS -> PRINT -> ASSEMBLE -> FLASH -> CHARGE -> PAIR -> SHARE WITH THE DASHBOAR
 ```
 
 1. **Parts:** [docs/BOM.md](docs/BOM.md)
-2. **Print:** five parts, no supports, about 8 h and 150 g of PETG:
+2. **Print:** five parts, no supports, about 8 h and 160 g of PETG:
    [manufacturing/print-settings.md](manufacturing/print-settings.md)
 3. **Assemble:** [docs/ASSEMBLY.md](docs/ASSEMBLY.md)
 4. **Flash:**
@@ -118,7 +123,7 @@ PARTS -> PRINT -> ASSEMBLE -> FLASH -> CHARGE -> PAIR -> SHARE WITH THE DASHBOAR
    idf.py set-target esp32c6
    idf.py -p /dev/tty.usbmodem* flash monitor
    ```
-5. **Charge:** about 24 h from flat at the Feather's 196 mA
+5. **Charge:** about 8 h from flat at the FireBeetle's 540 mA
 6. **Pair** with Apple Home: [docs/APPLE_HOME.md](docs/APPLE_HOME.md)
 7. **Share** with the dashboard: [docs/DASHBOARD_INTERFACE.md](docs/DASHBOARD_INTERFACE.md)
 
@@ -129,10 +134,10 @@ AIR CHECK has been built. What *has* been done:
 
 | | |
 |---|---|
-| measurement core | 466 host checks, run on every build, validated against injected bugs |
-| electrical design | 344 automated rule checks over the netlist |
-| enclosure | OpenSCAD asserts, manifold check, 1.7 % overhang, fits a 250 × 210 bed |
-| firmware | full ESP-IDF + esp-matter build for esp32c6: 1.65 MB, 16 % OTA headroom, 46.6 % of RAM |
+| measurement core | 509 host checks, run on every build, validated against injected bugs |
+| electrical design | 460 automated rule checks over the netlist, validated against injected faults |
+| enclosure | OpenSCAD asserts, every part intersected with every other, manifold check, fits a 250 × 210 bed |
+| firmware | full ESP-IDF + esp-matter build for esp32c6: 1.68 MB, 15 % OTA headroom, 46.5 % of RAM |
 | Matter attribute IDs | checked against the Matter SDK's generated headers |
 | **sensor drivers** | **untested**: every register and timing read from a datasheet |
 | **Thread, Matter, Apple Home, dashboard** | **untested**: no controller has seen this device |
@@ -147,9 +152,9 @@ contribute.
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | how the whole thing fits together |
 | [DASHBOARD_INTERFACE.md](docs/DASHBOARD_INTERFACE.md) | **everything a dashboard needs**: pairing, attribute IDs, timing, power |
-| [ENGINEERING_DECISIONS.md](docs/ENGINEERING_DECISIONS.md) | thirteen decisions and what they cost |
+| [ENGINEERING_DECISIONS.md](docs/ENGINEERING_DECISIONS.md) | fifteen decisions and what they cost |
 | [BATTERY_LIFE.md](docs/BATTERY_LIFE.md) | the energy model, with sources |
-| [BOM.md](docs/BOM.md) | three build variants |
+| [BOM.md](docs/BOM.md) | parts, prices, where to buy |
 | [ASSEMBLY.md](docs/ASSEMBLY.md) | step by step |
 | [APPLE_HOME.md](docs/APPLE_HOME.md) | what works, what does not |
 | [MATTER.md](docs/MATTER.md) | endpoints, clusters, ICD |
@@ -164,7 +169,7 @@ contribute.
 ## What this is not
 
 Not a medical device. Not a safety detector. Not a certified instrument. The
-SPS30 cannot see the ultrafine particles that dominate 3D-printing emissions,
+SEN63C cannot see the ultrafine particles that dominate 3D-printing emissions,
 and the VOC Index cannot name a chemical. This device is good at telling you
 that the air **changed**, by how much, and how long it took to recover. That is
 useful, and it is not the same thing as a health assessment.

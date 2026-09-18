@@ -3,6 +3,55 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-09-18
+
+Cost-down: about EUR 95 in parts instead of EUR 173, with every measurement
+kept. Still one hardware design, identical for every unit.
+
+### Changed
+
+- **Sensirion SEN63C** replaces the SPS30, the SCD41 breakout and the 5 V
+  boost converter: PM1/2.5/4/10, CO2, temperature and humidity from one
+  3.3 V module, measured in one window (EDR-15). CO2 accuracy is now
+  ±(100 ppm + 10 %) instead of ±(50 ppm + 5 %), and CO2 follows the
+  particle cadence (hourly in ECO).
+- **DFRobot FireBeetle 2 ESP32-C6** replaces the Adafruit Feather (EUR 7.50
+  instead of about EUR 22; 540 mA charger, ~8 h to charge). Battery level from
+  the cell voltage - there is no fuel gauge any more.
+- **SGP40 rail pulsed per sample** (0.25 s every 10 s), because the breakout's
+  own LDO and power LED draw ~185 µA (EDR-14).
+- **Case 112 x 102 x 32 mm**: a 28 mm front shell and a 4 mm lid. The SEN63C
+  stands on its side with its ports gasketed to slots in the left wall, as
+  Sensirion's SEN6x design-in guide requires. Battery on the lid under a
+  clip-on cover; keyholes as a vertical pair.
+- Carrier ACC-1 rev C: two load switches with CT capacitors and QOD tied to
+  VOUT, a USB sense divider, battery pass-through for the LED anode; 460 rule
+  checks.
+- ECO: **3.2 months** with margin (2.7 at the SEN63C's worst-case current).
+- No weekly fan cleaning (the SEN6x does not need it).
+
+### Added
+
+- **Fresh-air CO2 calibration**: hold the button 8-12 s outdoors. While the
+  button is held, the LED shows what letting go would do.
+- **Service console on USB** (`ac_console.cpp`), only while USB power is
+  present. `tools/configuration/aircheck_config.py` was written against a
+  console that did not exist until now; it works, and gained `frc`.
+- `ac_core/ac_battery`: state of charge from the resting cell voltage, never
+  climbing back on battery. 509 host checks.
+- Drawings: `open_view.png`, `front_iso.png`, `side_view.png`.
+
+### Fixed
+
+- **v1.1's battery claim was too high.** Its model missed the LDO and power
+  LED on both Adafruit breakouts and took the TPS22918 as 1.1 µA when on
+  (8.3 µA per TI). Real ECO would have been about 2.3 months, not 3.0
+  (EDR-14).
+- TPS22918 pin 5 is QOD, not a second VOUT.
+- The docs described a firmware CO2 self calibration (EDR-4) that was never
+  implemented. Corrected; the flag now controls the SEN63C's own ASC.
+- The configuration tool listed a v1.0 display setting that no longer exists.
+
 ## [1.1.0] - 2026-09-18
 
 The sensor becomes a headless, three-month device that feeds a separate

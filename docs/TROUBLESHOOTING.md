@@ -6,7 +6,7 @@ Work down the list. Almost everything is one of the first five.
 
 | check | |
 |---|---|
-| is the battery plugged in? | the JST PH 2.0 at the Feather |
+| is the battery plugged in? | the cell into J2 on the carrier, and the J3 pigtail into the FireBeetle |
 | does USB-C bring it up? | if yes, the cell is flat or its protection has tripped: charge it for an hour |
 | does it flash white at power-on? | if not, check the LED's orientation: long lead (anode) to VBAT |
 | does the serial log show the banner? | `idf.py monitor`; if yes the MCU runs and the problem is the LED |
@@ -25,6 +25,9 @@ it should show the air-quality colour for 3 seconds.
 | red blip every 5 s, unprompted | all sensors failed: check the log |
 | fast red for 3 s | factory reset in progress |
 | white fast blink | a controller sent Identify |
+| blue / cyan / red **while you hold the button** | what letting go would do: pairing / CO2 calibration / factory reset |
+| cyan, slow blink for 3 min | fresh-air CO2 calibration running |
+| green 2 s, or fast red 2 s, after that | calibration done, or failed |
 
 ## One colour is missing
 
@@ -32,53 +35,62 @@ A missing green or blue channel is almost always the LED fitted the wrong way
 round, or a wrong resistor. Green and blue need about 3 V, so they only light
 because the anode is on VBAT (3.3–4.2 V), not on 3V3.
 
-## SGP40 / SCD41 never answer (`SGP40 init failed`, `SCD41 init failed`)
+## `SGP40 init failed`
 
-1. The sensors must be on the **sensor bus**: GPIO6 = SDA, GPIO7 = SCL. Those
-   are the only pads the C6's LP_I2C can use. The Feather's own SDA/SCL
-   (GPIO19/18) and its STEMMA QT port are the gauge bus, which is only
-   powered for a few milliseconds every 5 minutes. A sensor plugged in there
-   will never answer.
-2. The 4.7 kΩ pull-ups R6/R7 must go to **+3V3_SENS**. Measure 3.3 V on SDA
-   and SCL with the device running.
-3. Is +3V3_SENS up? GPIO3 drives its load switch.
+1. The breakout must be on the **VOC bus**: GPIO6 = SDA, GPIO7 = SCL. Those
+   are the only pads the C6's LP_I2C can use.
+2. The 4.7 kΩ pull-ups R6/R7 must go to **+3V3_SENS**, the switched rail.
+3. Is +3V3_SENS switching? GPIO3 drives SW2. The rail is only up for about
+   0.25 s every 10 s, so a multimeter will read almost nothing; a scope or the
+   PPK2 will show the pulses. Check C5 (1 nF) is fitted on SW2's CT pin.
 
-## The battery percentage never changes
+## `SEN63C not responding`
 
-The MAX17048 is read every 5 minutes with GPIO20 switched on briefly (EDR-11).
-If the value is stuck across a day:
+1. The SEN63C is on the FireBeetle's **SDA/SCL** header pins (GPIO19/20),
+   through J1. Check the GH cable is pin 1 to pin 1 - a reversed cable puts
+   VDD on SCL.
+2. R11/R12 must go to **+3V3_SEN6X**.
+3. Is +3V3_SEN6X there during a window? It should read 3.2-3.4 V for the 40 s
+   the fan runs. If it sags or the chip resets when it switches on, check C2
+   (4.7 nF) on SW1's CT pin and C1 (22 µF).
 
-1. `battery` errors in the log mean the gauge bus did not come up. Check that
-   nothing on the carrier holds GPIO19/18.
-2. A value that reads but never moves may be the gauge's bus-low sleep mode.
-   With GPIO20 off, both lines sit near 0 V. Set `gauge_interval_s` to 60 and
-   see whether it starts tracking. Report it either way: this is an open
-   verification item.
+## The battery percentage looks wrong
+
+There is no fuel gauge since v1.2. The percentage comes from the cell voltage
+(`ac_core/ac_battery.c`) and is honest to about ±10 % in the middle of the
+discharge, better near full and near empty.
+
+1. Compare the logged voltage (`diag` on the console) with a multimeter at the
+   cell. More than 30 mV apart: the ADC has no eFuse calibration (the boot log
+   says so) or the divider on the FireBeetle is off.
+2. The value only falls on battery, on purpose - it does not climb back when
+   the cell warms up. It follows the voltage up again only on USB or when a
+   charged cell is fitted.
+3. On USB it reads high while charging. That is the charge voltage, not the
+   state of charge.
 
 ## PM2.5 reads 0.0, or never changes
 
-1. Can you hear the fan? It runs for 40-60 s per measurement. Silence means
-   the 5 V rail or the sensor.
-2. Measure the 5 V rail during a measurement. If it is 3.4 V, the boost's
-   enable is not being driven - check GPIO2 and the TPS22918.
-3. `SPS30: ESP_ERR_TIMEOUT` in the log means the UART is not getting replies.
-   Check TX and RX are not swapped, and that **SEL is left floating**. SEL
-   pulled to ground selects I2C and the sensor will never answer on UART.
-4. In ECO mode PM2.5 legitimately updates **once an hour**. A number that has
+1. Can you hear the fan? It runs for about 40 s an hour in ECO, 60 s in the
+   other modes. Silence at the top of the hour means the rail or the sensor
+   (see `SEN63C not responding`).
+2. `SEN63C: ESP_ERR_INVALID_RESPONSE` in the log means the module reported a
+   fan or laser error. The status register is printed with it.
+3. In ECO mode PM2.5 legitimately updates **once an hour**. A number that has
    not changed for an hour is correct behaviour.
 
 ## PM2.5 always reads low
 
 This is the nasty one, because nothing looks wrong.
 
-Hold the case up to a light with the bottom towards you. If you can see from
-the inlet opening through to the outlet opening, the duct seal has failed and
-the sensor is measuring its own exhaust. Check the foam strip is there and the
-printed separating rib is solid.
+The SEN63C must draw its air through the slots in the left wall, and only from
+there. If the foam frames around its inlet and outlet windows are missing or
+leaking, it breathes air from inside the case and blows its own exhaust back
+in. Open the case and check both gaskets are there and pressed flat.
 
-Also worth checking: the device is not sitting in a draught above 1 m/s, and
-nothing is blocking the bottom openings. It needs clearance underneath - use
-the stand, or wall-mount it.
+Also worth checking: the device is not sitting in a draught above 1 m/s (a
+printer's part-cooling or exhaust fan counts), the left side is not against a
+wall, and the slots are not blocked.
 
 ## VOC index sits at 100 and will not move
 
@@ -92,26 +104,27 @@ specification. After a power cycle the whole algorithm starts again.
 If the raw signal in the serial log does not move when you breathe on
 it, that is a real fault - check the sensor rail is up.
 
-## CO2 reads 400-ish and never moves
+## CO2 reads -1 / is missing
 
-The SCD41 clamps at 400 ppm at the bottom. A room that reads exactly 400 all
-day has either genuinely fresh air or a sensor that has been calibrated to
-something wrong - most likely a forced recalibration performed indoors. See
-`docs/CALIBRATION.md`.
+The SEN63C's CO2 output is "unknown" for the first 22-24 s of every
+measurement. If the log shows CO2 as -1 after a window, the window was too
+short or the module's CO2 channel reported an error (status register in the
+same log line). The firmware refuses windows under 30 s for this reason.
 
-## CO2 drifts over months
+## CO2 reads 400-ish and never moves, or drifts over weeks
 
-Expected in power-cycled single-shot mode without the sensor's own ASC. The
-firmware substitutes its own, which needs the room to reach near-outdoor air
-roughly weekly. If yours never does, either disable
-`co2_self_calibration` and recalibrate manually now and then, or accept that
-relative changes are meaningful and absolute values are not.
+A room that reads exactly 400 all day has either genuinely fresh air or a
+sensor calibrated to something wrong - most likely a fresh-air calibration
+done indoors. A reading that creeps up over weeks in a room you air daily is
+drift that ASC has not caught; this device runs the SEN63C only 40 s an hour,
+and whether its ASC converges on that is still being tested (B16). Either way:
+take it outdoors and hold the button 8-12 s (`docs/CALIBRATION.md`).
 
-## Temperature reads 2-4 degC high
+## Temperature reads a degree or two off
 
-Self-heating inside a sealed box. Measure your device's actual offset against
-a known-good thermometer and set it; the default is a datasheet default, not a
-measurement of this enclosure.
+The SEN63C compensates its own heating, but not the case's. If it is off
+against a thermometer you trust, note the offset - there is no offset setting
+yet (`docs/CALIBRATION.md`).
 
 ## The device will not commission
 
@@ -147,9 +160,10 @@ In order of likelihood:
    will re-trigger constantly. Reset the baseline once the room is at its
    normal state.
 3. **Measure the idle current.** With a PPK II, the floor should be around
-   100 uA. If it is about a milliamp or more, the Feather's WS2812B is
-   powered, meaning GPIO20 is stuck high (EDR-11). Otherwise look for a load
-   switch whose RTC hold is not being applied.
+   70 µA with both sensor rails off. The usual suspects above that: a sensor
+   rail that stays on (the SGP40 breakout's LED lights up - it should only
+   flicker every 10 s), a pin back-feeding an unpowered sensor, or the
+   FireBeetle's green LED on GPIO15 being driven.
 4. **The cell.** A tired or counterfeit LiPo will not deliver its rating.
 
 ## Events fire constantly / never fire
@@ -186,9 +200,10 @@ cd firmware && idf.py -p /dev/tty.usbmodem* monitor
 | `no stored config, using defaults` | first boot, or the config failed its CRC |
 | `stored config failed its CRC` | NVS corruption; defaults were used rather than garbage |
 | `baseline restored: PM2.5 8.1, VOC 100` | normal |
-| `SPS30: ESP_ERR_TIMEOUT` | the particle sensor did not answer |
-| `window 40s -> PM2.5 7.3 ug/m3 from 13 samples` | a normal measurement |
-| `weekly fan cleaning` | normal, once a week |
+| `SEN63C: ESP_ERR_TIMEOUT` | the particle/CO2 module did not answer |
+| `window 40s: PM2.5 7.3 ug/m3 (10 samples), CO2 512 ppm, 22.8 C, 45 %RH` | a normal measurement |
+| `fan speed warning (status 0x...)` | the SEN63C's fan is off its nominal speed; watch whether it turns into an error |
 | `event stored: peak PM2.5 22.4, VOC 176, 4130 s` | an event completed and was recorded |
-| `forced recalibration to 420 ppm` | the CO2 self-calibration fired |
+| `fresh-air CO2 calibration to 425 ppm: 3 min run first` | a button or console calibration started |
+| `CO2 recalibrated: correction -37 ppm` | and finished; the correction is what the sensor was off by |
 | `held 24000 ms, ignoring` | the button was held too long; nothing happened |

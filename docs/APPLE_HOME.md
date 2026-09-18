@@ -119,9 +119,9 @@ editor. `docs/SHORTCUTS.md` has working recipes for:
    15 s slow poll - the longest a Short Idle Time ICD is allowed. A command or
    a subscription update waits for the next poll. This is the direct price of
    the battery life.
-4. **PM2.5 in ECO mode updates once an hour.** Apple Home will show the
-   same number for an hour at a time, and that is correct behaviour, not a
-   stuck sensor. During a detected print it updates every 2 minutes. Switch to
+4. **PM2.5, CO₂, temperature and humidity update once an hour in ECO.**
+   Apple Home will show the same numbers for an hour at a time, and that is
+   correct behaviour, not a stuck sensor. During a detected print it updates every 2 minutes. Switch to
    NORMAL for a 15-minute cadence if you can charge the device every three
    weeks.
 5. **The air-quality *reason* is not exported.** Matter has nowhere to put it.

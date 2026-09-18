@@ -128,8 +128,13 @@ not zero. Show "—". A null means "not measured yet", never "clean air".
 |---|---|---|
 | PM1 / PM2.5 / PM10 | **every 60 min** | every 2 min |
 | VOC index | every 10 s | every 10 s |
-| CO₂, temperature, humidity | every 60 min | every 5 min |
+| CO₂, temperature, humidity | every 60 min | every 2 min |
 | battery | every 5 min | every 5 min |
+
+Since v1.2 CO₂, temperature and humidity come from the same SEN63C window as
+the particles, so they update together. The battery percentage is derived
+from the cell voltage (no fuel gauge): trust it to about ±10 % in the middle
+of the range, better near full and empty.
 
 The sensor switches to ACTIVE by itself when VOC or PM rises above its
 baseline, and back afterwards via POST_PRINT (45 min). So a stale PM value in

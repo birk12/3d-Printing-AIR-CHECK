@@ -47,13 +47,15 @@ DevKitC, at a 5 s poll and 20 dBm:
 * floor between polls **55 uA**
 * peak **344 mA** during a poll
 
-From that trace, one poll costs about 0.6 mC. At the 15 s slow poll this
-firmware uses, that works out at roughly **95 uA** for the radio and MCU
-together, which is the number in `docs/BATTERY_LIFE.md`.
+From that trace, one poll costs about 0.6 mC, which at the 15 s slow poll this
+firmware uses would be roughly 95 uA. An independent one-hour PPK2 measurement
+at exactly 15 s came out higher, **121.9 uA average, 39.3 uA floor**, and that
+is the number in `docs/BATTERY_LIFE.md` (EDR-13).
 
-The 344 mA peak is why there is a 22 uF bulk capacitor on the boost input and
-why the battery must be a real cell with a low internal resistance - a tired
-pack will brown out the radio before it runs out of charge.
+The 344 mA peak is why the battery must be a real cell with a low internal
+resistance - a tired pack will brown out the radio before it runs out of
+charge - and why both sensor rails switch on slowly (CT capacitors): the radio
+and a sensor rail must never pull a spike out of the 3.3 V buck together.
 
 ## Reducing TX power
 

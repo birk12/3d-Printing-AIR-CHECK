@@ -50,10 +50,10 @@ device's own 5-minute history, so a dashboard that sleeps can still show
 
 | cluster | unit attribute | range advertised | source |
 |---|---|---|---|
-| PM2.5 `0x042A` | 4 = UGM3 | 0 .. 1000 | SPS30 |
-| PM10 `0x042D` | 4 = UGM3 | 0 .. 1000 | SPS30 |
-| PM1 `0x042C` | 4 = UGM3 | 0 .. 1000 | SPS30 |
-| CO2 `0x040D` | 0 = PPM | 400 .. 5000 | SCD41 |
+| PM2.5 `0x042A` | 4 = UGM3 | 0 .. 1000 | SEN63C |
+| PM10 `0x042D` | 4 = UGM3 | 0 .. 1000 | SEN63C |
+| PM1 `0x042C` | 4 = UGM3 | 0 .. 1000 | SEN63C |
+| CO2 `0x040D` | 0 = PPM | 400 .. 5000 | SEN63C |
 | TVOC `0x042E` | 1 = PPB | 0 .. 500 | SGP40 **VOC Index** |
 
 **The TVOC row is not what it appears to be.** The SGP40 reports an index from
@@ -76,7 +76,7 @@ endpoint does not already carry.
 | attribute | what it carries |
 |---|---|
 | `Status` | 1 Active, or the charging state |
-| `BatPercentRemaining` | state of charge from the MAX17048, in half-percent units |
+| `BatPercentRemaining` | state of charge from the cell voltage (no fuel gauge since v1.2, about ±10 % mid-range), in half-percent units |
 | `BatVoltage` | cell voltage in mV |
 | `BatChargeLevel` | 0 OK, 1 Warning (<= 20 %), 2 Critical (<= 5 %) |
 | `BatReplaceability` | 2 UserReplaceable - and it genuinely is, see `docs/ASSEMBLY.md` |

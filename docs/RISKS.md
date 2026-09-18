@@ -15,14 +15,15 @@ not a health assessment.
 
 ### Particulate matter
 
-* The SPS30 measures particles from **0.3 um upwards**. Most of what a hot
+* The SEN63C measures particles from **0.3 um upwards**. Most of what a hot
   plastic extruder emits is *ultrafine* - well below 0.3 um - and the sensor
   cannot see it at all. A print can produce a large number of ultrafine
   particles while PM2.5 barely moves. **A low PM2.5 reading is not evidence
   that a print is clean.**
 * PM4 and PM10 are calculated from the measured particle size distribution,
   not measured independently. Their specified precision is much looser:
-  +-25 ug/m3 below 100 ug/m3, against +-(5 ug/m3 + 5 %) for PM2.5.
+  25 ug/m3 below 100 ug/m3, against 5 ug/m3 and 5 % for PM1 and PM2.5
+  (SEN6x datasheet).
 * Calibration is against a TSI DustTrak DRX 8533 with a specific test aerosol.
   Plastic fume is not that aerosol. Absolute values for printer emissions carry
   a systematic uncertainty nobody has quantified.
@@ -77,16 +78,21 @@ not a health assessment.
 
 ## Enclosure and airflow
 
-* The duct seal is the single most important mechanical detail, and it is the
-  easiest to get wrong. If the foam strip is missing or the printed rib is
-  under-extruded, exhaust air recirculates into the inlet and **PM readings
-  read low with no other symptom**. `docs/ASSEMBLY.md` has the light test.
-* The SPS30 must not sit in a forced airflow above 1 m/s. Do not put this
-  device inside a printer enclosure or in front of a fan.
+* The gasket between the SEN63C and the side wall is the single most
+  important mechanical detail, and it is the easiest to get wrong. If the foam
+  frames around the inlet and outlet windows are missing or leak, the sensor
+  draws air from inside the case and blows its exhaust back in, and **PM
+  readings go wrong with no other symptom**. `docs/ASSEMBLY.md` step 7.
+* The SEN63C must not sit in a forced airflow above 1 m/s. Do not put this
+  device inside a printer enclosure or in front of a fan, and keep its left
+  side (the ports) free and out of direct sunlight.
 * PETG softens around 80 C. This case is for a room, not a heated chamber.
-* The sensor bay opens to the outside. Dust gets in. The SPS30 cleans its own
-  fan weekly; the gas sensors do not have that option and will eventually
-  accumulate dust on their membranes.
+* The sensor ports open to the outside. Dust gets in. The SEN63C keeps its
+  optics clean with a sheath flow; the SGP40's membrane has no such thing and
+  will eventually accumulate dust.
+* CO2 is measured once an hour, in the same 40 s window as the particles, and
+  its accuracy is ±(100 ppm + 10 %). Whether the SEN63C's self calibration
+  holds on that little running time is not yet tested (`docs/CALIBRATION.md`).
 
 ---
 
@@ -95,8 +101,8 @@ not a health assessment.
 * A single-cell LiPo inside a sealed plastic box, near a machine that runs
   unattended for hours, close to a heat source.
 * **Use a cell with an integrated protection circuit.** Overcharge,
-  over-discharge, overcurrent and short-circuit protection. The Feather's
-  MCP73831 provides charge control, not cell protection.
+  over-discharge, overcurrent and short-circuit protection. The FireBeetle's
+  CN3165 provides charge control, not cell protection.
 * Route the battery lead so it cannot be pinched by the closing shells. This
   is the most likely failure mode in this whole build.
 * Do not charge unattended for the first few cycles.
