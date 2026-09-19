@@ -489,6 +489,52 @@ module exploded(gap = 30) {
     translate([0, 0, gap * 2.0]) color("Gainsboro") lid_in_place();
 }
 
+// Presentation views: the finished device taken apart layer by layer, and
+// the closed device with see-through shells.
+module cells_mock() {
+    for (x = CELL_XS)
+        color("SteelBlue") translate([x, KH_Y + (KH_L - 64.95) / 2, CELL_TOP_Z - CELL_D / 2])
+            rotate([-90, 0, 0]) cylinder(d = CELL_D, h = 64.95);
+}
+module group_power() {
+    mock("holder 1 + cells", "DimGray"); mock("holder 2 + cells", "DimGray");
+    mock("#6091 charger", "Purple"); mock("BMS", "Teal");
+}
+module group_sensors() {
+    mock("SHT40", "SeaGreen"); mock("SGP40", "Crimson"); mock("Sunrise", "Black");
+    mock("SEN62", "DarkSlateGray");
+}
+module group_electronics() {
+    mock("FireBeetle", "RoyalBlue"); mock("SW1 Pololu 2810", "Green");
+    mock("PS1 Pololu S9V11E2A", "Green"); mock("D1 LM66200", "MidnightBlue");
+    mock("J2 USB-C power socket", "Black"); mock("J2 socket", "Silver");
+    mock("LED holder", "Silver"); mock("button", "Black");
+}
+module exploded_full(g = 32) {
+    color("Gainsboro") front_shell();
+    translate([0, 0, g * 0.9]) group_power();
+    translate([0, 0, g * 1.5]) cells_mock();
+    translate([0, 0, g * 0.9]) mock("NTC bead", "Gold");
+    translate([0, 0, g * 1.2]) group_sensors();
+    translate([0, 0, g * 1.6]) group_electronics();
+    translate([0, 0, g * 3.0]) color("Wheat") door_in_place();
+    translate([0, 0, g * 3.6]) color("Gainsboro") lid_in_place();
+}
+// The see-through view uses the exported meshes (cad/stl): one mesh per
+// shell keeps the preview's transparency working, where the full CSG tree of
+// the shells would not.  Export the STLs first.
+module stl_lid()  { translate([0, 0, CASE_D]) mirror([0, 0, 1]) mirror([1, 0, 0])
+                        translate([-CASE_W, 0, 0]) import("../stl/aircheck_back.stl"); }
+module stl_door() { translate([0, 0, CASE_D]) mirror([0, 0, 1]) mirror([1, 0, 0])
+                        translate([-CASE_W, 0, 0]) import("../stl/aircheck_door.stl"); }
+module xray() {
+    group_power(); cells_mock(); mock("NTC bead", "Gold");
+    group_sensors(); group_electronics();
+    color("LightSteelBlue", 0.22) import("../stl/aircheck_front.stl");
+    color("LightSteelBlue", 0.22) stl_lid();
+    color("Wheat", 0.30) stl_door();
+}
+
 // ---------------------------------------------------------------------
 // numeric self-checks - these run on every render
 // ---------------------------------------------------------------------
@@ -627,6 +673,8 @@ else if (part == "door")     translate([CASE_W, 0, 0]) mirror([1, 0, 0]) door();
 else if (part == "stand")    desk_stand();
 else if (part == "assembly") assembly();
 else if (part == "exploded") exploded();
+else if (part == "exploded_full") exploded_full();
+else if (part == "xray")     xray();
 else if (part == "open")     open_view();
 else if (part == "sec_z")
     projection(cut = true) translate([0, 0, -(FACE + 8)]) assembly();
