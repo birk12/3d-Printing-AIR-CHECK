@@ -749,11 +749,12 @@ operation the holder can simply stay empty.
 3.5 months with margin (NiMH 2.1, alkaline 1.8); as mains backup L91 ~15
 months (`docs/BATTERY_LIFE.md`).
 
-**Shared with other projects.** The Sleeper Frame (e-ink dashboard) uses the
-same block 1:1 (holder, PTC, 2 × S9V11E2A at 3.90/4.20 V, LM66200, #6050,
-13 kΩ lockout, 1M/220k pack divider, 4.08 V threshold) and the `ac_battery`
-module; the battery coordination session agreed: AA everywhere (L91 or
-eneloop pro), never charged in a device. Motor projects keep the same cells
-and block for their logic and take motor current straight from the pack
-through their own, larger fuse.
-
+**Shared with other projects.** The user's battery devices follow one
+standard set by the cross-project battery session: AA cells are never
+charged in a device. Devices that need in-device charging use a different
+class (2 × 18650 LiFePO4, charged in the device with temperature
+monitoring); the Sleeper Frame and the curtain motor moved to that class on
+2026-09-19. This AA power block (holder, PTC, 2 × S9V11E2A at 3.90/4.20 V,
+LM66200, #6050, 13 kΩ lockout, 1M/220k pack divider, 4.08 V threshold) is
+therefore used by AIR CHECK only - one block per unit. `ac_battery` stays
+plain C so other projects can reuse its structure.

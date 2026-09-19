@@ -17,8 +17,7 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 - Firmware recognises external power from VSYS (≥ 4.08 V) and an empty
   holder; CONTINUOUS mode and no battery alarms on external power. Matter
   Power Source `Status` 1/2/3 and `BatPresent`.
-- `ac_power_classify()` in `ac_battery` - shared with the Sleeper Frame, which
-  adopts the same power block.
+- `ac_power_classify()` in `ac_battery` (plain C, reusable by other projects).
 
 ### Changed
 
