@@ -104,6 +104,14 @@ measurement takes at most 8.3 ms). What it cannot know about is the case;
 if the reading is off against a thermometer you trust, note the offset.
 There is no offset setting.
 
+While the cells charge, the charger in its chamber at the bottom of the case
+turns 0.85–1.7 W into heat, and temperature and humidity can read a little
+high. Nothing is compensated for that; Matter's `BatChargeState` says
+IsCharging for exactly that window (`docs/DASHBOARD_INTERFACE.md`). Compare
+against your reference thermometer outside it - on permanent USB-C the
+firmware pauses charging after "full" and tops up only about once a month.
+TESTING T-L7 measures the offset while charging.
+
 The SGP40's humidity compensation uses these values with every sample, so
 they matter beyond the temperature tile in Apple Home.
 

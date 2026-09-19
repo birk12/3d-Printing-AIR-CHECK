@@ -7,7 +7,7 @@
  */
 #include "ac_core/ac_airquality.h"
 #include "ac_core/ac_baseline.h"
-#include "ac_core/ac_battery.h"
+#include "ac_core/ac_power.h"
 #include "ac_core/ac_config.h"
 #include "ac_core/ac_status.h"
 #include "ac_core/ac_engine.h"
@@ -66,7 +66,6 @@ static void test_config(void)
     CHECK(ac_config_validate(&c) == 0);
     CHECK(c.pm25_elevated < c.pm25_high);
     CHECK(c.pm25_high < c.pm25_very_high);
-    CHECK(c.critical_battery_pct < c.low_battery_pct);
     CHECK(c.default_mode == AC_MODE_ECO);
 
     CASE("every profile obeys the sensor datasheets");
@@ -125,7 +124,6 @@ static void test_config(void)
     wild.battery_interval_s = 99999;
     wild.profile[AC_MODE_ECO].pm_window_s = 40;  /* too short to settle and average */
     wild.profile[AC_MODE_ECO].co2_interval_s = 5;
-    wild.cell_type = 9;
     wild.altitude_m = 9000;
     wild.profile[AC_MODE_ECO].icd_slow_poll_s = 900;
     int fixed = ac_config_validate(&wild);
@@ -134,7 +132,6 @@ static void test_config(void)
     CHECK(wild.battery_interval_s <= 3600);
     CHECK(wild.profile[AC_MODE_ECO].pm_window_s >= AC_PM_MIN_WINDOW_S);
     CHECK(wild.profile[AC_MODE_ECO].co2_interval_s >= AC_CO2_MIN_INTERVAL_S);
-    CHECK(wild.cell_type <= 2);
     CHECK(wild.altitude_m <= 4000);
     CHECK(wild.profile[AC_MODE_ECO].icd_slow_poll_s <= 15);
 }
@@ -566,18 +563,18 @@ static void test_engine(void)
     CHECK(pa->pm_interval_s < c.profile[AC_MODE_ECO].pm_interval_s);
 
     CASE("USB power switches to continuous and back");
-    ac_engine_set_power(&e2, true, true, 90.0f, 4.1f, u);
+    ac_engine_set_power(&e2, true, true, 90.0f, 3.40f, 0, u);
     ac_engine_tick(&e2, u);
     CHECK(e2.mode == AC_MODE_CONTINUOUS);
     CHECK(e2.state == AC_STATE_CHARGING);
-    ac_engine_set_power(&e2, false, false, 90.0f, 3.9f, u);
+    ac_engine_set_power(&e2, false, false, 90.0f, 3.33f, 0, u);
     ac_engine_tick(&e2, u);
     CHECK(e2.mode != AC_MODE_CONTINUOUS);
 
-    CASE("a low battery is reported, a critical one stops measuring");
-    ac_engine_set_power(&e2, false, false, 15.0f, 3.5f, u);
+    CASE("a low battery is reported, a critical one stops measuring (voltage levels)");
+    ac_engine_set_power(&e2, false, false, 9.0f, 3.18f, 1, u);
     CHECK(e2.state == AC_STATE_LOW_BATTERY);
-    ac_engine_set_power(&e2, false, false, 3.0f, 3.3f, u);
+    ac_engine_set_power(&e2, false, false, 3.0f, 3.05f, 2, u);
     CHECK(e2.state == AC_STATE_CRITICAL_BATTERY);
     p = ac_engine_tick(&e2, u);
     CHECK(p.action == AC_ACT_NONE);
@@ -705,7 +702,7 @@ static void test_status(void)
         t += 60000;
         ac_sample_t s = mk(t, 6.0f, 100, 600.0f);
         ac_engine_submit(&e, &s);
-        ac_engine_set_power(&e, false, false, 80.0f, 3.9f, t);
+        ac_engine_set_power(&e, false, false, 80.0f, 3.32f, 0, t);
         ac_engine_tick(&e, t);
     }
 
@@ -739,13 +736,13 @@ static void test_status(void)
     CHECK(ac_status_level(&p, 0) == AC_RGB_WHITE);
 
     CASE("low battery answers a button press with yellow blinks");
-    ac_engine_set_power(&e, false, false, 12.0f, 3.5f, t);
+    ac_engine_set_power(&e, false, false, 9.0f, 3.18f, 1, t);
     p = ac_status_pattern(&e, AC_LED_EVENT_BUTTON);
     CHECK(ac_status_level(&p, 0) == AC_RGB_YELLOW);
     CHECK(ac_status_level(&p, 200) == AC_RGB_OFF);
 
     CASE("critical battery blinks unprompted, but only a 50 ms blip every 10 s");
-    ac_engine_set_power(&e, false, false, 3.0f, 3.3f, t);
+    ac_engine_set_power(&e, false, false, 3.0f, 3.05f, 2, t);
     p = ac_status_pattern(&e, AC_LED_EVENT_NONE);
     int on = lit_ms(&p, 60000);
     CHECK(on > 0);
@@ -836,85 +833,79 @@ static void test_window(void)
     CHECK_NEAR(w.peak, 42.0, 0.01);
 }
 
-/* ---------------- AA pack --------------------------------------------- */
+/* ---------------- LFP power module (ac_power over pwr_std) ------------- */
 
-static void test_battery(void)
+static void test_power(void)
 {
-    CASE("every cell curve is monotonic, clamped, and NaN-safe");
-    for (int t = 0; t < AC_CELL_COUNT; t++) {
-        float prev = -1.0f;
-        bool mono = true, bounded = true;
-        for (float v = 0.8f; v <= 1.8f; v += 0.002f) {
-            float p = ac_cell_soc((ac_cell_type_t)t, v);
-            if (p < prev) mono = false;
-            if (p < 0.0f || p > 100.0f) bounded = false;
-            prev = p;
-        }
-        CHECK(mono);
-        CHECK(bounded);
-        CHECK(ac_cell_soc((ac_cell_type_t)t, 0.0f / 0.0f) == 0.0f);
-        CHECK(ac_cell_energy_mwh((ac_cell_type_t)t) > 2000.0f);
-    }
+    /* PWR-K ladder voltages from the Power-Standard table */
+    const float none[2] = { 0.0f, 0.0f };
+    const float chg[2]  = { 2.2f, 2.2f };
+    const float idle[2] = { 3.0f, 3.0f };
+    const float flt[2]  = { 1.1f, 1.1f };
+    ac_power_t p;
+    ac_power_out_t o;
 
-    CASE("lithium primaries are flat: the energy counter carries them");
-    ac_pack_t li;
-    ac_pack_init(&li, AC_CELL_LITHIUM, 6);
-    float fresh = ac_pack_update(&li, 6 * 1.50f);
-    CHECK(fresh > 80.0f);
-    ac_pack_spend(&li, 6 * 5000.0f * 0.5f);     /* half the pack's energy */
-    float half = ac_pack_update(&li, 6 * 1.49f);  /* voltage barely moved */
-    CHECK_NEAR(half, 50.0, 0.5);
+    CASE("on the cells: battery source, charge allowed, not external");
+    ac_power_init(&p);
+    o = ac_power_update(&p, 3.30f, none, false, 100);
+    CHECK(o.st.src == PWR_SRC_BATTERY);
+    CHECK(!o.ext && !o.charging && o.ce == AC_CE_RELEASE);
 
-    CASE("a voltage near the end wins over an optimistic counter");
-    ac_pack_t al;
-    ac_pack_init(&al, AC_CELL_ALKALINE, 6);
-    ac_pack_update(&al, 6 * 1.50f);
-    float low = ac_pack_update(&al, 6 * 1.05f);   /* counter still says 100 */
-    CHECK(low < 15.0f);
+    CASE("a computer on the FireBeetle counts as external for the engine only");
+    o = ac_power_update(&p, 3.30f, none, true, 110);
+    CHECK(o.ext && o.st.src == PWR_SRC_BATTERY);
 
-    CASE("the value never climbs on noise, but a new pack resets it");
-    ac_pack_t nm;
-    ac_pack_init(&nm, AC_CELL_NIMH, 6);
-    float a = ac_pack_update(&nm, 6 * 1.22f);      /* 50 % */
-    float b = ac_pack_update(&nm, 6 * 1.21f);
-    float c = ac_pack_update(&nm, 6 * 1.23f);      /* recovered a little */
-    CHECK_NEAR(a, 50.0, 0.1);
-    CHECK(b < a);
-    CHECK_NEAR(c, b, 0.001);
-    ac_pack_spend(&nm, 1000.0f);
-    float d = ac_pack_update(&nm, 6 * 1.36f);      /* fresh cells fitted */
-    CHECK(d > 95.0f);
-    CHECK(nm.used_mwh == 0.0f);
+    CASE("USB-C, charging -> full -> charge pause (CE held)");
+    o = ac_power_update(&p, 3.30f, chg, false, 200);
+    CHECK(o.ext && o.charging && o.ce == AC_CE_RELEASE);
+    CHECK(o.st.chg == PWR_CHG_CHARGING);
+    o = ac_power_update(&p, 3.45f, idle, false, 3600);
+    CHECK(o.st.chg == PWR_CHG_FULL);
+    CHECK(o.ce == AC_CE_HOLD);
+    o = ac_power_update(&p, 3.40f, idle, false, 7200);
+    CHECK(o.ce == AC_CE_HOLD);
 
-    CASE("no reading leaves the last value alone");
-    CHECK_NEAR(ac_pack_update(&nm, 0.0f), d, 0.001);
+    CASE("pause released below 3.30 V");
+    o = ac_power_update(&p, 3.28f, idle, false, 9000);
+    CHECK(o.ce == AC_CE_RELEASE);
 
-    CASE("0 % sits at the undervoltage lockout, 1.0 V per cell");
-    for (int t = 0; t < AC_CELL_COUNT; t++) {
-        CHECK(ac_cell_soc((ac_cell_type_t)t, 1.00f) == 0.0f);
-        CHECK(ac_cell_soc((ac_cell_type_t)t, 1.12f) > 0.0f);
-    }
+    CASE("a fault after 5.5 h of charging is the safety timer: one CE pulse");
+    ac_power_init(&p);
+    o = ac_power_update(&p, 3.10f, chg, false, 1000);
+    CHECK(o.charging);
+    o = ac_power_update(&p, 3.30f, flt, false, 1000 + AC_TIMER_SUSPECT_S + 60);
+    CHECK(o.st.fault == PWR_FLT_LATCHED);
+    CHECK(o.ce == AC_CE_PULSE);
+    o = ac_power_update(&p, 3.32f, chg, false, 1000 + AC_TIMER_SUSPECT_S + 120);
+    CHECK(o.charging && o.ce == AC_CE_RELEASE);
+    o = ac_power_update(&p, 3.33f, flt, false, 1000 + 2 * AC_TIMER_SUSPECT_S + 300);
+    CHECK(o.st.fault == PWR_FLT_LATCHED);
+    CHECK(o.ce != AC_CE_PULSE);                      /* only once per session */
 
-    CASE("power source: VSYS tells mains from cells");
-    CHECK(ac_power_classify(8.7f, 3.90f, false) == AC_SRC_BATTERY);
-    CHECK(ac_power_classify(8.7f, 3.98f + 0.04f, false) == AC_SRC_BATTERY);   /* +ADC error */
-    CHECK(ac_power_classify(8.7f, 4.17f - 0.04f, false) == AC_SRC_MAINS);     /* -ADC error */
-    CHECK(ac_power_classify(8.7f, 4.20f, false) == AC_SRC_MAINS);
-    CHECK(ac_power_classify(0.1f, 4.20f, false) == AC_SRC_MAINS_NO_CELLS);
-    CHECK(ac_power_classify(8.7f, 0.0f, true) == AC_SRC_MAINS);               /* PC, no reading */
-    CHECK(ac_power_classify(0.0f, 0.0f, true) == AC_SRC_MAINS_NO_CELLS);
-    CHECK(ac_power_matter_status(AC_SRC_BATTERY) == 1);
-    CHECK(ac_power_matter_status(AC_SRC_MAINS) == 2);
-    CHECK(ac_power_matter_status(AC_SRC_MAINS_NO_CELLS) == 3);
+    CASE("unplugging resets the session: the next timer may be retried again");
+    o = ac_power_update(&p, 3.30f, none, false, 50000);
+    CHECK(!o.ext);
+    o = ac_power_update(&p, 3.10f, chg, false, 60000);
+    o = ac_power_update(&p, 3.30f, flt, false, 60000 + AC_TIMER_SUSPECT_S + 1);
+    CHECK(o.ce == AC_CE_PULSE);
 
-    CASE("the cells being taken out and put back keeps the counter");
-    ac_pack_t bk;
-    ac_pack_init(&bk, AC_CELL_LITHIUM, 6);
-    ac_pack_update(&bk, 6 * 1.48f);
-    ac_pack_spend(&bk, 3000.0f);
-    ac_pack_update(&bk, 0.0f);                      /* holder empty, on mains */
-    ac_pack_update(&bk, 6 * 1.48f);                 /* same cells back */
-    CHECK_NEAR(bk.used_mwh, 3000.0, 0.01);
+    CASE("an early fault (NTC hot/cold) is not taken for the timer");
+    ac_power_init(&p);
+    o = ac_power_update(&p, 3.20f, chg, false, 100);
+    o = ac_power_update(&p, 3.22f, flt, false, 100 + 1800);
+    CHECK(o.st.fault == PWR_FLT_RECOVERABLE);
+    CHECK(o.ce == AC_CE_RELEASE);
+
+    CASE("USB-C without cells: no battery to report on");
+    ac_power_init(&p);
+    o = ac_power_update(&p, 0.1f, idle, false, 100);
+    CHECK(o.st.src == PWR_SRC_EXTERNAL_NO_CELL);
+    CHECK(o.ext && o.ce == AC_CE_RELEASE);
+
+    CASE("no reading from the ladder: not external, never a pulse");
+    ac_power_init(&p);
+    o = ac_power_update(&p, 3.3f, none, false, 0);
+    CHECK(!o.ext && o.ce == AC_CE_RELEASE);
 }
 
 /* ------------------------------------------------------------------ */
@@ -931,7 +922,7 @@ int main(void)
     test_engine();
     test_status();
     test_window();
-    test_battery();
+    test_power();
     printf("\n%d checks, %d failure(s)\n", g_run, g_fail);
     return g_fail ? 1 : 0;
 }

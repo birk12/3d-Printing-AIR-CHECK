@@ -133,7 +133,7 @@ esp_err_t ac_rail_sen6x(bool on)
 
 void ac_rail_hold(bool hold)
 {
-    const int pins[] = { AC_PIN_SEN_EN, AC_PIN_CO2_EN, AC_PIN_CO2_IO };
+    const int pins[] = { AC_PIN_SEN_EN, AC_PIN_CO2_EN, AC_PIN_CO2_IO, AC_PIN_CE };
     for (unsigned i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
         if (hold) gpio_hold_en(pins[i]);
         else      gpio_hold_dis(pins[i]);

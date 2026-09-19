@@ -18,6 +18,7 @@ you turn it on, `ac_matter.cpp` needs the generated names.
 | 1 | Air Quality Sensor | `0x002C` | Descriptor, Identify, **Air Quality** `0x005B`, **PM2.5** `0x042A`, **PM10** `0x042D`, **PM1** `0x042C`, **CO2** `0x040D`, **TVOC** `0x042E` |
 | 2 | Temperature Sensor | `0x0302` | Descriptor, Identify, Temperature Measurement `0x0402` |
 | 3 | Humidity Sensor | `0x0307` | Descriptor, Identify, Relative Humidity Measurement `0x0405` |
+| next (the boot log prints it as `usb-c=N`) | Power Source | `0x0011` | Descriptor, **Power Source** "USB-C" (Wired) |
 
 Every one of these is a standard device type with standard clusters. There are
 no manufacturer-specific clusters and no vendor extensions anywhere in the
@@ -76,42 +77,53 @@ endpoint does not already carry.
 From the SHT40, read every 10 s together with the SGP40 (EDR-17). The SEN62's
 own T/RH is not used.
 
-### Power Source, endpoint 0
+### Power sources: the cells on endpoint 0, USB-C on its own endpoint
 
-Features `BAT` (Battery) and `REPLC` (Replaceable). Not `RECHG`: six AA cells
-the user replaces, and nothing is charged inside the device (EDR-18), so there
-is no `BatChargeState`.
+Since v1.4 the device runs from USB-C with four LiFePO4 cells, charged in the
+device, as the backup (EDR-21). Two Power Source clusters describe that, one
+per endpoint (one Power Source cluster per endpoint is all Matter allows):
 
-One Power Source only, describing the cells. Since v1.3.1 the device also
-runs from a USB-C charger (EDR-20), but no second, wired Power Source is
-declared: controllers show the battery either way, and its `Status` says
-what the cells are doing.
+| | endpoint 0 | the USB-C endpoint |
+|---|---|---|
+| `Description` | "LiFePO4 1S4P" | "USB-C" |
+| `Order` | 1 | 0 (preferred) |
+| features | `BAT` (Battery), `RECHG` (Rechargeable), `REPLC` (Replaceable) | `WIRED` |
 
-| where the power comes from | `Status` | `BatPresent` | battery attributes |
+| where the power comes from | endpoint 0 `Status` | `BatPresent` | USB-C `Status` / `WiredPresent` |
 |---|---|---|---|
-| the cells (`power: cells`) | 1 Active | true | as below |
-| external power, cells in the holder as backup (`power: external, cells as backup`) | 2 Standby | true | as below; the percentage of the backup cells |
-| external power, holder empty (`power: external, no cells`) | 3 Unavailable | false | `BatPercentRemaining` null, `BatReplacementNeeded` false |
+| the cells (`power: cells`) | 1 Active | true | 3 Unavailable / false |
+| USB-C in J2, cells in (`power: USB-C, cells ...`) | 2 Standby | true | 1 Active / true |
+| USB-C in J2, no cells (`power: USB-C, no cells`) | 3 Unavailable | false | 1 Active / true |
 
-External power is a charger in the USB-C power socket (J2) or a computer on
-the FireBeetle's USB-C: VSYS at or above 4.08 V on GPIO0, or an enumerated
-USB host. The holder counts as empty below 3.0 V pack. On external power the
-device enters no low or critical battery state, but `BatChargeLevel` still
-warns when the backup cells are at or below `low_battery_pct`.
+USB-C is recognised from the PWR-K node on GPIO4 (the #6091's input). A
+computer on the FireBeetle's own USB-C also counts as external power for the
+USB-C endpoint and the measurement engine, but it never charges the cells and
+leaves endpoint 0 on 1 Active. The cells count as absent below 1.0 V. On
+external power the device enters no low or critical battery state, but
+`BatChargeLevel` still reports the cells' level.
+
+**Battery, endpoint 0:**
 
 | attribute | what it carries |
 |---|---|
 | `Status` | 1 Active, 2 Standby, 3 Unavailable (table above) |
-| `Description` | "Battery" |
-| `BatPercentRemaining` | half-percent units. The lower of two estimates: the resting-voltage curve for the configured `cell_type`, and an energy counter of what the firmware has spent since the pack was fitted. It only goes up when a fresh pack is detected (a jump of +0.08 V per cell) |
-| `BatVoltage` | pack voltage in mV (all cells in series) |
-| `BatChargeLevel` | 0 OK, 1 Warning (at or below `low_battery_pct`, 20 %), 2 Critical (below 5 %) |
-| `BatReplacementNeeded` | true at Critical: change the cells now |
+| `Description` | "LiFePO4 1S4P" |
+| `BatPresent` | true; false on USB-C without cells |
+| `BatPercentRemaining` | half-percent units, coarse, from the cell voltage (`pwr_std`, TI's LFP curve). LiFePO4 is flat between about 3.26 and 3.33 V: trust it for "full" and "nearly empty". 100 % while full or paused on USB-C. Null without cells |
+| `BatVoltage` | cell voltage in mV (the four cells are in parallel) |
+| `BatChargeLevel` | 0 OK, 1 Warning (below 3.20 V, about 10 %), 2 Critical (below 3.10 V, about 6 %; measuring stops), with 0.05 V hysteresis |
+| `BatChargeState` | 0 Unknown, 1 IsCharging, 2 IsAtFullCharge (also during the charge pause), 3 IsNotCharging. **IsCharging marks the window in which temperature and humidity may read a little high** (charger heat, 0.85–1.7 W); nothing is compensated |
+| `BatFunctionalWhileCharging` | true |
+| `BatReplacementNeeded` | true on a latched charger fault: the safety timer ran out twice in one USB session, or an ISET / over-current fault. Unplug and replug USB-C; if it recurs, see `docs/TROUBLESHOOTING.md` |
 | `BatReplaceability` | 2 UserReplaceable - two screws on the battery door, see `docs/ASSEMBLY.md` |
-| `BatPresent` | true; false with the holder empty on external power |
-| `BatReplacementDescription` | "6 x AA (alkaline, NiMH or lithium)" |
-| `BatCommonDesignation` | 2 AA |
-| `BatQuantity` | 6 |
+| `BatReplacementDescription` | "4 x AER18650m2A2 LiFePO4, all at once" |
+| `BatQuantity` | 4 |
+| `BatCommonDesignation` | `0x4C` (18650) |
+| `BatApprovedChemistry` | `0x14` (LithiumIronPhosphate) |
+
+**USB-C endpoint:** `Status` (1 Active while powered from USB-C, 3
+otherwise), `WiredPresent`, `WiredCurrentType` 1 (DC), `Description`
+"USB-C", `Order` 0.
 
 ## ICD - this is a battery device
 
@@ -153,8 +165,8 @@ rewritten:
 | battery percentage | 1 % |
 | air quality | any change of state |
 
-The Power Source attributes are written separately, on every battery read
-(`battery_interval_s`, 5 min by default).
+The Power Source attributes - both endpoints - are written separately, on
+every battery read (`battery_interval_s`, 5 min by default).
 
 ## Multi-admin (the dashboard)
 

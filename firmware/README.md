@@ -6,10 +6,11 @@ ESP-IDF v5.5.x + esp-matter release/v1.6, target **esp32c6**.
 
 ```
 components/ac_core/    platform-independent measurement core - no esp_* headers
-components/ac_hal/     ESP-IDF drivers: SEN62, Sunrise, SGP40, SHT40, AA pack and VSYS ADC, LED, button, NVS
+components/pwr_std/    the Power-Standard's LFP module (C99), copied unchanged
+components/ac_hal/     ESP-IDF drivers: SEN62, Sunrise, SGP40, SHT40, the VBAT_S / PWR-K / VSYS ADC, CE, LED, button, NVS
 components/sensirion_gas_index/   vendored VOC Index algorithm (BSD-3)
 main/                  app_main.cpp and the Matter data model
-test/host/             546 checks that run on a workstation
+test/host/             528 checks plus the pwr_std test, run on a workstation
 ```
 
 The split is the point: `ac_core` decides what happens and when, `ac_hal`
@@ -33,11 +34,11 @@ not. Note that `esp-matter/examples/common` is deliberately **not** on
 handling.
 
 The first build takes a while: it compiles the whole Matter SDK. The result
-(v1.3.1):
+(v1.4.0, ESP-IDF v5.5.5):
 
 ```
-aircheck.bin   1 686 944 bytes, 14 % free in the 1.9 MB OTA partition
-DIRAM          210 208 bytes, 46.5 % of 452 112
+aircheck.bin   1 687 776 bytes, 14 % free in the 1.9 MB OTA partition
+DIRAM          210 224 bytes, 46.5 % of 452 112
 ```
 
 Almost half the RAM is gone before anything is allocated at runtime. That is
@@ -50,24 +51,55 @@ No ESP-IDF needed:
 
 ```bash
 cc -std=c99 -Wall -Wextra -Werror -O1 -Icomponents/ac_core/include \
-   components/ac_core/src/*.c test/host/test_ac_core.c -lm -o /tmp/ac_test
+   -Icomponents/pwr_std/include \
+   components/ac_core/src/*.c components/pwr_std/src/pwr_std.c \
+   test/host/test_ac_core.c -lm -o /tmp/ac_test
 /tmp/ac_test
+cc -std=c99 -Wall -Wextra -Werror -Icomponents/pwr_std/include \
+   test/host/test_pwr_std.c components/pwr_std/src/pwr_std.c -o /tmp/pwr_test
+/tmp/pwr_test
 ```
 
-546 checks, about 20 ms. See `docs/TESTING.md` for what they cover.
+528 checks, about 20 ms, then `all tests passed` from `pwr_std`. See
+`docs/TESTING.md` for what they cover.
 
-## Power source (1.3.1)
+## Power (1.4.0)
 
-`ac_power_classify()` in `ac_core/ac_battery.c` tells the cells from external
-power by VSYS on GPIO0 (the FireBeetle's 1M/1M divider): at or above
-`AC_EXT_POWER_V` (4.08 V), or with an enumerated USB host, the device is on
-external power; a pack below `AC_PACK_ABSENT_V` (3.0 V) then means an empty
-holder. External power means CONTINUOUS mode, no low/critical battery state,
-and only the regulator's quiescent current and the resistors across the pack
-booked against the cells. The log prints `power: cells`, `power: external,
-cells as backup` or `power: external, no cells` with VSYS and the pack
-voltage on each change; Matter Power Source `Status` is 1, 2 or 3
-accordingly (`docs/MATTER.md`).
+The Power-Standard's module C (EDR-21): a USB-C socket, the #6091 charger
+(TI BQ25185), 1S4P LiFePO4. `ac_hal/battery.c` reads the cell voltage /
+2 on GPIO3 (ADC 6 dB), the PWR-K ladder on GPIO4 (ADC 12 dB, two readings
+50 ms apart) and VSYS on GPIO0 (sanity only), and drives CE on GPIO5 - only
+ever high (charge pause) or an input (charging allowed; the #6091's
+pull-down is the fail-safe). `ac_core/ac_power.c` wraps `pwr_std`:
+
+* **External power** is PWR-K EXT (USB-C in J2) or an enumerated USB host on
+  the FireBeetle: CONTINUOUS mode, no low/critical battery state.
+* **Charge pause** (`pwr_hold_update()`): after "full" on USB-C, CE is held
+  high until USB-C is unplugged, the cells fall below 3.30 V, or 30 days
+  have passed.
+* **Safety timer** (`pwr_timer_retry()`): 1S4P needs 8–9 h from flat, the
+  BQ25185 stops after 6 h. PWR-K cannot tell its latched fault from a
+  recoverable one, so a fault seen after at least 5.5 h of charging
+  (`AC_TIMER_SUSPECT_S`) is taken for the timer and gets one 150 ms CE pulse
+  per USB session. A second one stays latched.
+* **Levels** from the cell voltage: warning below 3.20 V (about 10 %),
+  critical below 3.10 V (about 6 %, measuring stops), 0.05 V hysteresis. The
+  percentage is coarse, from the LFP voltage curve.
+
+On every change of source, charge state or fault the log prints
+
+```
+power: cells|USB-C|USB-C, no cells, cells X.XX V (N %), charging|full|not charging[, charge paused][, FAULT (timer?)|, fault (temperature/OVP)], VSYS X.XX V
+```
+
+and, after a timer restart, `safety timer ran out before full: charging
+restarted once`. The console's `diag` shows `LFP cells X.XX V, N %,
+charging|not charging, external power yes|no`. `ac_matter_publish_power()`
+updates the battery Power Source on endpoint 0 (`Status`, `BatPresent`,
+`BatPercentRemaining`, `BatVoltage`, `BatChargeLevel`, `BatChargeState`,
+`BatReplacementNeeded`) and the USB-C Power Source on its own endpoint
+(`Status`, `WiredPresent`); see `docs/MATTER.md`. After a reboot the charge
+pause starts released and `pwr_std` learns "full" again.
 
 ## Configuration
 
@@ -76,8 +108,10 @@ compiled out, SIT ICD at a 15 s poll, light sleep on, no CLI.
 `sdkconfig.defaults.lit` switches to a Long Idle Time ICD and is experimental;
 see `docs/MATTER.md` for why.
 
-Runtime settings - names, thresholds, sensitivity, cell type, altitude - are
-in NVS and never need a rebuild (`docs/CONFIGURATION.md`). `ac_config_validate()` clamps everything into the range
+Runtime settings - names, thresholds, sensitivity, altitude - are in NVS
+(configuration version 5) and never need a rebuild
+(`docs/CONFIGURATION.md`). There are no battery settings; the power
+module's thresholds are fixed in `pwr_std`. `ac_config_validate()` clamps everything into the range
 the sensor datasheets allow, so a bad value cannot produce a schedule that the
 energy model did not account for.
 

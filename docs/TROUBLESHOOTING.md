@@ -6,11 +6,11 @@ Work down the list. Almost everything is one of the first five.
 
 | check | |
 |---|---|
-| are the cells in? | six AA, matching the + marks in the holder, all of one type and age |
-| are the cells above the lockout? | R11 on PS1's EN switches the device off below ~6.1 V pack (1.0 V per cell) and lets it start again only above ~7.0 V. Tired cells put back in stay off: fresh cells, or a charger in J2 |
-| is the power path complete? | holder red lead → PTC fuse → PS1 VIN; PS1 VOUT → LM66200 VIN1 → pigtail + into the FireBeetle's battery socket. Check the pigtail polarity against the "+" on the FireBeetle |
-| is the regulator set? | 3.90 V at PS1's VOUT (ASSEMBLY step 4). 0 V: the fuse has tripped, a lead is open, or the pack is below the lockout |
-| does a charger in J2 bring it up? | if yes, everything after the LM66200 is fine and the problem is in the pack path: flat cells, the lockout, the fuse or PS1. If not, check PS2: 4.20 V at its VOUT, into LM66200 VIN2 (not to GND - it was up to v1.3) |
+| are the cells in? | four AER18650m2A2, matching the + marks in the holders, one type and batch |
+| are the cells above the cut-off? | below 3.0 V the #6091 switches LOAD off (BUVLO) to protect the cells; it comes back with USB-C in J2, or once the cells are at 3.15 V again. The BMS cuts off at 2.1 V: USB-C in J2 |
+| does USB-C in J2 bring it up? | if yes, everything from the #6091 on is fine and the problem is on the cell side: flat cells, an open fuse, the BMS. If not, measure #6091 LOAD (4.41–4.59 V with USB-C), then PS1's VOUT |
+| is the power path complete? | cells → one PICO fuse each → BMS B+; BMS P+ → #6091 BATT+, BMS P− → BATT− (system GND); #6091 LOAD+ → PS1 VIN; PS1 VOUT → LM66200 VIN1 → pigtail + into the FireBeetle's battery socket. LM66200 VIN2 and ON to GND. Check the pigtail polarity against the "+" on the FireBeetle |
+| is the regulator set? | 3.90 V at PS1's VOUT (ASSEMBLY step 4.3). 0 V: no LOAD (cells below the cut-off and no USB-C) or a lead is open |
 | does the FireBeetle's USB-C bring it up? | if yes, the MCU is fine; if neither the cells nor J2 do, suspect the LM66200 (ON to GND?) and the pigtail |
 | does it flash white at power-on? | if not, check the LED's orientation: long lead (common anode) to VSYS |
 | does the serial log show the banner? | `idf.py monitor`; if yes the MCU runs and the problem is the LED |
@@ -25,9 +25,9 @@ during boot is normal: it sits on GPIO16, which the ROM boot log toggles.
 | blue, slow blink | pairing mode (5 min): not commissioned yet, or you held the button 3–8 s |
 | green / yellow / red / purple for 3 s after a press | air quality good / elevated / high / very high |
 | white pulse after a press | still warming up (first minute after power-on) |
-| yellow short blinks after a press | battery low: **change the cells now** |
+| yellow short blinks after a press | battery low (about 10 %, 3.20 V): **plug in USB-C** |
 | red blinks for 3 s after a press | all sensors failed: check the log |
-| red blip every 10 s, unprompted | battery critical, measurement paused |
+| red blip every 10 s, unprompted | battery critical (about 6 %, 3.10 V), measurement paused: plug in USB-C now |
 | red blip every 5 s, unprompted | all sensors failed: check the log |
 | fast red for 3 s | factory reset in progress |
 | white fast blink | a controller sent Identify |
@@ -40,8 +40,8 @@ during boot is normal: it sits on GPIO16, which the ROM boot log toggles.
 A missing green or blue channel is almost always the LED fitted the wrong way
 round, or a wrong resistor (R8 1 k on red to GPIO16, R9/R10 330 Ω on green and
 blue to GPIO22/23). Green and blue need about 3 V, so they only light because
-the anode is on VSYS (about 3.9 V on the cells, 4.2 V on external power), not
-on 3V3.
+the anode is on VSYS (3.9 V from the regulator; 4.2 V while a computer is on
+the FireBeetle's USB-C), not on 3V3.
 
 ## `SGP40 init failed` / `SHT40 not responding`
 
@@ -85,53 +85,69 @@ samples and its ABC settings once, and only what differs.
 
 ## Low or empty battery
 
-The yellow low-battery blink and Matter's `BatReplacementNeeded` mean
-**change the cells now** (`ASSEMBLY.md`, "Changing cells").
+The yellow low-battery blink (3.20 V, about 10 %) means **plug in USB-C**;
+the red blip every 10 s (3.10 V, about 6 %) means the device has stopped
+measuring and only reports the battery. Nothing needs replacing - the device
+charges its cells itself.
 
-**Take empty cells out promptly - especially NiMH; for L91 it is
-uncritical.** The undervoltage lockout switches the device off at ~1.0 V per
-cell, but even then ~55 µA flow through PS1's EN pull-up and R11 and ~5 µA
-through the pack divider. An empty pack left in the holder keeps draining;
-over weeks a NiMH pack can drop below 1.0 V per cell and the weakest cell can
-reverse.
+At 3.0 V the #6091 switches the device off (BUVLO); USB-C in J2 or cells back
+at 3.15 V bring it up again. The BMS is the last line at 2.1 V. For storage
+and transport see [`NUTZUNG.md`](NUTZUNG.md) §6.
 
-On external power there is no low or critical battery state: the cells are
-only the backup. Matter still reports `BatChargeLevel` for them, so weak
-backup cells show up as a warning. With the holder empty on external power
-there is no battery alarm at all (`Status` 3, `BatPresent` false).
+On USB-C there is no low or critical battery state: the device runs from the
+charger. Matter still reports `BatChargeLevel` and `BatVoltage` for the cells.
+USB-C without cells raises no battery alarm at all (`Status` 3, `BatPresent`
+false).
 
 ## Which power source is it using?
 
-The log prints the source on every change, with VSYS and the pack voltage:
+The log prints a line on every change of source, charge state or fault:
 
-| log | meaning | Matter Power Source `Status` |
+| log | meaning | Matter `Status`: battery (endpoint 0) / USB-C endpoint |
 |---|---|---|
-| `power: cells` | running on the AA pack, VSYS about 3.9 V | 1 Active |
-| `power: external, cells as backup` | a charger in J2 (or a computer on the FireBeetle's USB-C), VSYS about 4.2 V | 2 Standby |
-| `power: external, no cells` | as above, holder empty (pack under 3.0 V) | 3 Unavailable |
+| `power: cells, cells 3.30 V (55 %), not charging, VSYS 3.90 V` | running on the cells | 1 Active / 3 Unavailable |
+| `power: USB-C, cells ..., charging, VSYS 3.90 V` | USB-C in J2, the cells charge | 2 Standby / 1 Active |
+| `power: USB-C, cells ..., full, charge paused, VSYS 3.90 V` | USB-C, cells full, charging paused (see below) | 2 Standby / 1 Active |
+| `power: USB-C, no cells, ...` | USB-C, no cells (cell voltage under 1.0 V) | 3 Unavailable / 1 Active |
 
-External power is recognised from VSYS on GPIO0: at or above 4.08 V, or when
-a USB host has enumerated. A charger in J2 that does not show up as external:
-measure PS2's VOUT (4.20 V) and VSYS. `power: external` with no charger and
-no computer: PS1 is set too high - it must read 3.90 V.
+USB-C in J2 is recognised from the PWR-K node on GPIO4 (above 0.6 V). A
+computer on the FireBeetle's USB-C counts as external power for the
+measurement engine (CONTINUOUS, no battery alarms) and for the USB-C
+endpoint, but the log still says `cells`: that port never charges them. A
+charger in J2 that does not show up: measure the node (TESTING T-L1) - 0 V
+means R20 or its wire to DCIN+ is open.
+
+## Charging does not start, or stops with a fault
+
+| log | cause | what to do |
+|---|---|---|
+| `fault (temperature/OVP)` | the NTC sees the cells outside 0–60 °C (a cold or hot room, sun, a radiator), or the NTC lead is open (reads as far too cold), or an input overvoltage | room temperature, 0–45 °C; check the NTC: 9–11 kΩ at 25 °C, bead on its cell (TESTING PS-2.5). The device keeps running from USB-C meanwhile |
+| `FAULT (timer?)` after more than 5.5 h of charging | the BQ25185's 6 h safety timer. From flat, 1S4P needs 8–9 h: the firmware restarts charging once per USB session (`safety timer ran out before full: charging restarted once`) | nothing, the first time. A second timer fault in the same session stays, and Matter shows `BatReplacementNeeded`: unplug USB-C and plug it in again. If it recurs, measure the cells - one may be faulty; [`NUTZUNG.md`](NUTZUNG.md) §3/§4 |
+| `charging` for many hours | normal from flat: 8–9 h, the device's own draw shares the 1.1 A input limit | – |
+| charging much slower than that | the "1 Amp" jumper is not bridged: the factory default is 500 mA (TESTING PS-2.8) | bridge it |
+| `full`, `charge paused` on permanent USB-C | the charge pause: the firmware holds CE high after full and releases it on unplug, below 3.30 V or after 30 days | nothing - that is intended |
+
+Never fit cells to a #6091 that reads 4.1–4.25 V at BATT without cells: its
+VS jumper is still on the factory 4.2 V (TESTING PS-1.2/1.3).
+
+A hot, swollen, dented or leaking cell, a sharp smell, or a damaged
+compartment: unplug, do not charge again, and follow
+[`NUTZUNG.md`](NUTZUNG.md) §4.
 
 ## The battery percentage looks wrong
 
-There is no fuel gauge. The percentage comes from the pack voltage, per cell
-chemistry, and an energy counter (`ac_core/ac_battery.c`); the lower of the
-two wins. It is good enough for "a quarter left" and "nearly empty".
+There is no fuel gauge. The percentage is coarse, read from the cell
+voltage (`pwr_std`), and LiFePO4 is flat between about 3.26 and 3.33 V: trust
+it for "full" and "nearly empty", not in between. While the cells charge the
+voltage reads high. The low and critical alarms come from the voltage
+itself (3.20 / 3.10 V), not from the percentage.
 
-1. **Is `cell_type` set?** The default is alkaline. L91 lithium and NiMH have
-   different curves: `set cell_type lithium` (or `nimh`).
-2. Compare the pack voltage in `diag` with a multimeter across the pack. The
-   1M/220k divider multiplies any ADC error by 5.5; if the boot log says `no
-   ADC calibration in eFuse; battery level unavailable`, there is no
-   percentage at all.
-3. L91 cells stay flat for most of their life. There the energy counter
-   carries the percentage, not the voltage.
-4. The value only falls, on purpose. Fresh cells are recognised by the jump
-   in voltage (0.08 V per cell) and restart the counter; half-used cells put
-   back in may not be.
+1. Compare `LFP cells X.XX V` in `diag` with a multimeter across BMS P+ / P−.
+   The 470k/470k divider doubles any ADC error; if the boot log says `no
+   ADC calibration in eFuse; battery level unavailable`, there is no reading
+   at all.
+2. On USB-C, once the cells are full and during the charge pause, it shows
+   100 %.
 
 ## PM2.5 reads 0.0, or never changes
 
@@ -228,33 +244,34 @@ thermometer you trust, note the offset - there is no offset setting yet
    seconds - give it a minute.
 3. A 15 s gap is normal. The device polls every 15 s by design; the Home app
    will sometimes show it as briefly unresponsive.
-4. Critical battery. Below 5 % the device stops measuring and only reports
-   battery. At ~1.0 V per cell the lockout switches it off altogether.
+4. Critical battery. Below 3.10 V (about 6 %) the device stops measuring and
+   only reports the battery. At 3.0 V the charger switches it off altogether;
+   USB-C brings it back.
 
 ## Battery drains far faster than expected
 
-ECO on L91 cells is modelled at 3.5 months, NiMH 2.1, alkaline 1.8
+ECO on the cells is modelled at 2.9 months with margin
 (`docs/BATTERY_LIFE.md`). If that is not enough, run it from a USB-C charger
-in J2 and keep the cells as the backup. In order of likelihood:
+in J2 permanently - that is allowed, and the cells stay topped up. In order
+of likelihood:
 
 1. **It is not in ECO mode.** The serial log prints the mode on every change. If
-   it says NORMAL, that is about five weeks on L91 and it is working correctly.
-   If it says ACTIVE, something is triggering event detection: lower
-   `ev_sensitivity`.
+   it says NORMAL, that is about four weeks on the cells and it is working
+   correctly. If it says ACTIVE, something is triggering event detection:
+   lower `ev_sensitivity`.
 2. **It never leaves ACTIVE.** A workshop with a permanently raised VOC level
    will re-trigger constantly. Reset the baseline once the room is at its
    normal state.
 3. **Measure the idle current** (TESTING T-E0, T-E1): the model says about
-   3.5 mW at the cells with the SEN62 off (≈ 0.40 mA at 8.7 V), of which the
-   regulator's quiescent current and the lockout and divider resistors are
-   the biggest part. The PPK2 goes in the 3.9 V line between PS1 and the
-   LM66200, not in the pack lead. The usual
-   suspects above that: the #2810's slide switch in ON (the SEN62 then never
-   switches off, and the #2810's red LED stays lit), the SparkFun PWR jumper
-   not cut, the FireBeetle's green LED on GPIO15 being driven, or a pin
-   back-feeding an unpowered sensor.
-4. **The cells.** Mixed ages or chemistries. Change all six at once, one
-   type, and set `cell_type`.
+   2.6 mW at the cells with the SEN62 off, of which the cells' self-discharge
+   and the regulator's quiescent current are the biggest part. The PPK2 goes
+   in the 3.9 V line between PS1 and the LM66200, a µA meter in the BMS P+
+   lead. The usual suspects above that: the #2810's slide switch in ON (the
+   SEN62 then never switches off, and the #2810's red LED stays lit), the
+   SparkFun PWR jumper not cut, the FireBeetle's green LED on GPIO15 being
+   driven, or a pin back-feeding an unpowered sensor.
+4. **The cells.** Cells that lose capacity are replaced all four at once, one
+   type and batch, charged together first (`ASSEMBLY.md`, "Changing cells").
 
 ## Events fire constantly / never fire
 
@@ -290,8 +307,10 @@ cd firmware && idf.py -p /dev/tty.usbmodem* monitor
 | `no usable stored config, using defaults` | first boot, or the config failed its CRC |
 | `stored config failed its CRC, using defaults` | NVS corruption; defaults were used rather than garbage |
 | `baseline restored: PM2.5 8.1, VOC 100` | normal |
-| `power: 6 x AA lithium, 1234 mWh used; site 520 m = 952 hPa` | the cell type, the energy counter and the pressure the CO2 is corrected to |
-| `power: cells (VSYS 3.90 V, pack 8.70 V)` | the power source changed: `cells`, `external, cells as backup` or `external, no cells` |
+| `power: LFP 1S4P module; site 520 m = 952 hPa` | the power module, and the pressure the CO2 is corrected to |
+| `power: USB-C, cells 3.41 V (100 %), full, charge paused, VSYS 3.90 V` | source, cell voltage, charge state and any fault changed ("Which power source is it using?") |
+| `safety timer ran out before full: charging restarted once` | the charger's 6 h timer ran out; charging restarted, once per USB session |
+| `no ADC calibration in eFuse; battery level unavailable` | the cell voltage cannot be read reliably; no battery level is reported |
 | `SEN62: ESP_ERR_TIMEOUT` | the particle module did not answer |
 | `window 60s: PM2.5 7.3 ug/m3 averaged over 30 s` | a normal particle window |
 | `fan speed warning (status 0x...)` | the SEN62's fan is off its nominal speed; watch whether it turns into an error |

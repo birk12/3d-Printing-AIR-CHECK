@@ -96,27 +96,29 @@ Automation: Time of Day > 21:00, every day
 Apple Home can do this on its own, no Shortcut needed:
 
 ```
-When   Battery Level of [3D Printer] drops below 20 %
-Then   Send notification "AIR CHECK printer unit: 20 % left, buy six AA cells."
+When   Battery Level of [3D Printer] drops below 25 %
+Then   Send notification "AIR CHECK printer unit: battery low, plug in USB-C soon."
 ```
 
 ```
 When   Battery Level of [3D Printer] drops below 10 %
-Then   Send notification "AIR CHECK printer unit needs new cells."
+Then   Send notification "AIR CHECK printer unit: plug in USB-C now."
        Turn on [a light]           (something you cannot ignore)
 ```
 
-At 20 % in ECO mode there is still time left, which is why the first
-notification can be calm. Below 5 % the device stops measuring and
-reports over Matter that the cells need replacing - change them now, and take
-empty cells out promptly (especially NiMH). Nothing charges inside the
-device; the cells are swapped (EDR-18).
+The level is coarse, read from the cell voltage: LiFePO4 is flat in the
+middle, so trust it for "full" and "nearly empty", not in between. Below
+3.20 V (about 10 %) the device warns by itself (yellow blinks on a press);
+below 3.10 V (about 6 %) it stops measuring and only reports the battery.
+The answer is always **plug in USB-C** - the device charges its cells
+itself; nothing needs replacing. If Home shows that the battery needs
+replacing, that is a latched charger fault: unplug and replug USB-C, then
+`docs/TROUBLESHOOTING.md`.
 
-On a USB-C charger (v1.3.1) the cells are only the backup: the device raises
-no low-battery state of its own, but the backup cells' level is still
-published and falls slowly, so a 20 % trigger can still fire for them. With
-the holder empty the level is null and nothing is reported as needing
-replacement (how Home shows that is not verified).
+On a USB-C charger the cells are the backup and are kept charged: the device
+raises no low-battery state of its own, and the level stays up. Without cells
+the level is null and nothing is reported (how Home shows that is not
+verified).
 
 ---
 

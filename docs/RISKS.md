@@ -73,6 +73,14 @@ not a health assessment.
   away from the ESP32 and the Sunrise's lamp. It is still inside a box with
   electronics in it. There is no offset setting yet; until you have compared
   it with a thermometer you trust, treat the temperature as an indicator.
+* **While the cells charge**, the #6091 is a linear charger and turns
+  0.85–1.7 W into heat in its chamber. It sits as far from the gas bay as the
+  case allows (54–93 mm from the SHT40, SGP40 and Sunrise), but temperature
+  and humidity can still read a little high then. Nothing is compensated -
+  there is no measured offset yet (TESTING T-L7). Matter's `BatChargeState`
+  = IsCharging marks the window, and the dashboard marks those values. On
+  permanent USB-C the charge pause limits this to a top-up about once a
+  month.
 
 ---
 
@@ -81,24 +89,27 @@ not a health assessment.
 * Every number in `docs/BATTERY_LIFE.md` comes from datasheets and from
   vendor-published or independent measurements. **None of it has been
   measured on an assembled device**, because no device has been assembled.
-  TESTING T-E1..T-E3 are the measurements that would settle it.
-* The least certain line is the Pololu regulator's quiescent current. Pololu
-  give only "< 0.2 mA for most combinations", and at that figure it is about
-  a fifth of the ECO budget. At 0.4 mA ECO on L91 falls from 3.5 to 2.9
-  months; a particle window every 2 h recovers that.
-* The undervoltage lockout costs about 8 % of the ECO budget (R11 and PS1's
-  internal pull-up, ~77 uA at 8.7 V). That is the price of never driving a
-  cell into reversal (see Battery safety).
-* The second least certain is the FireBeetle's board quiescent current, a
-  vendor figure minus the chip (29 uA). At 150 uA ECO falls to 3.3 months.
+  TESTING T-E0..T-E3 are the measurements that would settle it.
+* On USB-C the runtime is unlimited; the numbers below are for the cells
+  alone (ECO, 2.9 months with a 25 % margin, 3.6 nominal, 2.4 in the worst
+  case). The battery session's rougher estimate for general use is about 67
+  days.
+* The least certain line is the cells' self-discharge: 3 %/month is an
+  assumption, there is no manufacturer figure for the AER18650m2A2
+  (Power-Standard open point O5). At 1.5 %/month ECO reaches 3.0 months, at
+  5 % 2.7.
+* The Pololu regulator's quiescent current: Pololu give only "< 0.2 mA for
+  most combinations", about 8 % of the ECO budget at that figure. At 0.4 mA
+  ECO falls to 2.7 months; a particle window every 2 h (4.3 months) recovers
+  that. Its efficiency when boosting the cells' 3.25 V to 3.90 V at light
+  load is not published; the model assumes 85 %, the worst case 80 %.
+* The FireBeetle's board quiescent current is a vendor figure minus the chip
+  (29 uA). At 150 uA ECO falls to 2.7 months.
+* The eremit BMS board's own quiescent current is unverified (Power-Standard
+  open point O1); the model uses the HY2112's 3 uA.
 * The Thread radio figure is an independent PPK2 measurement of an ESP32-C6
   ICD. A different Thread network, a weaker link or more retries all cost
   more than that trace shows.
-* The three-month target is met with L91 cells only (3.5 months, 2.9 in the
-  worst case). eneloop pro and alkaline give 2.1 and 1.8 months in ECO, and
-  need a particle window every 2 h to clear three months (3.0 and 2.7).
-* Where that is not enough, the device runs from any USB-C charger and the
-  cells become the backup (EDR-20).
 
 ---
 
@@ -119,8 +130,8 @@ not a health assessment.
   side (particle ports) and right side (gas-bay vents) free and out of direct
   sunlight.
 * PETG softens around 80 C. This case is for a room, not a heated chamber.
-  PLA softens around 55 C and is not for the final build; ABS and ASA keep
-  emitting next to the SGP40.
+  PLA softens around 55 C and is not for the final build - and never near the
+  cells or the charger; ABS and ASA keep emitting next to the SGP40.
 * The sensor ports open to the outside. Dust gets in. The SEN62 keeps its
   optics clean with a sheath flow; the SGP40's membrane has no such thing and
   will eventually accumulate dust.
@@ -129,74 +140,88 @@ not a health assessment.
 
 ## Battery safety
 
-Since v1.3 the device runs from six AA cells, not a LiPo, because the charger
-was the one part of v1.2 that could start a fire (EDR-18).
+Since v1.4 the cells are charged inside the device: four LiFePO4 cells, the
+Power-Standard's module C (EDR-21). The user guide - charging, what the
+displays mean, what to do with a hot or swollen cell, storage, transport and
+disposal - is [`NUTZUNG.md`](NUTZUNG.md) (German).
 
-* **Nothing charges inside the device.** With USB plugged in, the FireBeetle's
-  charger holds its battery input at 4.2 V; with a charger in the USB-C power
-  socket (J2), PS2 feeds the LM66200's second input at 4.20 V. Either way the
-  LM66200 ideal diode blocks any current back towards the cells' regulator
-  once its output is more than 70 mV above that input. USB 5 V never touches
-  the pack. The cells never see a charge current, not even rechargeable
-  ones. The ERC checks the wiring for this; the bench test (TESTING T-P2)
-  has to confirm it on the real build.
-* **Undervoltage lockout.** R11 (13 k) on PS1's EN pin, against the module's
-  internal 100 k pull-up, switches the device off at ~6.1 V pack (1.0 V per
-  cell) and lets it restart only above ~7.0 V, i.e. with fresh cells. So the
-  device never drives a weak cell into reversal, which is what makes cells
-  leak (EDR-20; bench test T-P10). The thresholds rest on Pololu's EN levels
-  (off below 0.7 V, on above 0.8 V), not on a measurement.
-* **Take empty cells out promptly - especially NiMH; for L91 it is
-  uncritical.** After the lockout has switched the device off, ~55 uA still
-  flow through PS1's pull-up and R11, plus ~5 uA through the pack divider.
-  An empty pack left in the holder keeps draining; over weeks a NiMH pack can
-  drop below 1.0 V per cell and the weakest cell can reverse. The yellow
-  low-battery blink and Matter's `BatReplacementNeeded` mean **change the
-  cells now**.
-* **Fault energy is limited.** A PTC fuse (Bourns MF-R050, 1 A trip) sits in
-  the holder's red lead, 2 cm from the holder, so a pinched wire or a failed
-  module downstream is limited. The design stays within IEC 62368-1 power
-  source class PS1 (≤ 15 W) for any fault after the fuse. The MF-R030 is the
-  stricter choice for a clear margin at a fresh 10.8 V pack; verify its trip
-  time before swapping.
-* **The compartment is separate.** A 4 mm partition to the lid, one 6 × 6 mm
-  lead notch, its own pressure-relief slots in the bottom wall so a venting
-  cell cannot pressurise the case, and a door held by two screws so children
-  do not get at the cells.
-* **Cells.** Energizer Ultimate Lithium L91 are recommended: primary, no
-  charging, no leaking. NiMH are charged outside, in a charger made for them.
-  Alkaline cells can leak when left flat: take them out when empty. Never mix
-  old and new cells, never mix chemistries. 1.5 V Li-ion AA cells with USB-C
-  are **not recommended**: they are Li-ion again, and their regulated 1.5 V
-  hides the state of charge.
-* Route the leads through the partition notch so the lid and the door cannot
-  pinch them, and heat-shrink every joint.
+**Unattended charging and permanent operation on USB-C are allowed** for
+module C (Power-Standard rule 6a); that is what the layers below are for. The
+exception: a damaged or hot device or a deformed cell is not charged
+(NUTZUNG.md §4).
 
-### Mains operation (v1.3.1)
+* **Chemistry.** Lithium Werks AER18650m2A2, LiFePO4 3.2 V: no
+  thermal-runaway chemistry. One type, one batch, charged together in an XTAR
+  MX4 (LiFePO4) before the first fit, at most 20 mV apart; all four are
+  replaced together, never one. No other cells - no 3.7 V Li-ion 18650, no AA.
+* **Charge voltage 3.65 V, set by resistor.** The #6091's VS jumper selects
+  it; it cannot fall back to 4.2 V in software. The board ships at 4.2 V, so
+  it is measured without a cell before the first cell goes in (TESTING
+  PS-1.2/1.3) and labelled "LFP 3,65 V".
+* **Safety timer.** The BQ25185 stops charging after 6 h. 1S4P needs 8–9 h
+  from flat, so the firmware restarts the timer once per USB session (one CE
+  pulse, at most 12 h of charging); a second timer fault stays and is
+  reported (`BatReplacementNeeded`). PWR-K cannot tell the timer from a
+  recoverable fault; a fault after at least 5.5 h of charging is taken for the
+  timer, and a CE pulse during a real NTC or overvoltage fault is harmless -
+  the charger stays paused by its own logic.
+* **Temperature.** An NTC (Semitec 103AT-2) on a cell in the middle of the
+  pack, under Kapton, held by a finger on the door: the charger only charges
+  between 0 and 60 °C at the cell. The #6091's TH jumper is cut for it - with
+  it closed there is no temperature protection at all. Charge only at 0–45 °C
+  room temperature; not on a radiator, not in full sun, not covered.
+* **BMS.** An HY2112 board (not DW01, which cuts only at ≥ 4.25 V): over-charge
+  3.75 V, over-discharge 2.1 V, over-current. It switches the minus side, so
+  its P− is the ground of the whole device and B− goes nowhere else (ERC).
+* **A fuse per cell.** A Littelfuse PICO II 2 A at each cell's + contact: a
+  shorted cell cannot be fed by its three neighbours.
+* **Undervoltage.** At 3.0 V the BQ25185 switches the device off (BUVLO)
+  long before the BMS's 2.1 V; USB-C or cells back at 3.15 V restart it.
+  Low (3.20 V) and critical (3.10 V, measuring stops) come first.
+* **The FireBeetle's own charger never reaches the cells.** Its CN3165 holds
+  its battery input at 4.2 V when a computer is on its USB-C; the LM66200
+  blocks any current back towards the regulator once its output is more than
+  70 mV above that input. The ERC checks the wiring; TESTING PS-4.4 confirms
+  it on the build.
+* **The compartment is separate.** A 4 mm partition to the lid, one lead
+  notch, its own pressure-relief slots in the bottom wall so a venting cell
+  cannot pressurise the case. The #6091 sits in its own chamber at the end of
+  the compartment, at least 5 mm from every wall, vented low and high. PETG
+  only.
+* **The door.** Two screws (hex key 2 mm), so children do not get at the
+  cells; ribs 1 mm above the cells keep them in their holders in a fall; the
+  engraved label reads "LiFePO4 3,2 V / nur 4 x AER18650m2A2 / gleiche
+  Zellen, max. 20 mV / Polaritaet: siehe Halter / Laden nur 0-45 C".
+* **Wiring.** 22 AWG for everything that carries the cells' or the charger's
+  current. Route the leads through the notches so the lid and the door
+  cannot pinch them, and heat-shrink every joint.
+* **If a cell is hot, swollen, dented or leaking**, or the device was dropped
+  and the compartment is damaged: unplug, do not charge again, and follow
+  NUTZUNG.md §4.
 
-* **Use a CE-marked USB-C charger** from a regular shop. The device draws at
-  most ~0.6 A at 5 V; J2's 5.1 k resistors on CC ask for plain 5 V without any
-  negotiation, so any USB-C charger will do, and an 18 W phone charger is
-  plenty. The charger is the only part on mains voltage, and its quality is
-  outside this design.
-* **The cells as backup are still never charged.** They only lose the
-  regulator's quiescent current, the lockout and divider resistors and their
-  own self-discharge: about 15 months (L91), 10 (eneloop pro), 9 (alkaline)
-  before they are spent (`docs/BATTERY_LIFE.md`). Check them now and then, or
-  leave the holder empty for permanent mains operation; the device raises no
-  battery alarm then.
-* **No switch turns PS1 off on mains.** A MOSFET for that would still leave
-  ~87 uA through the EN pull-up, so the chain stays module-only and the cells
-  pay the regulator's quiescent current while on standby.
+### USB-C operation
+
+* **Use a CE-marked USB-C charger** from a regular shop, 5 V / 1.5 A or
+  more, with a C-to-C cable. J2's 5.1 k resistors on CC ask for plain 5 V
+  without any negotiation, so any USB-C charger will do, and an 18 W phone
+  charger is plenty. The charger is the only part on mains voltage, and its
+  quality is outside this design. The #6091 has an input overvoltage
+  protection at 18.5 V.
+* **Charge pause.** After a full charge the firmware holds the charger's CE
+  high: the cells rest and the device runs from USB-C. Charging is released
+  when USB-C was unplugged, below 3.30 V, or after 30 days. If the firmware
+  stops, CE falls back low through the #6091's pull-down and the charger
+  charges normally - fail-safe, because every limit is in hardware.
 * J2 is screwed to two posts, so plugging and unplugging does not load the
   solder joints.
 * **Standards.** IEC 62133-2 and UN 38.3 apply to the cells and are the
-  manufacturers' job: buy branded cells from a regular shop. The EU Battery
-  Regulation 2023/1542 applies to whoever places a battery-powered product on
-  the market; a private build is not placed on the market. Selling the device
-  would need a CE/EMC/RED assessment (the ESP32-C6 module is RED-certified,
-  the device is not). None of this has been assessed by a test lab; it is the
-  reasoning behind the design, not a certificate.
+  manufacturers' job: buy branded cells from akkuteile.de, nkon or Mouser, no
+  marketplace cells. The EU Battery Regulation 2023/1542 applies to whoever
+  places a battery-powered product on the market; a private build is not
+  placed on the market. Selling the device would need a CE/EMC/RED assessment
+  (the ESP32-C6 module is RED-certified, the device is not); the cells stay
+  user-replaceable in their holders. None of this has been assessed by a test
+  lab; it is the reasoning behind the design, not a certificate.
 
 ---
 
@@ -215,10 +240,10 @@ was the one part of v1.2 that could start a fire (EDR-18).
 ## Firmware
 
 * `ac_core` - the scheduling, filtering, baseline, classification, event
-  detection, history, 24 h statistics, LED logic and battery percentage - is
-  covered by 546 host checks that run on every build. Which power source is
-  in use (cells, external with backup, external without cells) is decided
-  there too, from VSYS.
+  detection, history, 24 h statistics, LED logic and the power module's
+  decisions (PWR-K decoding, charge pause, safety-timer restart) - is covered
+  by 528 host checks that run on every build, plus the Power-Standard's own
+  `pwr_std` test.
 * `ac_hal` - the actual sensor drivers - is **not covered by any automated
   test**. It cannot be, without hardware. Every register address, command
   code and timing in it was taken from a manufacturer datasheet and checked by
@@ -227,8 +252,7 @@ was the one part of v1.2 that could start a fire (EDR-18).
   next one, kept in flash (TESTING T-S3).
 * The event detector's thresholds are engineering judgement. They have not
   been validated against a real printer. Expect to adjust `ev_sensitivity`.
-* NVS wear: history, baseline, the pack's energy counter and the Sunrise state
-  are flushed every 30 minutes, about 17 000 times a year, across a
+* NVS wear: history, baseline and the Sunrise state are flushed every 30 minutes, about 17 000 times a year, across a
   wear-levelled partition. That is well within flash endurance, but it is
   not zero. The Sunrise's own EEPROM settings are only written when they
   differ, normally once.

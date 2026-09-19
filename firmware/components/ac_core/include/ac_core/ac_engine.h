@@ -98,8 +98,11 @@ void ac_engine_set_mode(ac_engine_t *e, ac_mode_t m, ac_time_ms_t now);
  * Algorithm assumes equally spaced samples.  Returns true, and books the
  * sample, when one is due. */
 bool ac_engine_take_voc(ac_engine_t *e, ac_time_ms_t now);
+/* level: the battery's voltage level, 0 OK / 1 low / 2 critical (pwr_std,
+ * from the cell voltage with hysteresis), -1 unknown.  pct is only reported. */
 void ac_engine_set_power(ac_engine_t *e, bool usb_present, bool charging,
-                         float battery_pct, float battery_v, ac_time_ms_t now);
+                         float battery_pct, float battery_v, int level,
+                         ac_time_ms_t now);
 void ac_engine_set_state(ac_engine_t *e, ac_device_state_t s, ac_time_ms_t now);
 void ac_engine_sensor_failed(ac_engine_t *e, ac_action_t which, const char *why);
 void ac_engine_baseline_reset(ac_engine_t *e);

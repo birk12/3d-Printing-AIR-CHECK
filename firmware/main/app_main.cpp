@@ -1,6 +1,6 @@
-/* 3D Printing AIR CHECK - application entry point (v1.3: SEN62, Senseair
- * Sunrise, SHT40 and SGP40 on a FireBeetle 2 ESP32-C6, six AA cells, no
- * display, no custom PCB).
+/* 3D Printing AIR CHECK - application entry point (v1.4: SEN62, Senseair
+ * Sunrise, SHT40 and SGP40 on a FireBeetle 2 ESP32-C6, a 1S4P LiFePO4 power
+ * module charged over USB-C, no display, no custom PCB).
  *
  * Two tasks and nothing else:
  *   measure_task  drives the sensors according to whatever ac_engine decides,
@@ -12,7 +12,7 @@
  * workstation.  Numbers are shown elsewhere: in Apple Home and on the e-ink
  * dashboard, which reads this device over Matter (docs/DASHBOARD_INTERFACE.md).
  */
-#include "ac_core/ac_battery.h"
+#include "ac_core/ac_power.h"
 #include "ac_core/ac_engine.h"
 #include "ac_core/ac_status.h"
 #include "ac_hal/ac_hal.h"
@@ -39,7 +39,7 @@
 
 static const char *TAG = "aircheck";
 
-#define AC_FW_VERSION "1.3.1"
+#define AC_FW_VERSION "1.4.0"
 #define WDT_TIMEOUT_S 120
 /* Today's outdoor CO2 background, the reference for a fresh-air
  * calibration (NOAA global mean, 2026: about 425 ppm). */
@@ -50,28 +50,11 @@ static SemaphoreHandle_t s_lock;
 static char s_manual_code[32];
 static char s_qr_payload[64];
 static char s_serial[24];
-static ac_pack_t s_pack;              /* AA pack: energy counter + voltage */
+static ac_power_t s_power;            /* LFP module C: pwr_std state + timer */
 static ac_sunrise_state_t s_co2;      /* Sunrise ABC state, held by the host */
 static bool s_sen_running;       /* a continuous-mode window left it on */
 static volatile uint16_t s_frc_ppm;     /* != 0: calibration requested */
 static volatile bool s_asc_pending;     /* rewrite the Sunrise's ABC setting */
-
-/* Energy booked against the AA pack, in mWh taken from the cells.  The same
- * figures as tools/battery_calculator/model.py: 3.3 V loads go through the
- * Pololu regulator (85 %) and the FireBeetle's buck (90 %); the Sunrise and
- * the LED sit on VSYS, the regulator's 4.0 V behind the ideal diode.  With USB
- * plugged in the FireBeetle's charger holds VSYS at 4.2 V and carries all of
- * it; only the regulator's own quiescent current is still booked. */
-#define EFF_3V3            (0.85f * 0.90f)
-#define EFF_4V0            0.85f
-#define SEN62_MW           (75.0f * 3.3f)           /* 75 mA typ */
-#define SUNRISE_MWH        (1.60f * 4.0f / 3.6f / 1000.0f)  /* 1.60 mC per shot */
-#define SGP40_SAMPLE_MWH   (0.2f * 10.0f / 3600.0f) /* 0.2 mW at 10 s */
-#define IDLE_3V3_MW        ((121.88f + 29.0f) * 3.3f / 1000.0f) /* ICD + board */
-#define REG_IQ_MA          0.2f                     /* Pololu S9V11: < 0.2 mA */
-/* Always across the pack: the regulator's 100k EN pull-up in series with the
- * 13k undervoltage-lockout resistor, and the 1M/220k pack divider. */
-#define PACK_LEAK_MA(v)    ((v) / 113.0f + (v) / 1220.0f)
 
 static float site_pressure_hpa(int altitude_m)
 {
@@ -102,8 +85,6 @@ static void do_pm_measurement(uint32_t window_s, bool keep_running)
     esp_err_t err = ac_sen6x_measure_window(window_s, keep_running, &v);
     s_sen_running = keep_running && err == ESP_OK;
     lock();
-    /* on USB the FireBeetle feeds these loads, not the cells */
-    if (!s_engine.usb_present) ac_pack_spend(&s_pack, SEN62_MW * ((float)window_s + 1.5f) / 3600.0f / EFF_3V3);
     unlock();
     ac_sample_t s;
     memset(&s, 0, sizeof(s));
@@ -148,8 +129,6 @@ static void do_voc_measurement(void)
         t = s_engine.last.temperature;
         rh = s_engine.last.humidity;
     }
-    /* on USB the FireBeetle feeds these loads, not the cells */
-    if (!s_engine.usb_present) ac_pack_spend(&s_pack, SGP40_SAMPLE_MWH / EFF_3V3);
     unlock();
     if (terr == ESP_OK) {
         s.temperature = t;
@@ -196,8 +175,6 @@ static void do_co2_measurement(void)
     s.t = now_ms();
     s.voc_index = -1;
     lock();
-    /* on USB the FireBeetle feeds these loads, not the cells */
-    if (!s_engine.usb_present) ac_pack_spend(&s_pack, SUNRISE_MWH / EFF_4V0);
     if (err != ESP_OK) {
         ac_engine_sensor_failed(&s_engine, AC_ACT_SAMPLE_CO2, esp_err_to_name(err));
     } else {
@@ -238,41 +215,53 @@ static void do_co2_calibration(uint16_t ppm)
     s_led_event = err == ESP_OK ? AC_LED_EVENT_CAL_OK : AC_LED_EVENT_CAL_FAIL;
 }
 
-/* External power (the USB-C power socket, or a computer on the FireBeetle's
- * port) counts like USB always has: CONTINUOUS mode, no battery alarms.  The
- * cells are then the backup; with the holder empty there is no battery at all. */
+/* The LFP module C (EDR-21).  External power - the module's USB-C, or a
+ * computer on the FireBeetle's own port - means CONTINUOUS mode and no battery
+ * alarms, as USB always has.  While the module charges, temperature and
+ * humidity can read a little high (about 0.85-1.7 W of charger heat in the
+ * case): Matter's BatChargeState says IsCharging then, and the dashboard marks
+ * those values (docs/DASHBOARD_INTERFACE.md). */
 static void read_battery(void)
 {
-    float pack = 0, reg = 0;
+    float vbat = -1.0f, ladder[2] = { 0, 0 }, vsys = 0;
     bool usb = false;
-    esp_err_t err = ac_battery_read(&pack, &reg, &usb);
+    esp_err_t err = ac_battery_read(&vbat, ladder, &vsys, &usb);
+    uint32_t now_s = (uint32_t)(esp_timer_get_time() / 1000000LL);
     lock();
     if (err != ESP_OK) {
         s_engine.health.battery_ok = false;
-        /* still worth knowing about USB: it switches to continuous mode */
-        ac_engine_set_power(&s_engine, usb, false, -1.0f, 0.0f, now_ms());
+        ac_engine_set_power(&s_engine, usb, false, -1.0f, 0.0f, -1, now_ms());
         unlock();
+        ac_battery_ce(0);                        /* fail-safe: charging allowed */
         return;
     }
-    ac_power_src_t src = ac_power_classify(pack, reg, usb);
-    bool ext = src != AC_SRC_BATTERY;
-    bool cells = src != AC_SRC_MAINS_NO_CELLS;
-    float pct = cells ? ac_pack_update(&s_pack, pack) : -1.0f;
+    ac_power_out_t o = ac_power_update(&s_power, vbat, ladder, usb, now_s);
+    bool cells = o.st.src != PWR_SRC_EXTERNAL_NO_CELL;
+    float pct = cells ? (float)o.st.pct : -1.0f;
     s_engine.health.battery_ok = true;
-    ac_engine_set_power(&s_engine, ext, false, pct, pack, now_ms());
-    bool low = cells && (s_engine.state == AC_STATE_LOW_BATTERY ||
-                         s_engine.state == AC_STATE_CRITICAL_BATTERY ||
-                         (ext && pct >= 0.0f && pct <= s_engine.cfg.low_battery_pct));
+    ac_engine_set_power(&s_engine, o.ext, o.charging, pct, vbat,
+                        cells ? (int)o.st.lvl : -1, now_ms());
     unlock();
-    static ac_power_src_t last_src = (ac_power_src_t)-1;
-    if (src != last_src) {
-        ESP_LOGI(TAG, "power: %s (VSYS %.2f V, pack %.2f V)",
-                 src == AC_SRC_BATTERY ? "cells" :
-                 src == AC_SRC_MAINS ? "external, cells as backup" : "external, no cells",
-                 (double)reg, (double)pack);
-        last_src = src;
+    ac_battery_ce(o.ce == AC_CE_HOLD ? 1 : o.ce == AC_CE_PULSE ? 2 : 0);
+
+    static int last_key = -1;
+    int key = (int)o.st.src * 16 + (int)o.st.chg * 4 + (int)o.st.fault;
+    if (key != last_key) {
+        ESP_LOGI(TAG, "power: %s, cells %.2f V (%u %%), %s%s%s, VSYS %.2f V",
+                 o.st.src == PWR_SRC_BATTERY ? "cells" :
+                 o.st.src == PWR_SRC_EXTERNAL ? "USB-C" : "USB-C, no cells",
+                 (double)vbat, o.st.pct,
+                 o.st.chg == PWR_CHG_CHARGING ? "charging" :
+                 o.st.chg == PWR_CHG_FULL ? "full" : "not charging",
+                 o.ce == AC_CE_HOLD ? ", charge paused" : "",
+                 o.st.fault == PWR_FLT_LATCHED ? ", FAULT (timer?)" :
+                 o.st.fault == PWR_FLT_RECOVERABLE ? ", fault (temperature/OVP)" : "",
+                 (double)vsys);
+        if (o.ce == AC_CE_PULSE)
+            ESP_LOGW(TAG, "safety timer ran out before full: charging restarted once");
+        last_key = key;
     }
-    ac_matter_publish_battery(pct, pack, low, ac_power_matter_status(src), cells);
+    ac_matter_publish_power(&o.st, o.ext, vbat);
 }
 
 static void persist(void)
@@ -284,10 +273,8 @@ static void persist(void)
     ac_store_baseline_save(&b);
     ac_store_history_save(&h);
     lock();
-    ac_pack_t pk = s_pack;
     ac_sunrise_state_t co2 = s_co2;
     unlock();
-    ac_store_blob_save("pack", &pk, sizeof(pk));
     ac_store_blob_save("sunrise", &co2, sizeof(co2));
 }
 
@@ -301,10 +288,6 @@ static void on_config_changed(void)
     ac_store_config_save(&c);
     ac_matter_set_label(c.name);
     s_asc_pending = true;          /* rewritten only if it differs */
-    lock();
-    if (c.cell_type != s_pack.type || c.cells != s_pack.cells)
-        ac_pack_init(&s_pack, (ac_cell_type_t)c.cell_type, c.cells);
-    unlock();
 }
 
 static void on_request_frc(uint16_t ppm) { s_frc_ppm = ppm; s_led_event = AC_LED_EVENT_CALIBRATING; }
@@ -390,15 +373,11 @@ static void measure_task(void *arg)
             break;
         }
 
-        /* Book the idle drain and the ABC clock for the time that passed. */
+        /* Advance the Sunrise's ABC clock by the time that passed. */
         int64_t t = esp_timer_get_time();
         {
             static int64_t last_t = 0;
-            float dt_h = (float)(t - last_t) / 3.6e9f;
             lock();
-            float pack_v = s_engine.last.battery_v > 1.0f ? s_engine.last.battery_v : 8.0f;
-            ac_pack_spend(&s_pack, dt_h * ((s_engine.usb_present ? 0.0f : IDLE_3V3_MW / EFF_3V3)
-                                         + (REG_IQ_MA + PACK_LEAK_MA(pack_v)) * pack_v));
             s_co2.abc_ms += (uint32_t)((t - last_t) / 1000);
             unlock();
             last_t = t;
@@ -594,21 +573,15 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "Sunrise not responding");
         s_engine.health.co2_ok = false;
     }
-    /* The pack's energy counter and the Sunrise's ABC state survive a
-     * reboot, and a battery change is a reboot: ac_pack_update() notices the
-     * fresh cells by their voltage and restarts the counter. */
+    /* The Sunrise's ABC state survives a reboot.  The charge-pause state does
+     * not need to: after a reboot CE starts released (charging allowed), the
+     * fail-safe direction, and pwr_std re-learns "full". */
     ac_hal_set_wait_hook(voc_hook);
-    ac_pack_init(&s_pack, (ac_cell_type_t)cfg.cell_type, cfg.cells);
-    ac_pack_t saved_pack;
-    if (ac_store_blob_load("pack", &saved_pack, sizeof(saved_pack)) == ESP_OK &&
-        saved_pack.type == s_pack.type && saved_pack.cells == s_pack.cells)
-        s_pack = saved_pack;
+    ac_power_init(&s_power);
     if (ac_store_blob_load("sunrise", &s_co2, sizeof(s_co2)) != ESP_OK)
         memset(&s_co2, 0, sizeof(s_co2));
-    ESP_LOGI(TAG, "power: %u x AA %s, %.0f mWh used; site %d m = %.0f hPa",
-             cfg.cells, ac_cell_type_name((ac_cell_type_t)cfg.cell_type),
-             (double)s_pack.used_mwh, cfg.altitude_m,
-             (double)site_pressure_hpa(cfg.altitude_m));
+    ESP_LOGI(TAG, "power: LFP 1S4P module; site %d m = %.0f hPa",
+             cfg.altitude_m, (double)site_pressure_hpa(cfg.altitude_m));
 
     ESP_ERROR_CHECK(ac_matter_init(&s_engine));
     ac_matter_set_identify_cb(on_identify);

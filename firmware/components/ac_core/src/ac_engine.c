@@ -126,7 +126,7 @@ void ac_engine_submit(ac_engine_t *e, const ac_sample_t *s)
 }
 
 void ac_engine_set_power(ac_engine_t *e, bool usb, bool charging,
-                         float pct, float v, ac_time_ms_t now)
+                         float pct, float v, int level, ac_time_ms_t now)
 {
     e->usb_present = usb;
     e->charging = charging;
@@ -134,17 +134,16 @@ void ac_engine_set_power(ac_engine_t *e, bool usb, bool charging,
     e->last.battery_v = v;
     e->last.charging = charging;
 
-    if (pct >= 0.0f) {
-        if (pct <= e->cfg.critical_battery_pct && !usb)
-            set_state(e, AC_STATE_CRITICAL_BATTERY, now);
-        else if (pct <= e->cfg.low_battery_pct && !usb &&
-                 e->state != AC_STATE_CRITICAL_BATTERY)
-            set_state(e, AC_STATE_LOW_BATTERY, now);
-        else if ((e->state == AC_STATE_LOW_BATTERY ||
-                  e->state == AC_STATE_CRITICAL_BATTERY) &&
-                 (usb || pct > e->cfg.low_battery_pct + 5.0f))
-            set_state(e, AC_STATE_NORMAL, now);
-    }
+    /* Low and critical come from the cell voltage (pwr_std levels, with
+     * their own hysteresis), never from a percentage: on the flat LFP
+     * plateau a percentage is a guess.  On external power there is no alarm. */
+    if (level == 2 && !usb)
+        set_state(e, AC_STATE_CRITICAL_BATTERY, now);
+    else if (level == 1 && !usb && e->state != AC_STATE_CRITICAL_BATTERY)
+        set_state(e, AC_STATE_LOW_BATTERY, now);
+    else if ((e->state == AC_STATE_LOW_BATTERY || e->state == AC_STATE_CRITICAL_BATTERY) &&
+             (usb || level == 0))
+        set_state(e, AC_STATE_NORMAL, now);
 }
 
 void ac_engine_set_state(ac_engine_t *e, ac_device_state_t s, ac_time_ms_t now)

@@ -1,5 +1,5 @@
 // =====================================================================
-// 3D Printing AIR CHECK - enclosure (v1.3)
+// 3D Printing AIR CHECK - enclosure (v1.4)
 // ---------------------------------------------------------------------
 //   openscad -D 'part="front"' -o front_shell.stl aircheck_case.scad
 //   openscad -D 'part="back"'  -o lid.stl         aircheck_case.scad
@@ -72,10 +72,16 @@ OUTLET_COL  = (SEN_OUTLET_D - PORT_BAR) / 2;
 INLET_AREA  = len(PORT_ROWS_Z) * PORT_SLOT_H * (SEN_INLET_L1 - SEN_INLET_L0);
 OUTLET_AREA = len(PORT_ROWS_Z) * PORT_SLOT_H * 2 * OUTLET_COL;
 
-HOLDER_HOLES = [for (dx = [HOLDER_HOLE_END, HOLDER_HOLE_END + HOLDER_HOLE_PITCH],
-                     dy = [HOLDER_HOLE_EDGE, HOLDER_W - HOLDER_HOLE_EDGE])
-                [HOLDER_X + HOLDER_L - dx, HOLDER_Y + dy]];
-DOOR_POSTS   = [[DOOR_POST_X, DOOR_POST_Y], [CASE_W - DOOR_POST_X, DOOR_POST_Y]];
+KH_XS        = [KH1_X, KH2_X];
+KH_SCREWS    = [for (x = KH_XS, dy = [-KH_SCREW_Y, KH_SCREW_Y]) [x + KH_W / 2, KH_Y + KH_L / 2 + dy]];
+// support pads under each holder, clear of the contact pins at the ends
+KH_PADS      = [for (x = KH_XS, dx = [-12, 12], dy = [-14, 14]) [x + KH_W / 2 + dx, KH_Y + KH_L / 2 + dy]];
+// cell centres (X), and the cell the NTC sits on: holder 1's inner cell
+CELL_XS      = [for (x = KH_XS, dx = [-KH_CELL_PITCH / 2, KH_CELL_PITCH / 2]) x + KH_W / 2 + dx];
+NTC_X        = KH1_X + KH_W / 2 + KH_CELL_PITCH / 2;
+NTC_Y        = KH_Y + KH_L / 2;
+CHG_HOLES_XY = [for (h = CHG_HOLES) [CHG_X + h[1], CHG_Y + h[0]]];
+DOOR_POSTS   = [[DOOR_POST_X, DOOR_POST_Y_L], [CASE_W - DOOR_POST_X, DOOR_POST_Y_R]];
 FB_HOLES     = [for (dx = [FB_HOLE_IN, FB_W - FB_HOLE_IN], dy = [FB_HOLE_IN, FB_H - FB_HOLE_IN])
                 [FB_X + dx, FB_Y + dy]];
 SGP_HOLES    = [for (dx = [SGP_HOLE_IN, SGP_S - SGP_HOLE_IN], dy = [SGP_HOLE_IN, SGP_S - SGP_HOLE_IN])
@@ -89,7 +95,14 @@ USB_CZ       = FB_Z + FB_PCB_T + USBC_H / 2;
 // Every solid that goes into the case, as [name, x, y, z, w, h, d].  The
 // collision checks at the end run over this list.
 BODIES = [
-    ["holder + cells", HOLDER_X, HOLDER_Y, HOLDER_Z, HOLDER_L, HOLDER_W, HOLDER_T],
+    ["holder 1 + cells", KH1_X, KH_Y, KH_Z, KH_W, KH_L, KH_H],
+    ["holder 2 + cells", KH2_X, KH_Y, KH_Z, KH_W, KH_L, KH_H],
+    ["holder 1 pins", KH1_X, KH_Y, FACE, KH_W, KH_L, KH_STANDOFF - 0.01],
+    ["holder 2 pins", KH2_X, KH_Y, FACE, KH_W, KH_L, KH_STANDOFF - 0.01],
+    ["NTC bead", NTC_X - 2.0, NTC_Y - 1.85, CELL_TOP_Z, 4.0, 3.7, 2.4],
+    ["#6091 charger", CHG_X, CHG_Y, CHG_Z, CHG_W, CHG_L, 1.6 + CHG_PARTS],
+    ["#6091 solder side", CHG_X, CHG_Y, CHG_Z - 2.0, CHG_W, CHG_L, 2.0],
+    ["BMS", BMS_X, BMS_Y, FACE + 1.0, BMS_W, BMS_L, 2.5],
     ["SEN62", SEN_X, SEN_Y, SEN_Z, SEN_HGT, SEN_LEN, SEN_WID],
     ["SEN62 plug keep-out", SEN_X - SEN_PLUG_L, SEN_Y + SEN_PLUG_L0, SEN_Z,
         SEN_PLUG_L, SEN_PLUG_L1 - SEN_PLUG_L0, SEN_WID],
@@ -102,7 +115,6 @@ BODIES = [
     ["SW1 Pololu 2810", SW1_X, SW1_Y, MOD_Z, SW1_S, SW1_S, 5.0],
     ["PS1 Pololu S9V11E2A", PS1_X, PS1_Y, MOD_Z, PS1_W, PS1_L, PS1_T + 2.0],
     ["D1 LM66200", D1_X, D1_Y, MOD_Z + 3.0, D1_L, D1_W, 2.2 + 2.0],
-    ["PS2 Pololu S9V11E2A", PS2_X, PS2_Y, MOD_Z, PS1_L, PS1_W, PS1_T + 2.0],
     ["J2 USB-C power socket", J2_X, J2_Y, J2_Z, J2_L, J2_W, J2_T],
     ["J2 socket", J2_X + J2_SOCKET_X0, J2_Y + J2_SOCKET_Y0, J2_Z + J2_T / 2 - J2_SOCKET_H / 2,
         J2_SOCKET_X1 - J2_SOCKET_X0, J2_W - J2_SOCKET_Y0, J2_SOCKET_H],
@@ -124,11 +136,14 @@ module mock(name, c) {
 }
 
 module mock_all() {
-    mock("holder + cells", "DimGray");
-    for (i = [0 : 2], j = [0 : 1])      // the six cells, for the picture
-        color("Silver") translate([HOLDER_X + 3 + j * 53, HOLDER_Y + 8.3 + i * 16.5,
-                                   HOLDER_Z + HOLDER_T - 8.25])
-            rotate([0, 90, 0]) cylinder(d = 14.5, h = 50.5);
+    mock("holder 1 + cells", "DimGray");
+    mock("holder 2 + cells", "DimGray");
+    for (x = CELL_XS)                    // the four cells, for the picture
+        color("SteelBlue") translate([x, KH_Y + (KH_L - 64.95) / 2, CELL_TOP_Z - CELL_D / 2])
+            rotate([-90, 0, 0]) cylinder(d = CELL_D, h = 64.95);
+    mock("NTC bead", "Gold");
+    mock("#6091 charger", "Purple");
+    mock("BMS", "Teal");
     mock("SEN62", "DarkSlateGray");
     color("Orange", 0.35) mock("SEN62 plug keep-out", "Orange");
     mock("SHT40", "SeaGreen");
@@ -138,7 +153,6 @@ module mock_all() {
     mock("SW1 Pololu 2810", "Green");
     mock("PS1 Pololu S9V11E2A", "Green");
     mock("D1 LM66200", "MidnightBlue");
-    mock("PS2 Pololu S9V11E2A", "Green");
     mock("J2 USB-C power socket", "Black");
     mock("J2 socket", "Silver");
     mock("LED holder", "Silver");
@@ -191,10 +205,20 @@ module panel_holes() {
     }
 }
 
+// Compartment: pressure relief in the bottom wall (a venting cell must not
+// pressurise a sealed box).  Charger chamber: air in through the bottom wall,
+// out through the right-hand wall high up - a chimney past the #6091.
+BATC_VENT_XS = [for (i = [0 : 3]) KH1_X + 6 + i * 20];
+CHG_VENT_XS  = [for (i = [0 : 2]) CHG_X + 2 + i * (CHG_VENT_W + 2.2)];
+CHG_VENT_YS  = [for (i = [0 : 2]) BATC_Y1 - 6 - i * (CHG_VENT_W + 2.2) - CHG_VENT_W];
+CHG_VENT_ZS  = [8.0, 12.0, 16.0, 20.0];
 module batc_vents() {
-    for (i = [0 : 3])
-        translate([HOLDER_X + 12 + i * 26, -1, WALL_TOP_Z - 6])
-            cube([BATC_VENT_W, WALL + 2, BATC_VENT_H]);
+    for (x = BATC_VENT_XS)
+        translate([x, -1, WALL_TOP_Z - 6]) cube([BATC_VENT_W, WALL + 2, BATC_VENT_H]);
+    for (x = CHG_VENT_XS, z = CHG_VENT_ZS)
+        translate([x, -1, z]) cube([CHG_VENT_W, WALL + 2, CHG_VENT_H]);
+    for (y = CHG_VENT_YS, z = CHG_VENT_ZS)
+        translate([CASE_W - WALL - 1, y, z]) cube([WALL + 2, CHG_VENT_W, CHG_VENT_H]);
 }
 
 // ---------------------------------------------------------------------
@@ -250,15 +274,21 @@ module gas_bay_mounts() {
 module electronics_mounts() {
     for (h = FB_HOLES) post(h[0], h[1], FACE, FB_Z, 4.6);
     // pads + fences for the two Pololu boards
-    for (m = [[SW1_X, SW1_Y, SW1_S, SW1_S], [PS1_X, PS1_Y, PS1_W, PS1_L],
-              [PS2_X, PS2_Y, PS1_L, PS1_W]]) {
+    for (m = [[SW1_X, SW1_Y, SW1_S, SW1_S], [PS1_X, PS1_Y, PS1_W, PS1_L]]) {
         box_at(m[0] + 2, m[1] + 2, FACE, m[2] - 4, m[3] - 4, MOD_Z - FACE);
         fence(m[0], m[1], m[2], m[3], FACE, MOD_Z + POCKET_H);
     }
     for (h = D1_HOLES) post(D1_X + h[0], D1_Y + h[1], FACE, MOD_Z + 3.0, 5.0);
     for (h = J2_HOLES) post(J2_X + h[0], J2_Y + h[1], FACE, J2_Z, 5.0);
-    // holder bosses
-    for (h = HOLDER_HOLES) post(h[0], h[1], FACE, HOLDER_Z, HOLDER_BOSS_D);
+    // battery holders: two screw bosses and four pads each, pins hang free
+    for (h = KH_SCREWS) post(h[0], h[1], FACE, KH_Z, 7.0);
+    for (h = KH_PADS) post(h[0], h[1], FACE, KH_Z, 5.0);
+    // charger chamber: its wall, the #6091 on four posts, the BMS on a pad
+    box_at(CHG_WALL_X, KH_Y - 1.2 - 0.4, FACE, CHG_WALL_T, BATC_Y1 - KH_Y + 1.2 + 0.8,
+           WALL_TOP_Z - FACE);
+    for (h = CHG_HOLES_XY) post(h[0], h[1], FACE, CHG_Z, 5.0);
+    box_at(BMS_X - 0.5, BMS_Y + 3, FACE, BMS_W + 1, BMS_L - 6, 1.0);
+    fence(BMS_X, BMS_Y, BMS_W, BMS_L, FACE, FACE + 2.5, FIT_LOOSE);
 }
 
 module front_shell() {
@@ -306,12 +336,15 @@ module front_shell_body() {
                 cylinder(d = INSERT_D, h = INSERT_DEPTH + 0.1);
         // self-tapping cores
         for (h = SGP_HOLES) translate([h[0], h[1], SGP_Z - 4.5]) cylinder(d = SELFTAP_M25, h = 5);
-        for (h = HOLDER_HOLES) translate([h[0], h[1], HOLDER_Z - 2.9]) cylinder(d = SELFTAP_M25, h = 3.0);
+        for (h = KH_SCREWS) translate([h[0], h[1], FACE + 0.8]) cylinder(d = SELFTAP_M3, h = KH_STANDOFF);
+        for (h = CHG_HOLES_XY) translate([h[0], h[1], CHG_Z - 4.5]) cylinder(d = SELFTAP_M25, h = 5);
+        // wire notch in the charger chamber's wall, at the top
+        box_at(CHG_WALL_X - 0.1, CHG_NOTCH_Y0, WALL_TOP_Z - 6, CHG_WALL_T + 0.2, CHG_NOTCH_W, 7);
         for (h = FB_HOLES) translate([h[0], h[1], FB_Z - 4.5]) cylinder(d = SELFTAP_M2, h = 5);
         for (h = D1_HOLES) translate([D1_X + h[0], D1_Y + h[1], MOD_Z]) cylinder(d = SELFTAP_M2, h = 4);
         for (h = J2_HOLES) translate([J2_X + h[0], J2_Y + h[1], J2_Z - 5]) cylinder(d = SELFTAP_M2, h = 5.1);
         // branding on the compartment's front, engraved, mirrored (seen from -Z)
-        translate([CASE_W / 2, HOLDER_Y + HOLDER_W / 2, -0.01]) mirror([1, 0, 0])
+        translate([CASE_W / 2, KH_Y + KH_L / 2, -0.01]) mirror([1, 0, 0])
             linear_extrude(0.7)
                 text("AIR CHECK", size = 6.0, halign = "center", valign = "center",
                      font = "Helvetica:style=Bold", spacing = 1.25);
@@ -368,18 +401,35 @@ module door() {
             back_plate(0, PLATE_SPLIT_Y - PLATE_GAP / 2, WALL, BATC_Y1);
             for (p = DOOR_POSTS)
                 post(p[0], p[1], FACE - 0.01, lidz(WALL_TOP_Z) - 0.2, DOOR_POST_D);
+            // cell retainers: a rib over each cell, 1 mm above it, so no cell
+            // can leave its holder in a fall (review E1, E2); over the NTC's
+            // cell the rib becomes a finger that holds the bead (E3)
+            for (x = CELL_XS)
+                for (yy = (x == NTC_X) ? [[KH_Y + 10, NTC_Y - 6], [NTC_Y + 6, KH_Y + KH_L - 10]]
+                                        : [[KH_Y + 10, KH_Y + KH_L - 10]])
+                    box_at(x - 1.5, yy[0], FACE - 0.01, 3.0, yy[1] - yy[0],
+                           lidz(CELL_TOP_Z + 1.0) - FACE);
+            difference() {
+                box_at(NTC_X - 3.0, NTC_Y - 4.5, FACE - 0.01, 6.0, 9.0,
+                       lidz(CELL_TOP_Z + 2.4 - 0.3) - FACE);
+                // a seat for the bead
+                box_at(NTC_X - 2.2, NTC_Y - 2.0, lidz(CELL_TOP_Z + 2.4 - 0.3) - 1.2,
+                       4.4, 4.0, 2.0);
+            }
         }
         for (p = DOOR_POSTS) {
             translate([p[0], p[1], -1]) cylinder(d = SCREW_D, h = CASE_D);
             translate([p[0], p[1], -0.01]) cylinder(d = SCREW_HEAD_D, h = SCREW_HEAD_DEPTH);
         }
-        // moulded-in cell orientation and the rule, engraved on the outside
-        translate([CASE_W / 2, PLATE_SPLIT_Y / 2 + 6, -0.01]) linear_extrude(0.6)
-            text("6 x AA  1.5 V", size = 5, halign = "center", valign = "center",
-                 font = "Helvetica:style=Bold");
-        translate([CASE_W / 2, PLATE_SPLIT_Y / 2 - 6, -0.01]) linear_extrude(0.6)
-            text("do not mix old and new cells", size = 3.4, halign = "center",
-                 valign = "center", font = "Helvetica");
+        // the label (Power-Standard review S1), engraved on the outside; the
+        // door is printed face down, so the text is mirrored like the front's
+        for (l = [["LiFePO4 3,2 V", 5.0, 16], ["nur 4 x AER18650m2A2", 4.0, 7],
+                  ["gleiche Zellen, max. 20 mV", 3.6, -1], ["Polaritaet: siehe Halter", 3.6, -9],
+                  ["Laden nur 0-45 C", 3.6, -17]])
+            translate([CASE_W / 2, PLATE_SPLIT_Y / 2 + l[2], -0.01]) mirror([1, 0, 0])
+                linear_extrude(0.6)
+                    text(l[0], size = l[1], halign = "center", valign = "center",
+                         font = "Helvetica:style=Bold");
     }
 }
 
@@ -475,7 +525,8 @@ for (i = [0 : len(BODIES) - 1], j = [0 : len(BODIES) - 1])
 for (b = BODIES) if (b[0] != "USB-C plug") assert(inside_case(b), str(b[0], " is outside the case"));
 for (n = ["SHT40", "SGP40", "Sunrise", "Sunrise filter clearance"])
     for (b = BODIES) if (b[0] == n) assert(in_gas(b), str(n, " is not inside the gas bay"));
-for (b = BODIES) if (b[0] == "holder + cells") assert(in_batc(b), "the holder is not in the compartment");
+for (b = BODIES) if (b[0] == "holder 1 + cells" || b[0] == "holder 2 + cells" || b[0] == "#6091 charger"
+                     || b[0] == "BMS") assert(in_batc(b), str(b[0], " is not in the compartment"));
 for (n = ["FireBeetle", "SW1 Pololu 2810", "PS1 Pololu S9V11E2A", "D1 LM66200", "LED holder",
           "button", "SEN62", "SEN62 plug keep-out", "PS2 Pololu S9V11E2A",
           "J2 USB-C power socket", "J2 socket"])
@@ -506,7 +557,30 @@ for (x = GAS_FRONT_COLS, y = GAS_FRONT_ROWS)
     assert(x + FRONT_VENT_W <= GAS_X1 && y + FRONT_VENT_H <= GAS_Y1, "a front vent is outside the gas bay");
 for (z = GAS_SIDE_ROWS) assert(z > FACE && z + VENT_SLOT_H < WALL_TOP_Z, "side vent row out of range");
 // 6. battery compartment
-assert(HOLDER_Z + HOLDER_T + 2 < LID_IN_Z - LAP_DEPTH, "no room over the cells for the door lip");
+assert(CELL_TOP_Z + 2.4 < LID_IN_Z - 2, "no room over the cells for the retainers and the NTC");
+assert(KH1_X > DOOR_POSTS[0][0] + DOOR_POST_D / 2, "the left door post hits holder 1");
+for (p = DOOR_POSTS) assert(p[1] - DOOR_POST_D / 2 > WALL && p[1] + DOOR_POST_D / 2 < BATC_Y1,
+                            "a door post is outside the compartment");
+for (y = CHG_VENT_YS) assert(y > DOOR_POSTS[1][1] + DOOR_POST_D / 2 || y + CHG_VENT_W < DOOR_POSTS[1][1] - DOOR_POST_D / 2,
+                             "a chamber vent cuts into the right door post");
+assert(KH2_X + KH_W < CHG_WALL_X, "holder 2 reaches into the charger chamber");
+// Power-Standard review E4: the charger >= 5 mm from every wall, vents low and high
+assert(CHG_X - (CHG_WALL_X + CHG_WALL_T) >= 5 && CASE_W - WALL - (CHG_X + CHG_W) >= 5 - 0.001
+       && CHG_Y - WALL >= 5 - 0.001 && BATC_Y1 - (CHG_Y + CHG_L) >= 5,
+       "the #6091 is closer than 5 mm to a wall");
+assert(len(CHG_VENT_XS) > 0 && len(CHG_VENT_YS) > 0, "the charger chamber needs vents low and high");
+for (y = CHG_VENT_YS) assert(y > CHG_Y + CHG_L && y + CHG_VENT_W < BATC_Y1, "a chamber vent misses the chamber top");
+for (x = CHG_VENT_XS) assert(x > CHG_WALL_X + CHG_WALL_T && x + CHG_VENT_W < CASE_W - WALL, "a chamber vent misses the chamber");
+// E5: >= 30 mm from the charger to the gas bay's sensors
+function gap2d(a, b) = let(dx = max(0, max(a[1] - (b[1] + b[4]), b[1] - (a[1] + a[4]))),
+                           dy = max(0, max(a[2] - (b[2] + b[5]), b[2] - (a[2] + a[5]))))
+                       sqrt(dx * dx + dy * dy);
+for (a = BODIES, b = BODIES)
+    if (a[0] == "#6091 charger" && (b[0] == "SHT40" || b[0] == "SGP40" || b[0] == "Sunrise"))
+        assert(gap2d(a, b) >= 30, str("the charger is closer than 30 mm to the ", b[0]));
+echo(str("charger to SHT40 / SGP40 / Sunrise: ",
+         [for (a = BODIES, b = BODIES) if (a[0] == "#6091 charger" &&
+             (b[0] == "SHT40" || b[0] == "SGP40" || b[0] == "Sunrise")) gap2d(a, b)], " mm"));
 assert(BATC_NOTCH_X0 > GAS_X1 + GAS_WALL_T && BATC_NOTCH_X0 + BATC_NOTCH_W < SEN_X - SEN_PLUG_L,
        "the lead notch opens into the gas bay or the SEN62");
 assert(BATC_PART_T - 2 * LAP_WALL >= 1.6, "the partition core is too thin");

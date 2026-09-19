@@ -591,7 +591,7 @@ particle sensor's own flow path, not the gas bay.
 
 ---
 
-## EDR-18: six AA cells, nothing is charged inside the device — *extended by EDR-20 in v1.3.1*
+## EDR-18: six AA cells, nothing is charged inside the device — *superseded by EDR-21 in v1.4*
 
 **Decision (2026-09-19).** Run from **6 × AA** in a screwed compartment
 (MPD BH36AAW holder), through a **PTC fuse**, a **Pololu S9V11E2A**
@@ -669,7 +669,8 @@ of that now comes on modules:
 | SEN62 switch | Pololu #2810 | 15.24 × 15.24 | pocket |
 | regulator | Pololu S9V11E2A (#5719) | 10.9 × 16.5 | pocket |
 | ideal diode | Adafruit LM66200 (#5830) | 16.51 × 10.16 | 2 × M2 on posts |
-| cells | MPD BH36AAW, 6 × AA | 110 × 49.5 × 17.8 | 4 × M2.5 on bosses |
+| cells (since v1.4) | 2 × Keystone 1049, 4 × LiFePO4 18650 | 77.1 × 39.8 × 18.0 each | 2 × M3 on bosses each |
+| charger (since v1.4) | Adafruit #6091 (TI BQ25185) | 31.75 × 25.4 | 4 × M2.5 on posts |
 | LED | 5 mm RGB in a Signal Construct SMR1089 holder | Ø8 hole | panel nut |
 | button | Reichelt T 250A | Ø7 hole | panel nut |
 
@@ -686,7 +687,7 @@ the red LED went to GPIO16, where the boot log only makes it flicker.
 
 ---
 
-## EDR-20: continuous operation from a USB-C charger; undervoltage lockout; one power block for every project
+## EDR-20: continuous operation from a USB-C charger; undervoltage lockout; one power block for every project — *superseded by EDR-21 in v1.4*
 
 **Decision (2026-09-19).** Add a second input: a **USB-C power socket**
 (Adafruit #6050, sunken breakout) feeding a **second Pololu S9V11E2A at
@@ -758,3 +759,103 @@ monitoring); the Sleeper Frame and the curtain motor moved to that class on
 LM66200, #6050, 13 kΩ lockout, 1M/220k pack divider, 4.08 V threshold) is
 therefore used by AIR CHECK only - one block per unit. `ac_battery` stays
 plain C so other projects can reuse its structure.
+
+---
+
+## EDR-21: LiFePO4 power module C, charged in the device (1S4P)
+
+**Decision (2026-09-19, user).** AIR CHECK moves to the Power-Standard's
+**module C**: LiFePO4 cells charged in the device over USB-C, with a power
+path, so the device runs from the charger and the cells are the backup. The
+user, verbatim: "Ich möchte auch das Airmessgerät nach System C haben. Dann
+gibt es eben für den Ladezeitraum leicht abweichende Werte." Asked how many
+cells: "Mache doch 4 lfp und dann diesen Bypass Modus fürs Laden" - **1S4P**
+and the charge pause on permanent USB. The cross-project battery session
+(the user's battery authority) set the chain and approved every deviation
+below. EDR-18 and EDR-20 no longer apply; the AA power block is gone.
+
+**Chain** (`electronics/schematic/NETLIST.md`):
+
+```
+USB-C socket (Adafruit #6050) -> Adafruit #6091 (TI BQ25185) DC input
+4 x AER18650m2A2 in 2 x Keystone 1049 -> PICO II 2 A per cell -> HY2112 BMS
+   -> #6091 BAT (P- = system GND; NTC 103AT-2 in the middle of the pack -> TH)
+#6091 LOAD (3.0-3.65 V on the cells, 4.5 V on USB) -> Pololu S9V11E2A 3.90 V
+   -> LM66200 (VIN2 and ON to GND) -> FireBeetle battery input (VSYS)
+```
+
+* **#6091 settings:** VS jumper to **3.65 V** (LFP; the factory setting is
+  4.2 V - measure before the first cell goes in), IS **1 A**, TH jumper
+  opened and the NTC fitted.
+* **Why the S9V11E2A stays:** LOAD is 3.0-3.35 V on the cells. The
+  FireBeetle's buck would then leave its 3.3 V rail below the SEN62's
+  3.15 V minimum. At a fixed 3.90 V everything behind the FireBeetle's
+  battery input is unchanged, including the LM66200 that blocks the
+  FireBeetle's own Li-ion charger (CN3165, 4.2 V) from the pack. The
+  regulator starts from about 3 V; the BQ25185 releases its 3.0 V BUVLO at
+  3.15 V, so a restart after a flat pack is inside its range.
+* **Dropped:** the AA holder, the MF-R050, the second S9V11E2A with its USB
+  branch (the BQ25185's power path does that now), and the 13 kΩ lockout
+  (the BQ25185's BUVLO at 3.0 V, then the HY2112 at 2.1 V).
+
+**1S4P and the 6 h timer.** Four cells hold 6.8-7.2 Ah. The #6091 charges at
+most 1 A, and the BQ25185 stops after 360 minutes - so from flat it cannot
+finish in one go (the Power-Standard's rule "charge current ≥ capacity / 5 h"
+does not hold). Approved remedy: **one CE pulse per USB session** restarts
+the timer (`pwr_timer_retry()`), for at most 12 h of charging. VBATREG
+3.65 V, the HY2112's 3.75 V cut-off and the NTC still stop any overcharge.
+While the device runs, its own draw comes out of the 1.1 A input limit, so
+the effective charge current is about 0.8 A: 8-9 h from flat, and with
+thermal throttling in the case even 12 h may end at a partial charge -
+safely. On permanent USB-C the pack is almost never flat.
+
+The compact status interface (PWR-K, one ADC node for EXT/CHG/FLT) cannot
+tell the timer's latched fault from a recoverable one. The firmware takes a
+fault that appears after at least 5.5 h of continuous charging for the timer
+(`ac_power.c`); pulsing CE during a real NTC or OVP fault is harmless, the
+charger stays paused by its own logic.
+
+**Charge pause.** After "full" on USB-C the firmware holds CE high
+(`pwr_hold_update()`): the cells rest, the device runs from USB. Charging is
+released when USB-C was unplugged, below 3.30 V, or after 30 days. So on
+permanent USB-C the cells are topped up about once a month, and the
+temperature and humidity readings are only affected in those windows.
+
+**Measurements while charging.** The BQ25185 is a linear charger: at 1 A
+about 1.7 W of heat in the case. The #6091 sits in its own vented chamber at
+the far end of the battery compartment, as far from the gas bay as the case
+allows (distances in `cad/openscad/aircheck_case.scad`, asserted). Nothing
+is compensated - there is no measured offset to compensate with. Matter's
+`BatChargeState` = IsCharging marks the window; the dashboard flags
+temperature and humidity then. TESTING T-L7 measures the actual offset in
+the closed case.
+
+**Pins.** VBAT_S (cell/2, 470k/470k) on GPIO3 (ADC 6 dB), the PWR-K ladder
+on GPIO4 (ADC 12 dB), CE on GPIO5 (only ever high or an input; the #6091's
+pull-down keeps it low through a reset = charging allowed, the fail-safe
+direction). GPIO4/5 are strapping pins on the C6, but only for the SDIO slave
+timing, which is not used (approved by the battery session).
+
+**Firmware.** `pwr_std` (the Power-Standard's C99 module) is copied
+unchanged into `components/pwr_std`; `ac_core/ac_power.c` adds the PWR-K
+decoding, the timer detection and the CE decision. Low and critical battery
+come from the cell voltage (3.20 V / 3.10 V with hysteresis), not from a
+percentage - the LFP plateau makes percentages a guess. The settings
+`cell_type`, `cells`, `low_battery_pct` and `critical_battery_pct` are gone.
+Matter: the battery on endpoint 0 is now Rechargeable and Replaceable
+(LiFePO4, 18650, 4 cells, `BatChargeState`), and a second Power Source
+endpoint "USB-C" (Wired, DC) says whether the device runs from the charger.
+
+**Runtime on the cells** (`docs/BATTERY_LIFE.md`): ECO **2.9 months** with a
+25 % margin (3.6 nominal, 2.4 worst case). The battery session's rougher
+estimate for general use is about 67 days. With the 3 %/month self-discharge
+an assumption (no manufacturer figure), that is the least certain line.
+
+**Safety.** No longer "nothing is charged in the device" - instead the
+Power-Standard's layers: LFP chemistry, VBATREG 3.65 V set by resistor (it
+cannot fall back to 4.2 V in software), 6 h timer, NTC 0-60 °C, HY2112 at
+3.75 V / 2.1 V, a PICO fuse per cell, a closed PETG compartment with a
+screwed door, a label on the door. Unattended charging and permanent USB
+operation are explicitly allowed for module C (Power-Standard rule 6a).
+User guide: `docs/NUTZUNG.md`.
+

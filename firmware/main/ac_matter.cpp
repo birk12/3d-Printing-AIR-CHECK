@@ -43,7 +43,7 @@ enum : uint8_t { UNIT_PPM = 0, UNIT_PPB = 1, UNIT_UGM3 = 4 };
 /* MeasurementMediumEnum: 0 Air, 1 Water, 2 Soil. */
 enum : uint8_t { MEDIUM_AIR = 0 };
 
-static uint16_t s_ep_air = 0, s_ep_temp = 0, s_ep_hum = 0;
+static uint16_t s_ep_air = 0, s_ep_temp = 0, s_ep_hum = 0, s_ep_wired = 0;
 static ac_engine_t *s_engine = nullptr;
 static void (*s_identify_cb)(bool on) = nullptr;
 static bool s_commissioned = false;
@@ -250,45 +250,69 @@ esp_err_t ac_matter_init(ac_engine_t *engine)
     if (root) {
         cluster::power_source::config_t ps;
         ps.status = 1;                  /* Active */
-        ps.order = 1;
-        strncpy(ps.description, "Battery", sizeof(ps.description) - 1);
+        ps.order = 1;                   /* after the USB-C source (order 0) */
+        strncpy(ps.description, "LiFePO4 1S4P", sizeof(ps.description) - 1);
 
         /* The generated create() validates that exactly one of Wired and
          * Battery is in the feature map and adds the features itself, so the
          * flags have to be set here rather than by calling feature::add()
-         * afterwards. RECHG is what carries BatChargeState; Status describes
-         * the power source, not the charge, and is the wrong attribute for it. */
-        /* Since v1.3: six AA cells the user replaces; nothing is charged in
-         * the device, so REPLC instead of RECHG (and no BatChargeState). */
+         * afterwards.  Since v1.4: 1S4P LiFePO4, charged in the device by the
+         * power module and held in two Keystone 1049 holders - Battery,
+         * Rechargeable and Replaceable. */
         ps.feature_flags = cluster::power_source::feature::battery::get_id() |
+                           cluster::power_source::feature::rechargeable::get_id() |
                            cluster::power_source::feature::replaceable::get_id();
         ps.features.battery.bat_charge_level = 0;        /* OK */
         ps.features.battery.bat_replacement_needed = false;
         ps.features.battery.bat_replaceability = 2;      /* UserReplaceable */
+        ps.features.rechargeable.bat_charge_state = 0;   /* Unknown until read */
+        ps.features.rechargeable.bat_functional_while_charging = true;
         strncpy(ps.features.replaceable.bat_replacement_description,
-                "6 x AA (alkaline, NiMH or lithium)",
+                "4 x AER18650m2A2 LiFePO4, all at once",
                 sizeof(ps.features.replaceable.bat_replacement_description) - 1);
-        ps.features.replaceable.bat_quantity = 6;
+        ps.features.replaceable.bat_quantity = 4;
 
         cluster_t *psc = cluster::power_source::create(root, &ps, CLUSTER_FLAG_SERVER);
         if (psc) {
             /* Optional attributes the features do not create for us. */
             cluster::power_source::attribute::create_bat_present(psc, true);
-            /* BatCommonDesignationEnum::kAa = 0x02 (PowerSource/Enums.h) */
-            cluster::power_source::attribute::create_bat_common_designation(psc, 0x02, 0, 80);
+            /* PowerSource/Enums.h: BatCommonDesignationEnum::k18650 = 0x4C,
+             * BatApprovedChemistryEnum::kLithiumIronPhosphate = 0x14 */
+            cluster::power_source::attribute::create_bat_common_designation(psc, 0x4C, 0, 80);
+            cluster::power_source::attribute::create_bat_approved_chemistry(psc, 0x14, 0, 32);
             cluster::power_source::attribute::create_bat_percent_remaining(
                 psc, nullable<uint8_t>(), nullable<uint8_t>(0),
                 nullable<uint8_t>(200));
             cluster::power_source::attribute::create_bat_voltage(
                 psc, nullable<uint32_t>(), nullable<uint32_t>(0),
-                nullable<uint32_t>(12000));
+                nullable<uint32_t>(4000));
         } else {
             ESP_LOGE(TAG, "power source cluster was not created");
         }
     }
 
-    ESP_LOGI(TAG, "endpoints: air=%u temperature=%u humidity=%u",
-             s_ep_air, s_ep_temp, s_ep_hum);
+    /* The USB-C input as a second, wired power source on its own endpoint
+     * (one Power Source cluster per endpoint).  Order 0: preferred. */
+    {
+        endpoint::power_source::config_t w;
+        w.power_source.status = 3;                       /* Unavailable until read */
+        w.power_source.order = 0;
+        strncpy(w.power_source.description, "USB-C",
+                sizeof(w.power_source.description) - 1);
+        w.power_source.feature_flags = cluster::power_source::feature::wired::get_id();
+        w.power_source.features.wired.wired_current_type = 1;   /* DC */
+        endpoint_t *ep_w = endpoint::power_source::create(node, &w, ENDPOINT_FLAG_NONE, NULL);
+        if (ep_w) {
+            s_ep_wired = endpoint::get_id(ep_w);
+            cluster_t *wc = cluster::get(ep_w, PowerSource::Id);
+            if (wc) cluster::power_source::attribute::create_wired_present(wc, false);
+        } else {
+            ESP_LOGE(TAG, "wired power source endpoint was not created");
+        }
+    }
+
+    ESP_LOGI(TAG, "endpoints: air=%u temperature=%u humidity=%u usb-c=%u",
+             s_ep_air, s_ep_temp, s_ep_hum, s_ep_wired);
     return ESP_OK;
 }
 
@@ -376,44 +400,53 @@ esp_err_t ac_matter_publish(const ac_engine_t *e)
     return ESP_OK;
 }
 
-esp_err_t ac_matter_publish_battery(float percent, float volts, bool low,
-                                    uint8_t status, bool present)
+esp_err_t ac_matter_publish_power(const pwr_state_t *st, bool ext, float vbat)
 {
-    /* Status of this (battery) source: Standby while external power carries
-     * the device and the cells wait as the backup, Unavailable with the holder
-     * empty.  A second, wired Power Source is not declared: controllers show
-     * the battery either way, and Status says what it is doing. */
-    esp_matter_attr_val_t st = esp_matter_enum8(status);
-    attribute::update(0, PowerSource::Id, PowerSource::Attributes::Status::Id, &st);
-    esp_matter_attr_val_t pr = esp_matter_bool(present);
+    /* pwr_std reports "battery" also when there is no cell and no USB-C
+     * (a computer on the FireBeetle's own port keeps the device alive). */
+    bool cells = st->src != PWR_SRC_EXTERNAL_NO_CELL && vbat >= PWR_V_ABSENT;
+    /* The USB-C source is the module's input only; a computer on the
+     * FireBeetle's port (ext) does not power the module. */
+    bool usbc = st->src != PWR_SRC_BATTERY;
+    (void)ext;
+
+    /* USB-C (wired) source: Active while powered. */
+    if (s_ep_wired) {
+        esp_matter_attr_val_t ws = esp_matter_enum8(usbc ? 1 : 3);
+        attribute::update(s_ep_wired, PowerSource::Id, PowerSource::Attributes::Status::Id, &ws);
+        esp_matter_attr_val_t wp = esp_matter_bool(usbc);
+        attribute::update(s_ep_wired, PowerSource::Id,
+                          PowerSource::Attributes::WiredPresent::Id, &wp);
+    }
+
+    /* Battery source: Active on the cells, Standby behind USB-C, Unavailable
+     * without cells. */
+    esp_matter_attr_val_t st8 = esp_matter_enum8(!cells ? 3 : usbc ? 2 : 1);
+    attribute::update(0, PowerSource::Id, PowerSource::Attributes::Status::Id, &st8);
+    esp_matter_attr_val_t pr = esp_matter_bool(cells);
     attribute::update(0, PowerSource::Id, PowerSource::Attributes::BatPresent::Id, &pr);
-    if (!present) {
+    if (!cells) {
         esp_matter_attr_val_t none = esp_matter_nullable_uint8(nullable<uint8_t>());
         attribute::update(0, PowerSource::Id,
                           PowerSource::Attributes::BatPercentRemaining::Id, &none);
-        esp_matter_attr_val_t ok = esp_matter_bool(false);
-        attribute::update(0, PowerSource::Id,
-                          PowerSource::Attributes::BatReplacementNeeded::Id, &ok);
         return ESP_OK;
     }
-    if (percent < 0.0f) return ESP_OK;
     /* BatPercentRemaining is in half percent units, spec 11.7.6.14 */
-    esp_matter_attr_val_t pct = esp_matter_nullable_uint8(
-        (uint8_t)(percent * 2.0f + 0.5f));
+    esp_matter_attr_val_t pct = esp_matter_nullable_uint8(pwr_matter_pct(st->pct));
     attribute::update(0, PowerSource::Id,
                       PowerSource::Attributes::BatPercentRemaining::Id, &pct);
-
-    esp_matter_attr_val_t mv = esp_matter_nullable_uint32((uint32_t)(volts * 1000.0f));
-    attribute::update(0, PowerSource::Id,
-                      PowerSource::Attributes::BatVoltage::Id, &mv);
-
-    /* BatChargeLevel: 0 OK, 1 Warning, 2 Critical */
-    esp_matter_attr_val_t lvl = esp_matter_enum8(low ? (percent < 5.0f ? 2 : 1) : 0);
-    attribute::update(0, PowerSource::Id,
-                      PowerSource::Attributes::BatChargeLevel::Id, &lvl);
-
-    /* No BatChargeState: the pack is never charged in the device. */
-    esp_matter_attr_val_t need = esp_matter_bool(low && percent < 5.0f);
+    esp_matter_attr_val_t mv = esp_matter_nullable_uint32((uint32_t)(vbat * 1000.0f));
+    attribute::update(0, PowerSource::Id, PowerSource::Attributes::BatVoltage::Id, &mv);
+    /* BatChargeLevel 0 OK / 1 Warning / 2 Critical - pwr_std's levels */
+    esp_matter_attr_val_t lvl = esp_matter_enum8((uint8_t)st->lvl);
+    attribute::update(0, PowerSource::Id, PowerSource::Attributes::BatChargeLevel::Id, &lvl);
+    /* BatChargeState: IsCharging marks the window in which temperature and
+     * humidity may read a little high (charger heat). */
+    esp_matter_attr_val_t cs = esp_matter_enum8((uint8_t)st->chg);
+    attribute::update(0, PowerSource::Id, PowerSource::Attributes::BatChargeState::Id, &cs);
+    /* A latched fault (timer ran out twice, or ISET/overcurrent) needs the
+     * user: report it as "replacement needed" - the closest standard flag. */
+    esp_matter_attr_val_t need = esp_matter_bool(st->fault == PWR_FLT_LATCHED);
     attribute::update(0, PowerSource::Id,
                       PowerSource::Attributes::BatReplacementNeeded::Id, &need);
     return ESP_OK;

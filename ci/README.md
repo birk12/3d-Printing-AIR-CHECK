@@ -24,10 +24,10 @@ gh auth refresh -h github.com -s workflow
 
 | job | what it checks |
 |---|---|
-| core-tests | the 546 host checks over the measurement core, with `-Werror` |
-| electrical | the 567 rule checks - including that nothing can charge the AA cells, that USB 5 V never reaches the pack, that the undervoltage lockout stops at no less than 1.0 V per cell, that the firmware's external-power threshold sits between the two supply branches, and that the firmware's pin table matches the wiring - and that the generated files (`NETLIST.md`, `docs/BOM.md`) are in step with `design.py` |
-| energy-model | re-runs the model and **fails if ECO stops clearing three months with margin** |
-| enclosure | renders all four parts (front, back, door, stand), which runs the OpenSCAD asserts over every module, post and zone, and checks each STL is manifold and fits a 250 × 210 bed (more than 8 % overhang is a warning, not a failure) |
+| core-tests | the 528 host checks over the measurement core and the power module (`ac_power`), and the Power-Standard's `pwr_std` test, with `-Werror` |
+| electrical | the 710 rule checks - including the cell chain (a fuse per cell, the fused cells meeting only at the BMS, P− as the system ground, B− nowhere else, the NTC between TH and GND), that the FireBeetle's own Li-ion charger can never reach the LiFePO4 cells, that the SEN62's rail stays at or above 3.15 V down to the cells' 3.0 V, that no GPIO sees more than 3.6 V and the PWR-K ladder clears `pwr_std`'s thresholds, and that the firmware's pin table matches the wiring - and that the generated files (`NETLIST.md`, `docs/BOM.md`) are in step with `design.py` |
+| energy-model | re-runs the model and **fails if ECO on the 1S4P LiFePO4 pack stops clearing 2.5 months with margin** (it is at 2.9) |
+| enclosure | renders all four parts (front, back, door, stand), which runs the OpenSCAD asserts over every module, post and zone (including the charger's 5 mm to every wall and 30 mm to the gas bay's sensors), and checks each STL is manifold and fits a 250 × 210 bed (more than 8 % overhang is a warning, not a failure) |
 | firmware | placeholder - building esp-matter in CI needs a prepared image |
 
 The energy-model job is the interesting one: it makes the headline battery

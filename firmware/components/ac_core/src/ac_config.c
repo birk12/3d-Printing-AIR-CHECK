@@ -68,11 +68,7 @@ void ac_config_defaults(ac_config_t *c)
     c->led_show_air_quality  = true;
     c->battery_interval_s    = 300;
 
-    c->cell_type            = 0;        /* alkaline until told otherwise */
-    c->cells                = 6;
     c->altitude_m           = 0;
-    c->low_battery_pct      = 20.0f;
-    c->critical_battery_pct = 5.0f;
 
     c->voc_publish_index_as_ppb = true;
     c->co2_self_calibration     = true;
@@ -183,15 +179,7 @@ int ac_config_validate(ac_config_t *c)
 
     CLAMP(c->battery_interval_s, 60u, 3600u, n);
 
-    if (c->cell_type > 2) { c->cell_type = 0; n++; }
-    CLAMP(c->cells, 1, 8, n);
     CLAMP(c->altitude_m, -400, 4000, n);
-    CLAMP(c->low_battery_pct, 5.0f, 50.0f, n);
-    CLAMP(c->critical_battery_pct, 1.0f, 20.0f, n);
-    if (c->critical_battery_pct >= c->low_battery_pct) {
-        c->critical_battery_pct = c->low_battery_pct / 4.0f;
-        n++;
-    }
     if (c->default_mode >= AC_MODE_COUNT) { c->default_mode = AC_MODE_ECO; n++; }
 
     c->name[AC_NAME_MAX - 1] = '\0';

@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 #define AC_CONFIG_MAGIC    0x41434B31u   /* "ACK1" */
-#define AC_CONFIG_VERSION  4   /* v4: SEN62 + Sunrise + SHT40, AA pack (v1.3) */
+#define AC_CONFIG_VERSION  5   /* v5: 1S4P LFP power module C (v1.4) */
 #define AC_NAME_MAX        33
 
 /* Shortest SEN62 window worth having.  Sensirion give a typical 30 s start-up
@@ -70,11 +70,8 @@ typedef struct {
     bool     led_show_air_quality;  /* a button press flashes the air quality colour */
     uint32_t battery_interval_s;    /* how often the battery voltage is read */
 
-    /* battery: six AA cells of one chemistry, see ac_battery.h */
-    uint8_t  cell_type;             /* ac_cell_type_t */
-    uint8_t  cells;
-    float low_battery_pct;
-    float critical_battery_pct;
+    /* battery: 1S4P LiFePO4, see ac_power.h; percentages from pwr_std's
+     * coarse LFP curve (10 % = 3.20 V, 6 % = 3.10 V) */
 
     /* site: the Sunrise compensates CO2 for air pressure, 1.6 % per kPa;
      * without a barometer the altitude is the next best thing */

@@ -1,5 +1,5 @@
 // =====================================================================
-// 3D Printing AIR CHECK - enclosure parameters (v1.3)
+// 3D Printing AIR CHECK - enclosure parameters (v1.4)
 // ---------------------------------------------------------------------
 // Every dimension that matters lives here.  Nothing downstream may use a
 // bare number that is not derived from one of these.
@@ -14,8 +14,10 @@
 // SEN62 and its air ports on the LEFT.  Text on the front face is mirrored in
 // the model so that it reads correctly on the part.
 //
-// Three zones, walled off from each other (EDR-18, EDR-17):
-//   battery compartment   bottom, Y 0 .. BATC_Y1, own screwed door at the back
+// Three zones, walled off from each other (EDR-21, EDR-17):
+//   battery compartment   bottom, Y 0 .. BATC_Y1, own screwed door at the back:
+//                         4 x LiFePO4 18650 in two Keystone 1049 holders, and a
+//                         vented charger chamber with the #6091 and the BMS
 //   gas bay               above it at X = 0: Sunrise, SGP40, SHT40, vented
 //                         through the X = 0 wall and the front face
 //   electronics           the rest: FireBeetle, power modules, SEN62 (sealed
@@ -34,8 +36,8 @@ CHAMFER_BED       = 0.6;
 $fn               = 64;
 
 // ---------- overall case ---------------------------------------------
-CASE_W            = 130.0;
-CASE_H            = 146.0;
+CASE_W            = 136.0;
+CASE_H            = 174.0;
 CASE_D            =  34.0;
 WALL              =   2.4;   // perimeter wall, 6 x 0.4 mm
 FACE              =   2.4;   // front and back faces
@@ -59,38 +61,68 @@ POST_D            =   9.0;   // lid screw posts
 DOOR_POST_D       =   7.0;   // door screw posts
 SELFTAP_M25       =   2.1;   // M2.5 self-tapping core hole
 SELFTAP_M2        =   1.6;   // M2 self-tapping core hole
+SELFTAP_M3        =   2.5;   // M3 self-tapping core hole (battery holders)
 
-// ---------- battery compartment (MPD BH36AAW, 6 x AA flat) -------------
-// MPD drawing: 110.0 x 49.5 x 16.9 mm + 0.89 mm feet; 4 x d3.17 holes on
-// 48.1 x 35.3 mm, centres 31.0 mm from the lead end and 7.1 mm from the long
-// edges.  Lead end at X max.
-HOLDER_L          = 110.0;
-HOLDER_W          =  49.5;
-HOLDER_T          =  16.9 + 0.89;
-HOLDER_HOLE_END   =  31.0;
-HOLDER_HOLE_PITCH =  48.1;
-HOLDER_HOLE_EDGE  =   7.1;
-HOLDER_CLEAR      =   1.2;
-HOLDER_BOSS_H     =   3.0;   // holder floats 3 mm above the front face
-HOLDER_BOSS_D     =   7.0;
-HOLDER_X          = (CASE_W - HOLDER_L) / 2;
-HOLDER_Y          = WALL + HOLDER_CLEAR;
-HOLDER_Z          = FACE + HOLDER_BOSS_H;
-BATC_Y1           = HOLDER_Y + HOLDER_W + HOLDER_CLEAR;   // compartment inner top
+// ---------- battery compartment: 1S4P LiFePO4 (EDR-21) ------------------------
+// Keystone 1049 (catalogue p. 29): 77.1 x 39.8 mm, 18.0 mm to the top of an
+// inserted cell, housing wall ~14.8 mm; cells 19.1 mm apart; 4 contact pins
+// d1.2 at (+-9.55, +-35.8) holder-local, ~3.6 mm long; 2 x d3.2 screw holes
+// through the floor at (0, +-27.6); two d3.7 locating pegs.  Cells lie along
+// Y.  AER18650m2A2: d18.5 x 64.95 mm.
+KH_L              =  77.1;           // along Y (cell axis)
+KH_W              =  39.8;           // along X
+KH_H              =  18.0;           // floor to the top of an inserted cell
+KH_WALL_H         =  14.8;
+KH_CELL_PITCH     =  19.1;
+KH_SCREW_Y        =  27.6;           // +- from the holder centre, along Y
+KH_PIN_Y          =  35.8;
+KH_STANDOFF       =   5.0;           // pins and their solder joints underneath
+KH_GAP            =   4.0;           // between the holders: the NTC's cell
+CELL_D            =  18.5;
+KH1_X             =  10.0;           // clear of the left door post
+KH2_X             = KH1_X + KH_W + KH_GAP;
+KH_Y              = WALL + 1.2;
+KH_Z              = FACE + KH_STANDOFF;
+CELL_TOP_Z        = KH_Z + KH_H;
+BATC_Y1           = KH_Y + KH_L + 1.2;                   // compartment inner top
 BATC_PART_T       =   4.0;   // partition: fire and air separation
 UP_Y0             = BATC_Y1 + BATC_PART_T;               // electronics zone floor
 PLATE_SPLIT_Y     = BATC_Y1 + BATC_PART_T / 2;           // lid / door split line
-// door screws: posts in the side walls, level with the holder's middle
+// charger chamber: its own wall, vents in the bottom and the right-hand wall
+CHG_WALL_X        = KH2_X + KH_W + 1.0;
+CHG_WALL_T        =   2.0;
+// Adafruit #6091 (board file rev B1): 31.75 x 25.40 mm, 4 x d2.5 holes 2.54 mm
+// in, JST PH BATT and LOAD on one long edge (5.5 mm tall), USB-C on the other
+// (unused).  Turned so the 31.75 mm edge runs along Y and the JSTs face the
+// holders; >= 5 mm from every wall (review checklist E4).
+CHG_L             =  31.75;          // along Y
+CHG_W             =  25.40;          // along X
+CHG_PARTS         =   5.5;
+CHG_HOLES         = [[2.54, 2.54], [29.21, 2.54], [2.54, 22.86], [29.21, 22.86]];  // (along L, along W)
+CHG_X             = CASE_W - WALL - 5.0 - CHG_W;
+CHG_Y             = WALL + 5.0;
+CHG_Z             = FACE + 5.0;
+// eremit HY2112 BMS strip, "3 x 30 mm": vertical along Y, next to the
+// chamber wall above the charger
+BMS_L             =  30.0;
+BMS_W             =   4.0;
+BMS_X             = CHG_WALL_X + CHG_WALL_T + 3.0;
+BMS_Y             = CHG_Y + CHG_L + 6.0;
+// door screws: posts in the side walls
 DOOR_POST_X       = WALL + DOOR_POST_D / 2 - 0.3;
-DOOR_POST_Y       = HOLDER_Y + HOLDER_W / 2;
-// lead notch through the partition, top, towards the power modules
-BATC_NOTCH_X0     =  86.5;
+DOOR_POST_Y_L     = KH_Y + KH_L / 2;
+DOOR_POST_Y_R     = CHG_Y + CHG_L + 5.0;     // between the charger and the vents
+// lead notches: partition (cells -> electronics) and chamber wall (cells -> charger)
+BATC_NOTCH_X0     =  CHG_WALL_X - 8.0;
 BATC_NOTCH_W      =   6.0;
 BATC_NOTCH_H      =   6.0;
-// pressure-relief slots in the bottom wall (not an air path: a failing cell
-// must not pressurise a sealed box)
+CHG_NOTCH_Y0      = KH_Y + 12.0;
+CHG_NOTCH_W       =   8.0;
+// vents: compartment pressure relief, charger chamber through-flow
 BATC_VENT_W       =   8.0;
 BATC_VENT_H       =   1.6;
+CHG_VENT_W        =   6.0;
+CHG_VENT_H        =   1.6;
 
 // ---------- lid screw posts (upper zone corners) -------------------------
 POST_XY = [[6.5, UP_Y0 + 6.5], [CASE_W - 6.5, UP_Y0 + 6.5],
@@ -193,9 +225,6 @@ D1_HOLES          = [[2.54, 7.62], [13.97, 7.62]];
 D1_X              = SW1_X;
 D1_Y              = SW1_Y + SW1_S + 3.0;
 MOD_Z             = FACE + 1.0;      // modules on 1 mm pads
-// second S9V11E2A, the external-power branch (4.20 V), turned 90 deg
-PS2_X             = D1_X + D1_L + 2.8;
-PS2_Y             = D1_Y + 3.8;
 
 // ---------- USB-C power socket (Adafruit #6050, sunken) -----------------------
 // Board file: 20.32 x 13.97 mm, 2 x d2.5 plated holes at (2.286, 10.414) and

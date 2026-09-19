@@ -1,0 +1,70 @@
+/* Power source for AIR CHECK v1.4: the LFP module C of the Power-Standard.
+ *
+ *   USB-C socket -> Adafruit #6091 (TI BQ25185, LFP 3.65 V, 1 A) <-> 1S4P
+ *   LiFePO4 (4 x AER18650m2A2) -> LOAD -> Pololu S9V11E2A 3.90 V -> LM66200
+ *   -> FireBeetle battery input.
+ *
+ * The module reports over the compact interface PWR-K (one ADC node carries
+ * EXT, CHG_N and FLT_N), plus the cell voltage / 2 on its own ADC pin and CE
+ * on a GPIO.  pwr_std (the Power-Standard's own C99 module, copied unchanged
+ * into components/pwr_std) turns that into Matter's view and decides the
+ * charge pause on permanent USB.  This file adds what is specific to AIR
+ * CHECK:
+ *
+ *  - PWR-K cannot tell a latched fault (both STAT pins low: the 6 h safety
+ *    timer) from a recoverable one (STAT1 only: NTC hot/cold, OVP).  A 1S4P
+ *    pack of 6.8-7.2 Ah takes longer than 6 h at 1 A, so the timer is an
+ *    expected event here.  A fault that appears after at least
+ *    AC_TIMER_SUSPECT_S of continuous charging is taken for the timer; the
+ *    battery session approved one CE pulse per USB session for exactly that
+ *    (pwr_timer_retry).  A recoverable fault that gets pulsed by mistake is
+ *    harmless: the charger stays paused by its own NTC or OVP logic.
+ *  - "External power" for the measurement engine also includes a computer on
+ *    the FireBeetle's own USB-C, which does not reach the power module.
+ *
+ * Plain C, no ESP-IDF: covered by the host tests. */
+#ifndef AC_POWER_H
+#define AC_POWER_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "pwr_std.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define AC_TIMER_SUSPECT_S   (330u * 60u)   /* 5.5 h of charging, the timer is 6 h */
+#define AC_CE_PULSE_MS       150u           /* >= 100 ms, per the battery session */
+
+typedef enum {
+    AC_CE_RELEASE = 0,      /* GPIO as input: charging allowed (fail-safe)  */
+    AC_CE_HOLD,             /* drive high: charge pause on permanent USB    */
+    AC_CE_PULSE,            /* high for AC_CE_PULSE_MS, then release        */
+} ac_ce_t;
+
+typedef struct {
+    pwr_ctx_t pwr;
+    uint32_t  chg_since_s;  /* start of the current charge, 0: none         */
+} ac_power_t;
+
+typedef struct {
+    pwr_state_t st;         /* pwr_std's view: source, charge, level, fault */
+    bool        ext;        /* external power for the engine (module or PC) */
+    bool        charging;   /* the module is charging the cells right now   */
+    ac_ce_t     ce;
+} ac_power_out_t;
+
+void ac_power_init(ac_power_t *p);
+
+/* vbat: cell volts (<0: no reading); ladder_v: two PWR-K readings ~50 ms
+ * apart (STAT2 toggles without a cell); usb_host: a computer enumerated the
+ * FireBeetle's USB; now_s: monotonic seconds. */
+ac_power_out_t ac_power_update(ac_power_t *p, float vbat, const float ladder_v[2],
+                               bool usb_host, uint32_t now_s);
+
+#ifdef __cplusplus
+}
+#endif
+#endif

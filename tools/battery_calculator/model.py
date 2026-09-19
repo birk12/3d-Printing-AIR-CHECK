@@ -1,26 +1,26 @@
 """
-3D Printing AIR CHECK - energy model (v1.3, 6 x AA).
+3D Printing AIR CHECK - energy model (v1.4, LiFePO4 power module C).
 
 Every number in this file is traceable to a manufacturer datasheet or to a
 measurement published by the silicon vendor.  Sources are given inline as
 `src=` strings and are reproduced in docs/BATTERY_LIFE.md.  Where a value is an
 assumption, its source string says ASSUMPTION.
 
-Since v1.3 the device runs from six AA cells in series, so the model works in
-energy (mWh at the cells), not in mAh of a 3.8 V cell.  Power path:
+Since v1.4 the device runs from the Power-Standard's module C: a 1S4P pack of
+LiFePO4 cells, charged in the device from USB-C.  Power path (EDR-21):
 
-    6 x AA -> fuse -> Pololu S9V11E2A (buck-boost, 3.90 V) -> LM66200 ideal
-    diode -> FireBeetle battery input (VSYS) -> TPS62A02 buck -> 3.3 V
+    cells (3.0-3.65 V) -> PICO fuse each -> HY2112 BMS -> Adafruit #6091
+    (TI BQ25185) -> LOAD -> Pololu S9V11E2A (buck-boost, 3.90 V) -> LM66200
+    -> FireBeetle battery input (VSYS) -> TPS62A02 buck -> 3.3 V
 
-3.3 V loads (ESP32-C6, SEN62, SGP40, SHT40) pass both converters; the Sunrise
-and the status LED sit directly on VSYS.  Since v1.3.1 a USB-C power socket
-feeds the LM66200's second input at 4.20 V; on external power the cells only
-lose the regulator's quiescent current and the resistors across them.
+On USB-C the module feeds LOAD from the charger (power path) and the cells
+only lose the module's quiescent currents; this model is for running on the
+cells.
 
 Run:  python3 tools/battery_calculator/model.py                  # table
       python3 tools/battery_calculator/model.py --markdown       # BATTERY_LIFE.md body
       python3 tools/battery_calculator/model.py --json           # CI
-      python3 tools/battery_calculator/model.py --cell nimh      # another chemistry
+      python3 tools/battery_calculator/model.py --cell 1s1p      # another pack
 """
 
 from __future__ import annotations
@@ -57,21 +57,20 @@ SRC = {
     "pololu": "Pololu S9V11E2A (#5719) product page: quiescent current < 0.2 mA for "
               "most input/output combinations; typical efficiency 85-95 %",
     "tps62a02": "TI TPS62A02 datasheet, efficiency 3.8 V -> 3.3 V at 50..100 mA: ~90 %",
-    "divider": "pack divider 1 M / 220 k (ADC on GPIO3), permanently across the pack",
-    "uvlo": "undervoltage lockout: the regulator's internal 100 k EN pull-up in series "
-            "with R11 13 k, permanently across the pack (Pololu: 10 uA/V on VIN)",
+    "vbat_s": "Power-Standard PWR-K: cell voltage / 2 through 470 k + 470 k, permanently "
+              "across the cells",
+    "bq25185": "TI BQ25185 datasheet SLUSF65B: 4 uA from the battery with no input; "
+               "BUVLO 3.0 V",
+    "hy2112": "HY2112 datasheet: 3 uA typical; the eremit board's own figure is "
+              "unverified (Power-Standard open point O1)",
     "led": "status LED: 5 mA from VSYS (3.9 V) for a 3 s flash, 6 times a day",
     "dash": "ASSUMPTION: a second Matter controller (the e-ink dashboard) reads the "
             "sensor every 15 min; each read costs ~10 poll-equivalents of radio time",
-    "l91": "Energizer L91 datasheet: 3500 mAh rated, ~1.45 V average at light "
-           "drain (-> ~5.0 Wh); 20-year storage life (~0.1 %/month)",
-    "eneloop_pro": "Panasonic eneloop pro BK-3HCDE: 2500 mAh min x 1.2 V (-> 2.9 Wh); "
-                   "85 % after 1 year (~1.25 %/month)",
-    "alkaline": "Energizer E91 datasheet: ~3000 mWh at 25 mA to 0.8 V; 10-year "
-                "storage (~0.2 %/month); to the 1.0 V/cell lockout ~80 % of that",
-    "li15": "ASSUMPTION: 1.5 V Li-ion AA with USB-C: independent tests find "
-            "2.3-2.8 Wh against 3000-3500 mWh on the label; their internal buck "
-            "converter adds its own quiescent loss (not modelled)",
+    "aer18650": "Lithium Werks AER18650m2A2: 1.8 Ah typical, 1.7 Ah minimum, 3.2-3.3 V "
+                "plateau; charged to 3.65 V, BUVLO at 3.0 V leaves ~4 % "
+                "(Power-Standard README section 2)",
+    "lfp_sd": "ASSUMPTION: LFP self-discharge 3 %/month - no manufacturer figure for the "
+              "AER18650m2A2 (Power-Standard open point O5)",
 }
 
 # --------------------------------------------------------------------------
@@ -84,8 +83,9 @@ EFF_REG_WORST = 0.80  # light-load margin: the product page gives no curve
 EFF_BUCK = 0.90       # TPS62A02 on the FireBeetle, src=tps62a02
 EFF_3V3 = EFF_REG * EFF_BUCK
 REG_IQ_MA = 0.2       # at the regulator input, src=pololu
-DIVIDER_OHM = 1_000_000 + 220_000   # src=divider
-UVLO_OHM = 100_000 + 13_000         # src=uvlo
+VBAT_S_OHM = 470_000 + 470_000      # src=vbat_s
+CHARGER_IQ_UA = 4.0                 # src=bq25185
+BMS_IQ_UA = 3.0                     # src=hy2112
 
 # ---- SEN62 (PM only, power-gated between windows) -------------------------
 SEN62_V = 3.3
@@ -124,28 +124,25 @@ DASH_POLLS_PER_READ = 10.0
 
 @dataclass
 class Cell:
+    """A 1S pack of LiFePO4 cells in parallel."""
     key: str
     name: str
-    mwh: float                  # per cell, nominal
-    usable: float               # fraction above the 1.0 V/cell lockout
-    v_avg: float                # average cell voltage under this load
+    parallel: int
+    mah: float                  # per cell, minimum
+    usable: float               # fraction above the 3.0 V BUVLO
+    v_avg: float                # average cell voltage on the discharge plateau
     self_discharge_pct_month: float
     src: str
     recommended: bool = True
 
 
-CELLS = {
-    "lithium": Cell("lithium", "Energizer Ultimate Lithium L91", 5000.0, 0.95, 1.45,
-                    0.1, "l91"),
-    "nimh": Cell("nimh", "Panasonic eneloop pro (NiMH)", 2900.0, 0.95, 1.20,
-                 1.25, "eneloop_pro"),
-    "alkaline": Cell("alkaline", "Alkaline (Energizer E91 class)", 3000.0, 0.80, 1.25,
-                     0.2, "alkaline"),
-    "li15": Cell("li15", "1.5 V Li-ion AA with USB-C", 2500.0, 0.95, 1.50,
-                 2.0, "li15", recommended=False),
-}
-CELL_COUNT = 6
-DEFAULT_CELL = "lithium"
+def _lfp(n: int, rec: bool) -> Cell:
+    return Cell(f"1s{n}p", f"{n} x AER18650m2A2 LiFePO4 (1S{n}P)", n, 1700.0, 0.96, 3.25,
+                3.0, "aer18650", recommended=rec)
+
+
+CELLS = {"1s4p": _lfp(4, True), "1s2p": _lfp(2, False), "1s1p": _lfp(1, False)}
+DEFAULT_CELL = "1s4p"
 
 
 # --------------------------------------------------------------------------
@@ -196,7 +193,7 @@ def budget(p: Profile, cell: Cell, worst: bool = False) -> Budget:
     b = Budget(profile=p, cell=cell)
     eff_reg = EFF_REG_WORST if worst else EFF_REG
     eff_3v3 = eff_reg * EFF_BUCK
-    v_pack = cell.v_avg * CELL_COUNT
+    v_pack = cell.v_avg
 
     def at3v3(uw: float) -> float:          # uW at 3.3 V -> mWh/day at the cells
         return uw * 24.0 / 1000.0 / eff_3v3
@@ -235,17 +232,21 @@ def budget(p: Profile, cell: Cell, worst: bool = False) -> Budget:
 
     # --- power path -------------------------------------------------------
     b.lines["Pololu regulator quiescent"] = REG_IQ_MA * v_pack * 24.0
-    b.lines["pack divider + undervoltage lockout"] = (
-        v_pack ** 2 * (1.0 / DIVIDER_OHM + 1.0 / UVLO_OHM) * 1000.0 * 24.0)
+    b.lines["charger + BMS quiescent"] = (CHARGER_IQ_UA + BMS_IQ_UA) * v_pack * 24.0 / 1000.0
+    b.lines["cell voltage divider (VBAT_S)"] = v_pack ** 2 / VBAT_S_OHM * 1000.0 * 24.0
 
     # --- cells ------------------------------------------------------------
-    b.lines["cell self-discharge"] = (cell.mwh * CELL_COUNT
+    b.lines["cell self-discharge"] = (pack_total_mwh(cell)
                                       * cell.self_discharge_pct_month / 100.0 / 30.44)
     return b
 
 
+def pack_total_mwh(cell: Cell) -> float:
+    return cell.parallel * cell.mah * cell.v_avg
+
+
 def pack_usable_mwh(cell: Cell) -> float:
-    return cell.mwh * CELL_COUNT * cell.usable
+    return pack_total_mwh(cell) * cell.usable
 
 
 def runtime_days(b: Budget, margin: float = 0.0) -> float:
@@ -257,7 +258,7 @@ def runtime_days(b: Budget, margin: float = 0.0) -> float:
 # --------------------------------------------------------------------------
 
 MARGIN = 0.25         # 25 % engineering margin, per the project requirement
-TARGET_MONTHS = 3.0   # ECO on L91 must clear this; ci/github-actions-ci.yml
+TARGET_MONTHS = 2.5   # ECO on 1S4P must clear this; ci/github-actions-ci.yml
 
 
 def table(cell: Cell) -> list[dict]:
@@ -284,16 +285,6 @@ def table(cell: Cell) -> list[dict]:
     return rows
 
 
-def mains_backup_months(cell: Cell) -> float:
-    """How long the cells last as the backup while external power carries the
-    device: they only lose the regulator's quiescent current, the resistors
-    across them and their own self-discharge."""
-    v = cell.v_avg * CELL_COUNT
-    mw = REG_IQ_MA * v + v * v * (1.0 / DIVIDER_OHM + 1.0 / UVLO_OHM) * 1000.0
-    sd_mw = cell.mwh * CELL_COUNT * cell.self_discharge_pct_month / 100.0 / 30.44 / 24.0
-    return pack_usable_mwh(cell) / (mw + sd_mw) / 24.0 / 30.44
-
-
 def eco_by_cell() -> list[dict]:
     eco = PROFILES[0]
     out = []
@@ -306,7 +297,6 @@ def eco_by_cell() -> list[dict]:
             "months_with_margin": round(runtime_days(b, MARGIN) / 30.44, 2),
             "months_worst_case": round(
                 runtime_days(budget(eco, c, worst=True), MARGIN) / 30.44, 2),
-            "months_as_mains_backup": round(mains_backup_months(c), 1),
         })
     return out
 
@@ -320,7 +310,7 @@ def _fmt_days(d: float) -> str:
 
 
 def print_table(cell: Cell) -> None:
-    print(f"Pack: {CELL_COUNT} x {cell.name}, {pack_usable_mwh(cell)/1000:.1f} Wh usable")
+    print(f"Pack: {cell.name}, {pack_usable_mwh(cell)/1000:.1f} Wh usable")
     print(f"Engineering margin applied: {MARGIN*100:.0f} %\n")
     hdr = (f"{'profile':<12}{'PM every':>12}{'CO2 every':>11}{'mWh/day':>10}"
            f"{'nominal':>13}{'w/ margin':>13}{'worst case':>13}")
@@ -330,10 +320,10 @@ def print_table(cell: Cell) -> None:
         print(f"{r['profile']:<12}{r['pm_interval']:>12}{r['co2_interval']:>11}"
               f"{r['mwh_per_day']:>10.1f}{_fmt_days(r['days_nominal']):>13}"
               f"{_fmt_days(r['days_with_margin']):>13}{_fmt_days(r['days_worst_case']):>13}")
-    print("\nECO by cell type (with margin):")
+    print("\nECO by pack (with margin):")
     for r in eco_by_cell():
         print(f"  {r['cell']:<34}{r['pack_wh']:>6.1f} Wh {r['months_with_margin']:>6.2f} months"
-              f"{'' if r['recommended'] else '   (not recommended)'}")
+              f"{'' if r['recommended'] else '   (for comparison)'}")
     print("\nPer-profile breakdown (mWh/day):")
     for r in table(cell):
         print(f"\n  {r['profile']}")
@@ -365,44 +355,43 @@ def markdown(cell: Cell) -> str:
     w(f"| status LED | {LED_I_MA:.0f} mA x {LED_FLASH_S:.0f} s x {LED_FLASHES_PER_DAY:.0f}/day | {SRC['led']} |")
     w(f"| Pololu S9V11E2A | {EFF_REG*100:.0f} % ({EFF_REG_WORST*100:.0f} % worst case), {REG_IQ_MA} mA quiescent at the pack voltage | {SRC['pololu']} |")
     w(f"| FireBeetle buck | {EFF_BUCK*100:.0f} % | {SRC['tps62a02']} |")
-    w(f"| pack divider | {DIVIDER_OHM/1e6:.2f} MOhm across the pack | {SRC['divider']} |")
-    for c in CELLS.values():
-        w(f"| {c.name} | {c.mwh:.0f} mWh/cell, {c.usable*100:.0f} % usable, "
-          f"{c.v_avg:.2f} V avg, {c.self_discharge_pct_month} %/month | {SRC[c.src]} |")
+    w(f"| cell voltage divider | {VBAT_S_OHM/1e3:.0f} kOhm across the cells | {SRC['vbat_s']} |")
+    w(f"| charger + BMS quiescent | {CHARGER_IQ_UA:.0f} + {BMS_IQ_UA:.0f} uA | {SRC['bq25185']}; {SRC['hy2112']} |")
+    c = CELLS[DEFAULT_CELL]
+    w(f"| cell | AER18650m2A2, {c.mah:.0f} mAh min, {c.v_avg:.2f} V avg, "
+      f"{c.usable*100:.0f} % usable | {SRC['aer18650']} |")
+    w(f"| self-discharge | {c.self_discharge_pct_month} %/month | {SRC['lfp_sd']} |")
     w("")
     w("3.3 V loads are divided by both efficiencies "
       f"({EFF_REG:.2f} x {EFF_BUCK:.2f} = {EFF_3V3:.3f}); the Sunrise and the LED "
       "only by the regulator's. The regulator's quiescent current is charged at "
-      "the full pack voltage on top of that, which double-counts some of its "
-      "light-load loss - the conservative direction.")
+      "the cell voltage on top of that, which double-counts some of its "
+      "light-load loss - the conservative direction. The regulator boosts the "
+      "3.0-3.65 V of the cells to 3.90 V; its 85 % is the bottom of Pololu's band "
+      "and has not been measured at this operating point.")
     w("")
-    w("## Runtime by cell type (ECO)")
+    w("## Runtime on the cells by pack (ECO)")
     w("")
-    w(f"{CELL_COUNT} cells in series, engineering margin **{MARGIN*100:.0f} %**. "
+    w(f"Engineering margin **{MARGIN*100:.0f} %**. "
       "Worst case: SEN62 at its datasheet maximum and the regulator at "
       f"{EFF_REG_WORST*100:.0f} %.")
     w("")
-    w("| cells | usable energy | nominal | with margin | worst case, with margin |")
+    w("| pack | usable energy | nominal | with margin | worst case, with margin |")
     w("|---|---|---|---|---|")
     for r in eco_by_cell():
-        name = r["cell"] + ("" if r["recommended"] else " - not recommended")
+        name = r["cell"] + (" - **fitted**" if r["recommended"] else " - for comparison")
         w(f"| {name} | {r['pack_wh']:.1f} Wh | {r['months_nominal']:.1f} months | "
           f"**{r['months_with_margin']:.1f} months** | {r['months_worst_case']:.1f} months |")
     w("")
-    w("## On external power")
+    w("## On USB-C")
     w("")
-    w("With the USB-C power socket in use the device runs in CONTINUOUS mode from "
-      "the charger. Cells left in the holder are the backup: the ideal diode "
-      "switches to them without a gap when the power goes. Meanwhile they only "
-      "lose the regulator's quiescent current, the lockout and divider "
-      "resistors, and their own self-discharge:")
-    w("")
-    w("| cells | backup still usable after |")
-    w("|---|---|")
-    for r in eco_by_cell():
-        w(f"| {r['cell']} | {r['months_as_mains_backup']:.1f} months |")
-    w("")
-    w("For permanent mains operation the holder can also stay empty.")
+    w("On USB-C the module feeds the device from the charger (power path); the "
+      "cells lose only the charger's and the BMS's quiescent current, the cell "
+      "voltage divider and their own self-discharge. After a full charge the "
+      "firmware pauses charging (CE) until the cells drop below 3.30 V, were "
+      "used, or 30 days have passed - so on permanent USB-C the cells are "
+      "topped up about once a month and are always close to full when the "
+      "power goes.")
     w("")
     w(f"## All profiles on {cell.name}")
     w("")
@@ -438,7 +427,7 @@ def main() -> int:
     a = ap.parse_args()
     cell = CELLS[a.cell]
     if a.json:
-        print(json.dumps({"cell": cell.name, "cells": CELL_COUNT, "margin": MARGIN,
+        print(json.dumps({"cell": cell.name, "cells": cell.parallel, "margin": MARGIN,
                           "profiles": table(cell), "eco_by_cell": eco_by_cell()},
                          indent=2))
     elif a.markdown:

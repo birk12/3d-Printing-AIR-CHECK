@@ -59,33 +59,29 @@ Printing raises VOC long before an hourly sample would notice.
 ECO  --VOC rises-->  ACTIVE  --air clears-->  POST-PRINT  -->  ECO
 ```
 
-## Battery life
+## Power and battery life
 
-**6 × AA or any USB-C charger.** On a USB-C charger (an 18 W phone charger
-is plenty) it runs permanently; cells left in are an automatic backup for a
-power cut. Nothing is ever charged inside the device (EDR-18, EDR-20).
+**USB-C with a built-in LiFePO4 backup** (EDR-21). Plug any USB-C charger
+(an 18 W phone charger is plenty) into the socket on top and the device runs
+indefinitely; four LiFePO4 18650 cells inside (1S4P) carry it through a power
+cut, switched in without a gap. The charger (the cross-project Power-Standard's
+module C) pauses charging once the cells are full and tops them up about
+once a month. Unattended charging and permanent USB-C operation are allowed.
 
-On the cells, ECO mode, with a **25 % engineering margin**:
+On the cells alone, with a **25 % engineering margin**:
 
-| cells | runtime |
-|---|---|
-| **Energizer Ultimate Lithium L91** (recommended) | **3.5 months** (2.9 in the worst case) |
-| eneloop pro (NiMH, charged outside) | 2.1 months |
-| alkaline | 1.8 months |
-| as backup while on a charger | L91 about 15 months |
-
-| mode | particles every | runtime on L91 |
+| mode | particles every | runtime |
 |---|---|---|
-| **ECO** (default) | 1 h | **3.5 months** |
-| NORMAL | 15 min | 5 weeks |
-| ACTIVE | 2 min | 5–6 days (automatic, time-limited) |
+| **ECO** (default) | 1 h | **2.9 months** (3.6 nominal, 2.4 worst case) |
+| NORMAL | 15 min | about 4 weeks |
+| ACTIVE | 2 min | about 4 days (automatic, time-limited) |
 
-A particle window every 2 h gives 5.0 months on L91 and 3.0 on NiMH. The
-device switches itself off at 1.0 V per cell so no cell is reversed or leaks;
-take empty cells out promptly. These figures include a dashboard reading the sensor every
-15 minutes. Every input is traced to a datasheet or a measurement in
-[docs/BATTERY_LIFE.md](docs/BATTERY_LIFE.md), which is generated from a model
-you can re-run.
+A particle window every 2 h gives 4.3 months. While the cells charge,
+temperature and humidity can read a little high (charger heat); Apple Home and
+the dashboard see the charge state and can mark those values. Charging from
+flat takes 8-9 h. User guide (German): [docs/NUTZUNG.md](docs/NUTZUNG.md).
+Every input is traced in [docs/BATTERY_LIFE.md](docs/BATTERY_LIFE.md), which
+is generated from a model you can re-run.
 
 ## Hardware
 
@@ -93,11 +89,11 @@ you can re-run.
 |---|---|
 | MCU | DFRobot FireBeetle 2 ESP32-C6 |
 | Sensors | SEN62 (switched off between windows), Sunrise (EN-pin shutdown, ABC state kept by the host), SGP40 + SHT40 (always on) |
-| Power | 6 × AA → PTC fuse → Pololu buck-boost 3.90 V ─┐ LM66200 ideal diode → FireBeetle; USB-C socket → Pololu 4.20 V ─┘ (the higher wins); undervoltage lockout at 1.0 V/cell; nothing can charge the cells |
-| Boards | **no custom PCB**: finished modules and ten through-hole resistors (EDR-19) |
+| Power | USB-C socket → Adafruit #6091 (TI BQ25185, LiFePO4 3.65 V, 1 A, NTC, 6 h timer) ⇄ 4 × AER18650m2A2 (one fuse each, HY2112 BMS) → Pololu buck-boost 3.90 V → LM66200 → FireBeetle |
+| Boards | **no custom PCB**: finished modules, inline resistors and two diodes (EDR-19) |
 | Status | one panel button, one RGB LED in a panel holder |
-| Case | **130 × 146 × 34 mm**, PETG, three zones: battery compartment with a screwed door, a walled gas bay, electronics |
-| Cost | **about EUR 171** in parts including the first set of cells ([docs/BOM.md](docs/BOM.md)) |
+| Case | **136 × 174 × 34 mm**, PETG: battery compartment with a vented charger chamber and a screwed, labelled door; a walled gas bay; electronics |
+| Cost | **about EUR 200** in parts including the four cells ([docs/BOM.md](docs/BOM.md)) |
 
 ## The LED and the button
 
@@ -139,9 +135,9 @@ PARTS -> PRINT + BAKE -> WIRE -> FLASH -> CELLS IN -> PAIR -> SHARE WITH THE DAS
    idf.py set-target esp32c6
    idf.py -p /dev/tty.usbmodem* flash monitor
    ```
-5. **Power:** six AA, all the same type and age, and/or a USB-C charger in the
-   socket on top; tell the device the cell type (`config set cell_type lithium`)
-   and your altitude (`config set altitude_m 520`)
+5. **Power:** charge the four cells together in an XTAR MX4 (LiFePO4 setting),
+   fit them, plug a USB-C charger into the socket on top, and tell the device
+   your altitude (`config set altitude_m 520`)
 6. **Pair** with Apple Home: [docs/APPLE_HOME.md](docs/APPLE_HOME.md)
 7. **Share** with the dashboard: [docs/DASHBOARD_INTERFACE.md](docs/DASHBOARD_INTERFACE.md)
 
@@ -152,8 +148,8 @@ AIR CHECK has been built. What *has* been done:
 
 | | |
 |---|---|
-| measurement core | 546 host checks, run on every build |
-| electrical design | 567 automated rule checks over the wiring list, incl. "the cells can never be charged", external power always wins, detection margins, lockout thresholds, firmware pin table = wiring |
+| measurement core | 528 host checks plus the Power-Standard's `pwr_std` tests, run on every build |
+| electrical design | 710 automated rule checks over the wiring list, incl. fuse per cell → BMS → charger, P− = GND, the FireBeetle's charger blocked from the cells, SEN62 rail ≥ 3.15 V over the whole battery range, GPIO levels, firmware pin table = wiring |
 | enclosure | OpenSCAD asserts: every module against every other, every post, every zone; manifold check; fits a 250 × 210 bed |
 | firmware | full ESP-IDF + esp-matter build for esp32c6: 1.69 MB, 14 % OTA headroom |
 | Matter attribute IDs | checked against the Matter SDK's generated headers |
@@ -170,7 +166,8 @@ contribute.
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | how the whole thing fits together |
 | [DASHBOARD_INTERFACE.md](docs/DASHBOARD_INTERFACE.md) | **everything a dashboard needs**: pairing, attribute IDs, timing, power |
-| [ENGINEERING_DECISIONS.md](docs/ENGINEERING_DECISIONS.md) | twenty decisions and what they cost |
+| [ENGINEERING_DECISIONS.md](docs/ENGINEERING_DECISIONS.md) | twenty-one decisions and what they cost |
+| [NUTZUNG.md](docs/NUTZUNG.md) | power, battery and safety for everyday use (German) |
 | [BATTERY_LIFE.md](docs/BATTERY_LIFE.md) | the energy model, with sources |
 | [BOM.md](docs/BOM.md) | parts, prices, where to buy |
 | [ASSEMBLY.md](docs/ASSEMBLY.md) | step by step |

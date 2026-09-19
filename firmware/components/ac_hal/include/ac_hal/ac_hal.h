@@ -24,7 +24,9 @@ extern "C" {
 #define AC_PIN_REG_ADC       0   /* on-board divider: regulator output / 2   */
 #define AC_PIN_BUTTON        1   /* panel button to GND, internal pull-up   */
 #define AC_PIN_SEN_EN        2   /* Pololu #2810 ON pin: SEN62 supply       */
-#define AC_PIN_PACK_ADC      3   /* AA pack through 1M / 220k               */
+#define AC_PIN_VBAT_S        3   /* LFP cell / 2 (470k/470k), ADC 6 dB      */
+#define AC_PIN_PWR_K         4   /* PWR-K ladder: EXT, CHG_N, FLT_N, 12 dB  */
+#define AC_PIN_CE            5   /* #6091 CE: high = pause, input = charge  */
 #define AC_PIN_SENS_SDA      6   /* LP_I2C SDA: SGP40 + SHT40, always on    */
 #define AC_PIN_SENS_SCL      7   /* LP_I2C SCL                              */
 #define AC_PIN_CO2_EN       14   /* Sunrise EN                              */
@@ -125,15 +127,19 @@ esp_err_t ac_sgp40_measure(float temperature_c, float humidity_pct,
                            int32_t *raw_out, int32_t *index_out);
 esp_err_t ac_sgp40_serial(uint64_t *out);
 
-/* ---- power ---------------------------------------------------------------
- * Pack voltage through the 1M/220k divider on GPIO3, the regulator output
- * through the FireBeetle's own divider on GPIO0, and whether a USB host is
- * attached (USB Serial/JTAG enumerated). */
+/* ---- power (LFP module C, docs/ENGINEERING_DECISIONS.md EDR-21) -----------
+ * Cell voltage from the module's 470k/470k divider on GPIO3, the PWR-K
+ * status ladder on GPIO4 (read twice, 50 ms apart), VSYS through the
+ * FireBeetle's own divider on GPIO0 (a sanity check: 3.90 V from the
+ * regulator), and whether a USB host is attached.  CE on GPIO5 is only ever
+ * driven high or released to an input - never low (Power-Standard PWR-7). */
 esp_err_t ac_battery_init(void);
-esp_err_t ac_battery_read(float *pack_volts, float *reg_volts, bool *usb_host);
+esp_err_t ac_battery_read(float *vbat, float ladder_v[2], float *vsys, bool *usb_host);
+/* 0 release (charging allowed), 1 hold high (pause), 2 pulse high 150 ms */
+void      ac_battery_ce(int mode);
 
 /* ---- status LED -------------------------------------------------------
- * Common anode on the 4.0 V regulator output, cathodes sunk by
+ * Common anode on VSYS (3.90 V), cathodes sunk by
  * GPIO21/22/23.  "Off" releases the pins to high impedance rather than
  * driving them high.  Colour bits: 1 = red, 2 = green, 4 = blue. */
 esp_err_t ac_led_init(void);
@@ -165,7 +171,7 @@ esp_err_t ac_store_history_load(ac_history_t *h);
 esp_err_t ac_store_event_append(const ac_event_record_t *r);
 esp_err_t ac_store_event_get(uint32_t index, ac_event_record_t *r);
 uint32_t  ac_store_event_count(void);
-/* Opaque blobs: the Sunrise ABC state and the pack's energy counter. */
+/* Opaque blobs: the Sunrise ABC state. */
 esp_err_t ac_store_blob_save(const char *key, const void *data, size_t len);
 esp_err_t ac_store_blob_load(const char *key, void *data, size_t len);
 esp_err_t ac_store_erase_all(void);

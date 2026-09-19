@@ -1,7 +1,6 @@
 /* Service console - see ac_console.h for the protocol. */
 #include "ac_console.h"
 
-#include "ac_core/ac_battery.h"
 #include "ac_hal/ac_hal.h"
 
 #include <esp_console.h>
@@ -20,7 +19,7 @@ static bool s_started;
 /* ------------------------------------------------------------------ */
 /* the settings a user may change, and where they live in ac_config_t */
 
-typedef enum { T_STR, T_BOOL, T_F32, T_I32, T_U32, T_U8, T_I16, T_MODE, T_CELL } kind_t;
+typedef enum { T_STR, T_BOOL, T_F32, T_I32, T_U32, T_U8, T_I16, T_MODE } kind_t;
 
 typedef struct {
     const char *key;
@@ -40,9 +39,7 @@ static const setting_t k_settings[] = {
     S(post_event_s, T_U32),
     S(led_show_air_quality, T_BOOL),
     S(battery_interval_s, T_U32),
-    S(cell_type, T_CELL),         S(cells, T_U8),
     S(altitude_m, T_I16),
-    S(low_battery_pct, T_F32),    S(critical_battery_pct, T_F32),
     S(voc_publish_index_as_ppb, T_BOOL),
     S(co2_self_calibration, T_BOOL),
     S(auto_escalate, T_BOOL),
@@ -67,8 +64,6 @@ static void print_setting(const ac_config_t *c, const setting_t *s)
     case T_U32:  printf("%s = %lu\n", s->key, (unsigned long)*(const uint32_t *)base); break;
     case T_U8:   printf("%s = %u\n", s->key, (unsigned)*(const uint8_t *)base); break;
     case T_I16:  printf("%s = %d\n", s->key, (int)*(const int16_t *)base); break;
-    case T_CELL: printf("%s = %s\n", s->key,
-                        ac_cell_type_name((ac_cell_type_t)*(const uint8_t *)base)); break;
     case T_MODE: printf("%s = %s\n", s->key, ac_mode_name(*(const ac_mode_t *)base)); break;
     }
 }
@@ -103,13 +98,6 @@ static bool apply(ac_config_t *c, const setting_t *s, const char *v)
         *(int16_t *)base = (int16_t)n;
         return true;
     }
-    case T_CELL:
-        for (int t = 0; t < AC_CELL_COUNT; t++)
-            if (!strcasecmp(v, ac_cell_type_name((ac_cell_type_t)t))) {
-                *(uint8_t *)base = (uint8_t)t;
-                return true;
-            }
-        return false;
     case T_I32: case T_U32: case T_U8: {
         long n = strtol(v, &end, 10);
         if (end == v || *end || n < 0) return false;
@@ -227,8 +215,9 @@ static int cmd_diag(int argc, char **argv)
            "%.1f C  %.0f %%RH\n", (double)e.last.pm1, (double)e.last.pm25,
            (double)e.last.pm10, (double)e.last.co2, (long)e.last.voc_index,
            (double)e.last.temperature, (double)e.last.humidity);
-    printf("AA pack %.2f V, %.0f %%, usb host %s\n", (double)e.last.battery_v,
-           (double)e.last.battery_pct, e.usb_present ? "yes" : "no");
+    printf("LFP cells %.2f V, %.0f %%, %s, external power %s\n", (double)e.last.battery_v,
+           (double)e.last.battery_pct, e.charging ? "charging" : "not charging",
+           e.usb_present ? "yes" : "no");
     printf("health: SEN62 %s (%u), Sunrise %s (%u), SGP40 %s (%u), SHT40 %s (%u), "
            "battery %s\n",
            e.health.sen6x_ok ? "ok" : "DOWN", e.health.sen6x_errors,

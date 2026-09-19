@@ -3,6 +3,41 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-09-19
+
+User decision: the power system moves to the cross-project Power-Standard's
+**module C** - LiFePO4, charged in the device over USB-C (EDR-21). Replaces
+EDR-18 and EDR-20.
+
+### Changed
+
+- **Power:** USB-C socket → Adafruit #6091 (TI BQ25185, LFP 3.65 V, 1 A, NTC,
+  6 h timer, power path) ⇄ **1S4P Lithium Werks AER18650m2A2** in two Keystone
+  1049 holders, a PICO II 2 A fuse per cell, HY2112 BMS → the Pololu
+  S9V11E2A (3.90 V) → LM66200 → FireBeetle. AA holder, PTC, second regulator
+  and the 13 kΩ lockout removed.
+- **Charge pause** on permanent USB-C (CE held after full; released on
+  unplug, below 3.30 V or after 30 days), **one safety-timer restart** per
+  USB session (1S4P needs 8-9 h from flat).
+- Low/critical battery from the **cell voltage** (3.20 V / 3.10 V), not from a
+  percentage. Settings `cell_type`, `cells`, `low_battery_pct`,
+  `critical_battery_pct` removed (config version 5).
+- **Matter:** battery on endpoint 0 is Rechargeable + Replaceable (LiFePO4,
+  18650, 4 cells) with `BatChargeState`; new endpoint "USB-C" (Wired, DC).
+- Case **136 × 174 × 34 mm**: battery compartment with a vented charger
+  chamber (≥ 30 mm from the gas bay's sensors), cell-retaining ribs and an
+  NTC finger on the door, engraved battery label.
+- ECO on the cells: 2.9 months with margin. BOM about EUR 200.
+
+### Added
+
+- `components/pwr_std` (the Power-Standard's C99 module, unchanged),
+  `ac_core/ac_power` (PWR-K decoding, timer detection, charge-pause decision),
+  `docs/NUTZUNG.md` (user guide, German).
+- ERC checks for the cell chain (fuse per cell, BMS, P− = GND), the SEN62
+  rail over the whole battery range, GPIO levels and the PWR-K thresholds;
+  OpenSCAD checks for the charger's distance to walls and sensors.
+
 ## [1.3.1] - 2026-09-19
 
 ### Added

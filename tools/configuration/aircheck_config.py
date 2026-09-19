@@ -37,12 +37,8 @@ SETTINGS = {
     "post_event_s":         ("s", "how long POST_PRINT lasts"),
     "led_show_air_quality": ("bool", "a short press flashes the air quality colour"),
     "battery_interval_s":   ("s", "how often the battery voltage is read (60..3600)"),
-    "low_battery_pct":      ("%", "low battery warning"),
-    "critical_battery_pct": ("%", "measurement stops below this"),
     "voc_publish_index_as_ppb": ("bool", "publish the VOC index as a Matter number"),
     "co2_self_calibration": ("bool", "Sunrise ABC: 180 h background calibration (needs fresh air ~1x/week)"),
-    "cell_type":            ("alkaline|nimh|lithium", "what is in the 6 x AA compartment (battery % curve)"),
-    "cells":                ("1..8", "number of AA cells in series (the holder takes 6)"),
     "altitude_m":           ("m", "site altitude; CO2 pressure compensation (1.6 %/kPa)"),
     "auto_escalate":        ("bool", "switch to ACTIVE on a detected event"),
 }

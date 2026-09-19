@@ -13,9 +13,9 @@ off and polls its parent router for anything waiting.
 ```
 
 It never routes for anyone else, never becomes a leader, and does not extend
-the mesh. That is the correct role for something running off six AA cells.
-It stays a sleepy end device on a USB-C charger too: the role is compiled
-in, and the cells may take over at any moment.
+the mesh. That is the correct role for something that may run off its
+cells for months. It stays a sleepy end device on a USB-C charger too: the
+role is compiled in, and the cells may take over at any moment.
 
 ## Border router
 
@@ -55,9 +55,11 @@ at exactly 15 s came out higher, **121.9 uA average, 39.3 uA floor**, and that
 is the number in `docs/BATTERY_LIFE.md` (EDR-13).
 
 The 344 mA peak comes out of the FireBeetle's 3.3 V buck, which is fed from
-VSYS - the cells' Pololu regulator at 3.90 V, or the USB-C branch's at
-4.20 V - not from the cells directly; `design.py` checks the worst-case load
-on that rail against the regulator's rating. The
+VSYS - the Pololu regulator at 3.90 V, fed from the charger's LOAD output
+(the cells, or USB-C) - not from the cells directly; `design.py` checks the
+worst-case load on that rail against the regulator's rating, and that the
+peak drawn from the cells at their lowest 3.0 V stays under 2 A. TESTING
+T-P2 checks the SEN62's rail with radio peaks at that voltage. The
 SEN62's switch (Pololu #2810) has no soft start, so its switch-on step also
 lands on the 3.3 V buck - verify that on the bench (TESTING T-P3).
 
