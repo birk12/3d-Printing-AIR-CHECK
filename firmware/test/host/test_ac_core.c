@@ -888,6 +888,33 @@ static void test_battery(void)
 
     CASE("no reading leaves the last value alone");
     CHECK_NEAR(ac_pack_update(&nm, 0.0f), d, 0.001);
+
+    CASE("0 % sits at the undervoltage lockout, 1.0 V per cell");
+    for (int t = 0; t < AC_CELL_COUNT; t++) {
+        CHECK(ac_cell_soc((ac_cell_type_t)t, 1.00f) == 0.0f);
+        CHECK(ac_cell_soc((ac_cell_type_t)t, 1.12f) > 0.0f);
+    }
+
+    CASE("power source: VSYS tells mains from cells");
+    CHECK(ac_power_classify(8.7f, 3.90f, false) == AC_SRC_BATTERY);
+    CHECK(ac_power_classify(8.7f, 3.98f + 0.04f, false) == AC_SRC_BATTERY);   /* +ADC error */
+    CHECK(ac_power_classify(8.7f, 4.17f - 0.04f, false) == AC_SRC_MAINS);     /* -ADC error */
+    CHECK(ac_power_classify(8.7f, 4.20f, false) == AC_SRC_MAINS);
+    CHECK(ac_power_classify(0.1f, 4.20f, false) == AC_SRC_MAINS_NO_CELLS);
+    CHECK(ac_power_classify(8.7f, 0.0f, true) == AC_SRC_MAINS);               /* PC, no reading */
+    CHECK(ac_power_classify(0.0f, 0.0f, true) == AC_SRC_MAINS_NO_CELLS);
+    CHECK(ac_power_matter_status(AC_SRC_BATTERY) == 1);
+    CHECK(ac_power_matter_status(AC_SRC_MAINS) == 2);
+    CHECK(ac_power_matter_status(AC_SRC_MAINS_NO_CELLS) == 3);
+
+    CASE("the cells being taken out and put back keeps the counter");
+    ac_pack_t bk;
+    ac_pack_init(&bk, AC_CELL_LITHIUM, 6);
+    ac_pack_update(&bk, 6 * 1.48f);
+    ac_pack_spend(&bk, 3000.0f);
+    ac_pack_update(&bk, 0.0f);                      /* holder empty, on mains */
+    ac_pack_update(&bk, 6 * 1.48f);                 /* same cells back */
+    CHECK_NEAR(bk.used_mwh, 3000.0, 0.01);
 }
 
 /* ------------------------------------------------------------------ */

@@ -6,10 +6,10 @@ ESP-IDF v5.5.x + esp-matter release/v1.6, target **esp32c6**.
 
 ```
 components/ac_core/    platform-independent measurement core - no esp_* headers
-components/ac_hal/     ESP-IDF drivers: SEN62, Sunrise, SGP40, SHT40, AA pack ADC, LED, button, NVS
+components/ac_hal/     ESP-IDF drivers: SEN62, Sunrise, SGP40, SHT40, AA pack and VSYS ADC, LED, button, NVS
 components/sensirion_gas_index/   vendored VOC Index algorithm (BSD-3)
 main/                  app_main.cpp and the Matter data model
-test/host/             529 checks that run on a workstation
+test/host/             546 checks that run on a workstation
 ```
 
 The split is the point: `ac_core` decides what happens and when, `ac_hal`
@@ -33,10 +33,10 @@ not. Note that `esp-matter/examples/common` is deliberately **not** on
 handling.
 
 The first build takes a while: it compiles the whole Matter SDK. The result
-(v1.3.0):
+(v1.3.1):
 
 ```
-aircheck.bin   1 686 320 bytes, 14 % free in the 1.9 MB OTA partition
+aircheck.bin   1 686 944 bytes, 14 % free in the 1.9 MB OTA partition
 DIRAM          210 208 bytes, 46.5 % of 452 112
 ```
 
@@ -54,7 +54,20 @@ cc -std=c99 -Wall -Wextra -Werror -O1 -Icomponents/ac_core/include \
 /tmp/ac_test
 ```
 
-529 checks, about 20 ms. See `docs/TESTING.md` for what they cover.
+546 checks, about 20 ms. See `docs/TESTING.md` for what they cover.
+
+## Power source (1.3.1)
+
+`ac_power_classify()` in `ac_core/ac_battery.c` tells the cells from external
+power by VSYS on GPIO0 (the FireBeetle's 1M/1M divider): at or above
+`AC_EXT_POWER_V` (4.08 V), or with an enumerated USB host, the device is on
+external power; a pack below `AC_PACK_ABSENT_V` (3.0 V) then means an empty
+holder. External power means CONTINUOUS mode, no low/critical battery state,
+and only the regulator's quiescent current and the resistors across the pack
+booked against the cells. The log prints `power: cells`, `power: external,
+cells as backup` or `power: external, no cells` with VSYS and the pack
+voltage on each change; Matter Power Source `Status` is 1, 2 or 3
+accordingly (`docs/MATTER.md`).
 
 ## Configuration
 

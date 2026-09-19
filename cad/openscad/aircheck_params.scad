@@ -193,6 +193,27 @@ D1_HOLES          = [[2.54, 7.62], [13.97, 7.62]];
 D1_X              = SW1_X;
 D1_Y              = SW1_Y + SW1_S + 3.0;
 MOD_Z             = FACE + 1.0;      // modules on 1 mm pads
+// second S9V11E2A, the external-power branch (4.20 V), turned 90 deg
+PS2_X             = D1_X + D1_L + 2.8;
+PS2_Y             = D1_Y + 3.8;
+
+// ---------- USB-C power socket (Adafruit #6050, sunken) -----------------------
+// Board file: 20.32 x 13.97 mm, 2 x d2.5 plated holes at (2.286, 10.414) and
+// (18.034, 10.414), the socket at the 13.97 mm edge, which faces the top wall.
+// It sits above the FireBeetle's top edge on two posts.
+J2_L              =  20.32;
+J2_W              =  13.97;
+J2_T              =   1.6;
+J2_HOLES          = [[2.286, 10.414], [18.034, 10.414]];
+J2_SOCKET_X0      =   4.5;           // board-local extent of the socket body
+J2_SOCKET_X1      =  15.8;
+J2_SOCKET_Y0      =   7.0;
+J2_SOCKET_H       =   3.4;           // straddles the board
+J2_X              =  20.0;
+J2_Y              = CASE_H - WALL - 0.3 - J2_W;
+J2_Z              = FB_Z + FB_PCB_T + FB_TOP_PARTS + 1.2;   // clear of the FireBeetle
+J2_OPEN_W         =  13.0;
+J2_OPEN_H         =   7.5;
 
 // ---------- front panel: LED holder and push button ---------------------------
 // Signal Construct SMR1089: d8 hole, M8 x 0.75 nut, 17 mm behind the panel.

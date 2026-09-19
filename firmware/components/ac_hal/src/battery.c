@@ -3,12 +3,13 @@
  *   pack       AA pack -> 1 MOhm -> GPIO3 -> 220 kOhm -> GND, 100 nF at the
  *              pin.  6 x 1.8 V (fresh lithium) = 10.8 V -> 1.95 V at the pin.
  *              The divider draws ~9 uA at 10.8 V, ~5 uA at 6 V.
- *   regulator  the Pololu S9V11E2A's 4.0 V after the LM66200 ideal diode goes
- *              into the FireBeetle's battery input, where DFRobot's own
- *              1M/1M divider brings it to GPIO0.  A sanity check only.
+ *   VSYS       the FireBeetle's battery input, after the LM66200 ideal diode,
+ *              through DFRobot's own 1M/1M divider on GPIO0: 3.90 V from the
+ *              cells' regulator, 4.20 V from the USB-C power socket's (or the
+ *              FireBeetle's charger when a computer is plugged in).  That
+ *              difference is how external power is recognised
+ *              (ac_power_classify in ac_core).
  *   USB        whether a USB host has enumerated the USB Serial/JTAG port.
- *              A charger or power bank does not count, on purpose: only a
- *              computer should switch the device into CONTINUOUS mode.
  */
 #include "ac_hal/ac_hal.h"
 

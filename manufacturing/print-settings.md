@@ -60,8 +60,10 @@ the battery compartment's side walls, all entered from the seam side. Hole
 3.84 mm diameter, 6 mm deep - sized for PETG per the manufacturer chart. Iron
 at 220 C, press until flush, keep it square.
 
-The modules (FireBeetle, SGP40, LM66200) and the battery holder use **direct
-self-tapping screws** into printed cores: fitted once, never touched again.
+The modules (FireBeetle, SGP40, LM66200, the J2 USB-C power socket) and the
+battery holder use **direct self-tapping screws** into printed cores: fitted
+once, never touched again. J2 is the one that sees force in use, every time
+a charger is plugged in: the screws take it, not the solder joints.
 
 ## What to check on the first print
 
@@ -76,3 +78,5 @@ self-tapping screws** into printed cores: fitted once, never touched again.
    without touching the bay walls?
 6. Do the LED holder (8.2 mm) and the button (7.2 mm) go through their holes,
    and do their nuts sit flat on the spot faces inside?
+7. v1.3.1: does a USB-C plug seat fully in J2 through the opening in the top
+   wall, with J2 screwed to its two posts, and is that opening's roof clean?

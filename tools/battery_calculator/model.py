@@ -9,11 +9,13 @@ assumption, its source string says ASSUMPTION.
 Since v1.3 the device runs from six AA cells in series, so the model works in
 energy (mWh at the cells), not in mAh of a 3.8 V cell.  Power path:
 
-    6 x AA -> fuse -> Pololu S9V11E2A (buck-boost, 4.0 V) -> LM66200 ideal
-    diode -> FireBeetle battery input -> TPS62A02 buck -> 3.3 V
+    6 x AA -> fuse -> Pololu S9V11E2A (buck-boost, 3.90 V) -> LM66200 ideal
+    diode -> FireBeetle battery input (VSYS) -> TPS62A02 buck -> 3.3 V
 
 3.3 V loads (ESP32-C6, SEN62, SGP40, SHT40) pass both converters; the Sunrise
-and the status LED sit directly on the 4.0 V rail.
+and the status LED sit directly on VSYS.  Since v1.3.1 a USB-C power socket
+feeds the LM66200's second input at 4.20 V; on external power the cells only
+lose the regulator's quiescent current and the resistors across them.
 
 Run:  python3 tools/battery_calculator/model.py                  # table
       python3 tools/battery_calculator/model.py --markdown       # BATTERY_LIFE.md body
@@ -45,7 +47,8 @@ SRC = {
              "idle 0.08 uA",
     "sparkfun": "SparkFun SGP40 breakout (SEN-18345) schematic: no regulator; power "
                 "LED on a cuttable jumper - cut in this build",
-    "grove": "Seeed Grove SHT40 (101020940) schematic: no regulator, no LED",
+    "grove": "Seeed Grove SHT40 (101021032): 1.2 uA idle per Seeed; no LED; a small "
+             "regulator and level shifters are likely (photo) and counted in that figure",
     "c6_icd": "Microamp Home, 'I built a sleeper IKEA smart home sensor' (YouTube "
               "KE7bOYCYETM): ESP32-C6, Matter SIT ICD at a 15 s slow poll, PPK2 "
               "over 1 h: 121.88 uA average, 39.31 uA sleep floor",
@@ -55,7 +58,9 @@ SRC = {
               "most input/output combinations; typical efficiency 85-95 %",
     "tps62a02": "TI TPS62A02 datasheet, efficiency 3.8 V -> 3.3 V at 50..100 mA: ~90 %",
     "divider": "pack divider 1 M / 220 k (ADC on GPIO3), permanently across the pack",
-    "led": "status LED: 5 mA from 4.0 V for a 3 s flash, 6 times a day",
+    "uvlo": "undervoltage lockout: the regulator's internal 100 k EN pull-up in series "
+            "with R11 13 k, permanently across the pack (Pololu: 10 uA/V on VIN)",
+    "led": "status LED: 5 mA from VSYS (3.9 V) for a 3 s flash, 6 times a day",
     "dash": "ASSUMPTION: a second Matter controller (the e-ink dashboard) reads the "
             "sensor every 15 min; each read costs ~10 poll-equivalents of radio time",
     "l91": "Energizer L91 datasheet: 3500 mAh rated, ~1.45 V average at light "
@@ -63,7 +68,7 @@ SRC = {
     "eneloop_pro": "Panasonic eneloop pro BK-3HCDE: 2500 mAh min x 1.2 V (-> 2.9 Wh); "
                    "85 % after 1 year (~1.25 %/month)",
     "alkaline": "Energizer E91 datasheet: ~3000 mWh at 25 mA to 0.8 V; 10-year "
-                "storage (~0.2 %/month); to the 0.9 V/cell floor ~85 % of that",
+                "storage (~0.2 %/month); to the 1.0 V/cell lockout ~80 % of that",
     "li15": "ASSUMPTION: 1.5 V Li-ion AA with USB-C: independent tests find "
             "2.3-2.8 Wh against 3000-3500 mWh on the label; their internal buck "
             "converter adds its own quiescent loss (not modelled)",
@@ -80,6 +85,7 @@ EFF_BUCK = 0.90       # TPS62A02 on the FireBeetle, src=tps62a02
 EFF_3V3 = EFF_REG * EFF_BUCK
 REG_IQ_MA = 0.2       # at the regulator input, src=pololu
 DIVIDER_OHM = 1_000_000 + 220_000   # src=divider
+UVLO_OHM = 100_000 + 13_000         # src=uvlo
 
 # ---- SEN62 (PM only, power-gated between windows) -------------------------
 SEN62_V = 3.3
@@ -89,7 +95,7 @@ SEN62_STARTUP_S = 0.1     # src=sen6x_start
 SEN62_STOP_S = 1.4        # src=sen6x_start; charged at full current
 
 # ---- Sunrise 006-0-0008 (CO2, single measurement, EN low in between) -----
-SUNRISE_V = 4.0           # VBB on the regulator rail
+SUNRISE_V = 3.9           # VBB on VSYS
 SUNRISE_MC = 1.60         # per measurement, src=sunrise
 SUNRISE_SLEEP_UA = 0.2    # VBB with EN low, src=sunrise (TDE7318 table)
 
@@ -121,7 +127,7 @@ class Cell:
     key: str
     name: str
     mwh: float                  # per cell, nominal
-    usable: float               # fraction above the 0.9 V/cell floor
+    usable: float               # fraction above the 1.0 V/cell lockout
     v_avg: float                # average cell voltage under this load
     self_discharge_pct_month: float
     src: str
@@ -133,7 +139,7 @@ CELLS = {
                     0.1, "l91"),
     "nimh": Cell("nimh", "Panasonic eneloop pro (NiMH)", 2900.0, 0.95, 1.20,
                  1.25, "eneloop_pro"),
-    "alkaline": Cell("alkaline", "Alkaline (Energizer E91 class)", 3000.0, 0.85, 1.25,
+    "alkaline": Cell("alkaline", "Alkaline (Energizer E91 class)", 3000.0, 0.80, 1.25,
                      0.2, "alkaline"),
     "li15": Cell("li15", "1.5 V Li-ion AA with USB-C", 2500.0, 0.95, 1.50,
                  2.0, "li15", recommended=False),
@@ -225,11 +231,12 @@ def budget(p: Profile, cell: Cell, worst: bool = False) -> Budget:
         DASH_READS_PER_DAY * DASH_POLLS_PER_READ * C6_POLL_CHARGE_UAS / 86400.0 * 3.3)
     b.lines["FireBeetle quiescent"] = at3v3(BOARD_QUIESCENT_UA * 3.3)
     b.lines["status LED"] = at4v0(
-        LED_I_MA * 1000.0 * 4.0 * LED_FLASH_S * LED_FLASHES_PER_DAY / 86400.0)
+        LED_I_MA * 1000.0 * 3.9 * LED_FLASH_S * LED_FLASHES_PER_DAY / 86400.0)
 
     # --- power path -------------------------------------------------------
     b.lines["Pololu regulator quiescent"] = REG_IQ_MA * v_pack * 24.0
-    b.lines["pack voltage divider"] = v_pack ** 2 / DIVIDER_OHM * 1000.0 * 24.0
+    b.lines["pack divider + undervoltage lockout"] = (
+        v_pack ** 2 * (1.0 / DIVIDER_OHM + 1.0 / UVLO_OHM) * 1000.0 * 24.0)
 
     # --- cells ------------------------------------------------------------
     b.lines["cell self-discharge"] = (cell.mwh * CELL_COUNT
@@ -277,6 +284,16 @@ def table(cell: Cell) -> list[dict]:
     return rows
 
 
+def mains_backup_months(cell: Cell) -> float:
+    """How long the cells last as the backup while external power carries the
+    device: they only lose the regulator's quiescent current, the resistors
+    across them and their own self-discharge."""
+    v = cell.v_avg * CELL_COUNT
+    mw = REG_IQ_MA * v + v * v * (1.0 / DIVIDER_OHM + 1.0 / UVLO_OHM) * 1000.0
+    sd_mw = cell.mwh * CELL_COUNT * cell.self_discharge_pct_month / 100.0 / 30.44 / 24.0
+    return pack_usable_mwh(cell) / (mw + sd_mw) / 24.0 / 30.44
+
+
 def eco_by_cell() -> list[dict]:
     eco = PROFILES[0]
     out = []
@@ -289,6 +306,7 @@ def eco_by_cell() -> list[dict]:
             "months_with_margin": round(runtime_days(b, MARGIN) / 30.44, 2),
             "months_worst_case": round(
                 runtime_days(budget(eco, c, worst=True), MARGIN) / 30.44, 2),
+            "months_as_mains_backup": round(mains_backup_months(c), 1),
         })
     return out
 
@@ -370,6 +388,21 @@ def markdown(cell: Cell) -> str:
         name = r["cell"] + ("" if r["recommended"] else " - not recommended")
         w(f"| {name} | {r['pack_wh']:.1f} Wh | {r['months_nominal']:.1f} months | "
           f"**{r['months_with_margin']:.1f} months** | {r['months_worst_case']:.1f} months |")
+    w("")
+    w("## On external power")
+    w("")
+    w("With the USB-C power socket in use the device runs in CONTINUOUS mode from "
+      "the charger. Cells left in the holder are the backup: the ideal diode "
+      "switches to them without a gap when the power goes. Meanwhile they only "
+      "lose the regulator's quiescent current, the lockout and divider "
+      "resistors, and their own self-discharge:")
+    w("")
+    w("| cells | backup still usable after |")
+    w("|---|---|")
+    for r in eco_by_cell():
+        w(f"| {r['cell']} | {r['months_as_mains_backup']:.1f} months |")
+    w("")
+    w("For permanent mains operation the holder can also stay empty.")
     w("")
     w(f"## All profiles on {cell.name}")
     w("")

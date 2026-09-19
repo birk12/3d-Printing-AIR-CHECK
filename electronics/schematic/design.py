@@ -48,11 +48,17 @@ RAILS = {
                       "6 x AA in series: 0.9 V/cell floor, 1.45 V L91 average, "
                       "1.8 V open-circuit of a fresh L91"),
     "VPACK_F":   Rail("VPACK_F", 5.40, 8.70, 10.80, "VPACK behind the PTC fuse F1"),
-    "+4V0":      Rail("+4V0", 3.92, 4.00, 4.08,
-                      "Pololu S9V11E2A, trimpot set to 4.00 V +-2 %; always on"),
-    "VSYS":      Rail("VSYS", 3.88, 4.00, 4.24,
-                      "FireBeetle battery input: +4V0 through the LM66200, or the "
-                      "FireBeetle's own CN3165 at 4.2 V +-1 % while USB is plugged in"),
+    "+VREG":     Rail("+VREG", 3.82, 3.90, 3.98,
+                      "PS1 Pololu S9V11E2A from the cells, trimmed to 3.90 V +-2 %; "
+                      "off below ~6.1 V pack (UVLO through R11 on its EN)"),
+    "VBUS_EXT":  Rail("VBUS_EXT", 4.75, 5.00, 5.25,
+                      "USB-C power socket J2: 5 V from any USB-C charger (5.1k on CC)"),
+    "+VEXT":     Rail("+VEXT", 4.17, 4.20, 4.23,
+                      "PS2 Pololu S9V11E2A from J2, trimmed to 4.20 V"),
+    "VSYS":      Rail("VSYS", 3.80, 3.90, 4.24,
+                      "FireBeetle battery input, the higher of +VREG and +VEXT through "
+                      "the LM66200, or the FireBeetle's own CN3165 at 4.2 V +-1 % "
+                      "while a computer is on its USB-C"),
     "+3V3":      Rail("+3V3", 3.20, 3.30, 3.40, "FireBeetle TPS62A02 buck, always on"),
     "+3V3_SEN":  Rail("+3V3_SEN", 3.20, 3.30, 3.40, "+3V3 behind the Pololu #2810 switch"),
     "CO2_VDDIO": Rail("CO2_VDDIO", 0.0, 3.30, 3.40,
@@ -211,15 +217,17 @@ PARTS: list[Part] = [
         i_max_ma=500.0,
     ),
     Part(
-        ref="PS1", value="Pololu S9V11E2A buck-boost, set to 4.00 V", mfr="Pololu",
+        ref="PS1", value="Pololu S9V11E2A buck-boost, set to 3.90 V", mfr="Pololu",
         mpn="5719", footprint="10.9 x 16.5 x 4.0 mm, 4 pins: VOUT GND VIN EN",
         pins={"VIN": "input 2-16 V (3 V to start)", "GND": "ground",
               "VOUT": "output 2.5-9 V (trimpot)", "EN": "enable, 100k pull-up to VIN"},
-        why="Turns 5.4-10.8 V from the pack into a steady 4.0 V - what the "
-            "FireBeetle expects on its battery input. Buck-boost, so the whole pack is usable. EN stays open "
-            "(on). Set the trimpot before connecting anything (ASSEMBLY step 4).",
+        why="Turns 6-10.8 V from the pack into a steady 3.90 V for the FireBeetle's "
+            "battery input. Buck-boost, so the whole pack is usable. Its EN pin, "
+            "pulled up to VIN inside through 100k, gets R11 13k to GND: an "
+            "undervoltage lockout that switches the device off at ~1.0 V per cell, "
+            "before a weak cell can be driven into reversal or leak (EDR-20). "
+            "Set the trimpot before connecting anything (ASSEMBLY step 4).",
         price_eur=6.50, supplier="Eckstein / Pololu",
-        nc=("EN",),
         vsupply_min=3.0, vsupply_max=16.0, i_max_ma=1700.0,
     ),
     Part(
@@ -227,16 +235,46 @@ PARTS: list[Part] = [
         mpn="5830", footprint="16.51 x 10.16 mm, 2 x 2.5 mm holes, 6 pins",
         pins={"VIN1": "input 1", "VIN2": "input 2", "GND": "ground", "VOUT": "output",
               "ON": "active-low enable", "ST": "status, open drain"},
-        why="Feeds +4V0 into the FireBeetle's battery input and blocks every current "
+        why="Feeds +VREG into the FireBeetle's battery input and blocks every current "
             "the other way: with USB plugged in the FireBeetle's charger holds its "
-            "battery input at 4.2 V, 0.2 V above +4V0, far past the 70 mV reverse-"
+            "battery input at 4.2 V, 0.3 V above +VREG, far past the 70 mV reverse-"
             "blocking threshold (TI SLVSG04). So the AA cells are never charged. "
-            "VIN2 and ON to GND (truth table: VIN1 > VIN2, ON low = VIN1 feeds VOUT). "
+            "Its second input takes the USB-C power branch at 4.20 V: the higher "
+            "input feeds VOUT, so external power always wins and the cells become "
+            "the backup, switched over without a gap (EDR-20). ON to GND. "
             "1.3 uA quiescent. ST is unused.",
         price_eur=3.50, supplier="Adafruit / Berrybase",
         nc=("ST",),
         vsupply_min=1.6, vsupply_max=5.5, i_max_ma=2500.0,
         datasheet="TI LM66200 SLVSG04; github.com/adafruit/Adafruit-LM66200-PCB",
+    ),
+    Part(
+        ref="J2", value="USB-C power socket, sunken breakout", mfr="Adafruit",
+        mpn="6050", footprint="20.32 x 13.97 mm, 2 x d2.5 plated holes, 8-pin 0.1in row",
+        pins={"VBUS": "5 V", "GND": "ground", "D+": "data", "D-": "data",
+              "CC1": "config", "CC2": "config", "SBU1": "sideband", "SBU2": "sideband"},
+        why="Continuous operation from any USB-C charger (an 18 W phone charger is "
+            "plenty): the board's 5.1k resistors on CC ask the charger for plain "
+            "5 V, up to 1.5 A, without any negotiation. Power only - the data "
+            "lines stay open; configuration and updates keep using the "
+            "FireBeetle's own USB-C. Screwed to two posts, so plugging in does "
+            "not load the solder joints.",
+        price_eur=3.50, supplier="Adafruit / Mouser",
+        nc=("D+", "D-", "CC1", "CC2", "SBU1", "SBU2"),
+        vsupply_min=4.75, vsupply_max=5.25,
+        datasheet="github.com/adafruit/Adafruit-Sunken-USB-Type-C-Breakout-PCB",
+    ),
+    Part(
+        ref="PS2", value="Pololu S9V11E2A buck-boost, set to 4.20 V", mfr="Pololu",
+        mpn="5719", footprint="10.9 x 16.5 x 4.0 mm, 4 pins: VOUT GND VIN EN",
+        pins={"VIN": "input 2-16 V (3 V to start)", "GND": "ground",
+              "VOUT": "output 2.5-9 V (trimpot)", "EN": "enable, 100k pull-up to VIN"},
+        why="The external-power branch: 5 V from J2 to 4.20 V, 0.3 V above the "
+            "cells' branch, so the LM66200 always prefers it. The same part as PS1 "
+            "- one spare fits both. EN open (on).",
+        price_eur=6.50, supplier="Eckstein / Pololu",
+        nc=("EN",),
+        vsupply_min=3.0, vsupply_max=16.0, i_max_ma=1700.0,
     ),
     Part(ref="J1", value="JST PH 2-way pigtail, 100 mm", mfr="generic",
          mpn="PHR-2 with leads", footprint="JST PH 2.0 mm", pins={"+": "+", "-": "-"},
@@ -270,8 +308,12 @@ PARTS: list[Part] = [
     _r("R6", "10 k", "Sunrise SCL pull-up, across pins 3 and 5."),
     _r("R7", "100 k", "Sunrise EN pull-down: EN must never float (PSP12440), also not "
                      "while the ESP32 is in reset."),
-    _r("R8", "1 k", "Red: (4.0 V - 2.0 V) / 1k = 2.0 mA (2.2 mA on USB, 4.2 V)."),
-    _r("R9", "330", "Green: (4.0 V - 3.1 V) / 330 = 2.7 mA."),
+    _r("R11", "13 k", "PS1 undervoltage lockout: with the regulator's internal 100k "
+                      "pull-up, EN = VIN x 13/113. Off below 0.7 V on EN = 6.1 V pack "
+                      "(1.0 V per cell), on again only above 0.8 V = 7.0 V, i.e. with "
+                      "fresh cells. Draws 77 uA at 8.7 V."),
+    _r("R8", "1 k", "Red: (3.9 V - 2.0 V) / 1k = 1.9 mA (2.2 mA at 4.2 V on external power)."),
+    _r("R9", "330", "Green: (3.9 V - 3.1 V) / 330 = 2.4 mA."),
     _r("R10", "330", "Blue: as green."),
     # ---- user interface ----------------------------------------------------
     Part(ref="LED1", value="RGB LED 5 mm diffused, common anode", mfr="Adafruit",
@@ -319,12 +361,15 @@ NETS: dict[str, list[tuple[str, str]]] = {
     # ---- power path ---------------------------------------------------------
     "VPACK":     [("BT1", "+"), ("F1", "1")],
     "VPACK_F":   [("F1", "2"), ("PS1", "VIN"), ("R1", "1")],
-    "+4V0":      [("PS1", "VOUT"), ("D1", "VIN1")],
+    "+VREG":     [("PS1", "VOUT"), ("D1", "VIN1")],
+    "PS1_EN":    [("PS1", "EN"), ("R11", "1")],
+    "VBUS_EXT":  [("J2", "VBUS"), ("PS2", "VIN")],
+    "+VEXT":     [("PS2", "VOUT"), ("D1", "VIN2")],
     "VSYS":      [("D1", "VOUT"), ("J1", "+"), ("M1", "BAT+"), ("U4", "2"), ("LED1", "A")],
     "+3V3":      [("M1", "3V3"), ("SW1", "VIN"), ("U2", "3V3"), ("U3", "VCC")],
     "+3V3_SEN":  [("SW1", "VOUT"), ("U1", "1"), ("U1", "6"), ("R3", "1"), ("R4", "1")],
-    "GND":       [("BT1", "-"), ("PS1", "GND"), ("D1", "GND"), ("D1", "VIN2"),
-                  ("D1", "ON"), ("J1", "-"), ("M1", "BAT-"), ("M1", "GND"),
+    "GND":       [("BT1", "-"), ("PS1", "GND"), ("D1", "GND"),
+                  ("D1", "ON"), ("J2", "GND"), ("PS2", "GND"), ("R11", "2"), ("J1", "-"), ("M1", "BAT-"), ("M1", "GND"),
                   ("SW1", "GND"), ("U1", "2"), ("U1", "5"), ("U2", "GND"),
                   ("U3", "GND"), ("U4", "1"), ("U4", "6"), ("R2", "2"), ("C1", "2"),
                   ("R7", "2"), ("SW2", "2")],
@@ -355,6 +400,7 @@ NETS: dict[str, list[tuple[str, str]]] = {
 # Where each inline part is physically soldered (for NETLIST.md and ASSEMBLY).
 SOLDER_AT = {
     "F1": "in the red lead of the battery holder, 2 cm from the holder",
+    "R11": "across PS1's EN and GND pins, on the module",
     "R1": "at the regulator's VIN pad, on its own wire to FireBeetle IO3",
     "R2": "at FireBeetle IO3 to GND, together with C1",
     "C1": "at FireBeetle IO3 to GND",
@@ -389,7 +435,7 @@ C6_ROM_UART_TX = 16      # the ROM boot log toggles it after every reset
 
 GPIO_MAP = [
     GpioUse(0,  "(on board)", "REG_ADC", "analog in", True, False,
-            "FireBeetle 1M/1M divider from VSYS: 4.0 V on the pack, 4.2 V on USB"),
+            "FireBeetle 1M/1M divider from VSYS: 3.9 V on the cells, 4.2 V on external power"),
     GpioUse(1,  "1",   "BTN",       "in",    True,  False, "wake source, internal pull-up, active low"),
     GpioUse(2,  "2",   "SEN_EN",    "out",   True,  False, "held LOW in sleep"),
     GpioUse(3,  "3",   "PACK_ADC",  "analog in", True, False, "pack / 5.545, ADC1 channel 3"),
@@ -436,6 +482,10 @@ BUSES = {
 ESP_TX_PEAK_MA = 350.0      # ESP32-C6 802.15.4 TX peak at 3.3 V, conservative
 ADC_MAX_V = 2.9             # ESP32-C6 ADC, 12 dB attenuation, usable range
 LM66200_VRCB_MAX = 0.070    # reverse-current blocking threshold, max (SLVSG04)
+ADC_ERR_VSYS = 0.040        # calibrated ESP32-C6 ADC, ~20 mV at the pin, x2 divider
+PS1_EN_PULLUP = 100e3       # Pololu S9V11E2A: EN pulled up to VIN through 100k
+PS1_EN_OFF_V = 0.7          # Pololu: below 0.7 V sleep ...
+PS1_EN_ON_V = 0.8           # ... above 0.8 V on
 LED_VF = {"R": 1.8, "G": 2.9, "B": 2.9}     # minimum forward voltages
 PS1_EFF_MIN = 0.80
 
@@ -498,7 +548,8 @@ def run_erc() -> Erc:
 
     # 4. supply-voltage compatibility
     supply_of = {"U1": ("1", "+3V3_SEN"), "U2": ("3V3", "+3V3"), "U3": ("VCC", "+3V3"),
-                 "U4": ("2", "VSYS"), "PS1": ("VIN", "VPACK_F"), "D1": ("VIN1", "+4V0"),
+                 "U4": ("2", "VSYS"), "PS1": ("VIN", "VPACK_F"), "D1": ("VIN1", "+VREG"),
+                 "PS2": ("VIN", "VBUS_EXT"), "J2": ("VBUS", "VBUS_EXT"),
                  "SW1": ("VIN", "+3V3"), "M1": ("BAT+", "VSYS")}
     for ref, (pin, railname) in supply_of.items():
         p = PARTS_BY_REF[ref]
@@ -517,25 +568,54 @@ def run_erc() -> Erc:
             "VPACK may only connect the holder to the fuse")
 
     # 6. no path that could charge the AA cells: VSYS (where the FireBeetle's
-    #    charger sits) is separated from +4V0 by D1 alone, and D1 blocks
-    #    whenever the charger lifts VSYS above +4V0
-    e.check(("D1", "VIN1") in NETS["+4V0"] and ("D1", "VOUT") in NETS["VSYS"],
-            "D1 must sit between +4V0 and VSYS")
-    shared = {c for c in NETS["+4V0"]} & {c for c in NETS["VSYS"]}
-    e.check(not shared, f"+4V0 and VSYS share {shared}")
-    e.check(4.20 * 0.99 - RAILS["+4V0"].vmax > LM66200_VRCB_MAX,
-            "charger voltage is not far enough above +4V0 for D1 to block")
-    e.check(_nets_of("D1", "ON") == ["GND"] and _nets_of("D1", "VIN2") == ["GND"],
-            "D1: ON low (enabled) and VIN2 at GND so VIN1 always feeds VOUT")
+    #    charger sits) is separated from +VREG by D1 alone, and D1 blocks
+    #    whenever the charger lifts VSYS above +VREG
+    e.check(("D1", "VIN1") in NETS["+VREG"] and ("D1", "VOUT") in NETS["VSYS"],
+            "D1 must sit between +VREG and VSYS")
+    shared = {c for c in NETS["+VREG"]} & {c for c in NETS["VSYS"]}
+    e.check(not shared, f"+VREG and VSYS share {shared}")
+    e.check(4.20 * 0.99 - RAILS["+VREG"].vmax > LM66200_VRCB_MAX,
+            "charger voltage is not far enough above +VREG for D1 to block")
+    e.check(_nets_of("D1", "ON") == ["GND"], "D1: ON low (enabled)")
+    # the external branch: into D1's second input only, and always the winner
+    e.check(_nets_of("D1", "VIN2") == ["+VEXT"] and _nets_of("PS2", "VOUT") == ["+VEXT"],
+            "PS2 must feed D1 VIN2 and nothing else")
+    e.check(RAILS["+VEXT"].vmin - RAILS["+VREG"].vmax > LM66200_VRCB_MAX,
+            "+VEXT is not far enough above +VREG for external power to take over")
+    e.check(RAILS["+VEXT"].vmax <= PARTS_BY_REF["M1"].vsupply_max,
+            "+VEXT exceeds the FireBeetle's battery input")
+    e.check(not ({c for c in NETS["VBUS_EXT"]} & {c for c in NETS["VPACK_F"]}),
+            "USB 5 V must never touch the pack")
+    # external power is recognised from VSYS (ac_core/ac_battery.h)
+    thr = None
+    hdr = os.path.join(ROOT, "firmware/components/ac_core/include/ac_core/ac_battery.h")
+    for line in open(hdr):
+        if line.startswith("#define AC_EXT_POWER_V"):
+            thr = float(line.split()[2].rstrip("f"))
+    e.check(thr is not None, "AC_EXT_POWER_V not found in ac_battery.h")
+    if thr is not None:
+        e.check(RAILS["+VREG"].vmax + ADC_ERR_VSYS < thr,
+                f"battery branch {RAILS['+VREG'].vmax} V + ADC error reaches the "
+                f"{thr} V external-power threshold")
+        e.check(min(RAILS["+VEXT"].vmin, 4.20 * 0.99) - ADC_ERR_VSYS > thr,
+                "external power could read below the threshold")
+    # undervoltage lockout on PS1: off at >= 1.0 V per cell, restarts with any fresh pack
+    r11 = 13e3
+    v_off = PS1_EN_OFF_V * (PS1_EN_PULLUP + r11) / r11
+    v_on = PS1_EN_ON_V * (PS1_EN_PULLUP + r11) / r11
+    e.check(v_off >= 6 * 1.0, f"UVLO at {v_off:.2f} V lets cells go below 1.0 V")
+    e.check(v_on <= 6 * 1.20, f"UVLO restart at {v_on:.2f} V is above a fresh NiMH pack")
+    e.check(_nets_of("PS1", "EN") == ["PS1_EN"] and _nets_of("R11", "2") == ["GND"],
+            "R11 must sit between PS1 EN and GND")
 
     # 7. current: regulator, switch, fuse
-    # everything hangs off +4V0 through D1: the 3.3 V loads via the FireBeetle's
+    # everything hangs off one regulator through D1: the 3.3 V loads via the FireBeetle's
     # buck, the Sunrise and the LED directly on VSYS
     load_4v0_ma = ((PARTS_BY_REF["U1"].i_max_ma + ESP_TX_PEAK_MA
                     + PARTS_BY_REF["U2"].i_max_ma) * 3.3 / (0.9 * 4.0)
                    + PARTS_BY_REF["U4"].i_max_ma + 3 * 3.0)
     e.check(load_4v0_ma < PARTS_BY_REF["PS1"].i_max_ma * 0.6,
-            f"worst-case +4V0 load {load_4v0_ma:.0f} mA leaves too little regulator margin")
+            f"worst-case regulator load {load_4v0_ma:.0f} mA leaves too little regulator margin")
     e.check(PARTS_BY_REF["SW1"].i_max_ma >= 2 * PARTS_BY_REF["U1"].i_max_ma,
             "SW1 must carry the SEN62's peaks with margin")
     # sustained pack current: SEN62 window + radio average, at the lowest pack voltage
@@ -664,9 +744,12 @@ def netlist_markdown() -> str:
     w("")
     w("```")
     w("6 x AA (BT1) --F1 PTC 0.5 A--> VPACK_F 5.4..10.8 V")
-    w("   VPACK_F --> PS1 Pololu S9V11E2A (buck-boost) --> +4V0")
+    w("   VPACK_F --> PS1 Pololu S9V11E2A (buck-boost) --> +VREG 3.90 V")
     w("   VPACK_F --R1 1M--+--R2 220k-- GND        PACK_ADC on GPIO3 (C1 100 nF)")
-    w("+4V0 --> D1 LM66200 (ideal diode, blocks reverse) --> VSYS --> FireBeetle BAT (J1)")
+    w("   VPACK_F --100k (inside PS1)-- PS1 EN --R11 13k-- GND   UVLO: off < 6.1 V, on > 7.0 V")
+    w("USB-C power socket J2 (5 V) --> PS2 Pololu S9V11E2A --> +VEXT 4.20 V")
+    w("+VREG 3.90 V --> D1 LM66200 VIN1 -+")
+    w("+VEXT 4.20 V --> D1 LM66200 VIN2 -+-> the higher one --> VSYS --> FireBeetle BAT (J1)")
     w("VSYS --> Sunrise VBB, LED common anode (spliced onto the J1 + lead)")
     w("USB-C --> FireBeetle CN3165 --> VSYS at 4.2 V: D1 blocks, the cells are never charged;")
     w("          the Sunrise and the LED then run from USB too")
@@ -782,11 +865,11 @@ def bom_markdown() -> str:
         "sensors (Sunrise, SEN62, SGP40, SHT40, cables)":
             ("U1", "U2", "U3", "U4", "W1", "W2", "W3"),
         "controller (FireBeetle)": ("M1",),
-        "power (holder, fuse, regulator, ideal diode, switch)":
-            ("BT1", "F1", "PS1", "D1", "SW1", "J1"),
+        "power (holder, fuse, regulators, ideal diode, switch, USB-C power socket)":
+            ("BT1", "F1", "PS1", "PS2", "D1", "SW1", "J1", "J2"),
         "first set of cells": ("CELL",),
         "LED, button, resistors": ("LED1", "LH1", "SW2", "C1", "R1", "R2", "R3", "R4",
-                                   "R5", "R6", "R7", "R8", "R9", "R10"),
+                                   "R5", "R6", "R7", "R8", "R9", "R10", "R11"),
         "screws, wire, heat shrink": ("X1", "X2", "X3", "X5"),
     }
     w("| group | EUR |")
@@ -820,10 +903,11 @@ def bom_markdown() -> str:
     w("")
     w("| cells | runtime, ECO, with margin | note |")
     w("|---|---|---|")
-    w("| Energizer Ultimate Lithium L91 | 3.7 months | recommended |")
-    w("| eneloop pro (NiMH) | 2.2 months | recharge in any NiMH charger, outside the device |")
-    w("| alkaline | 2.1 months | cheap; remove when empty, they can leak |")
-    w("| 1.5 V Li-ion with USB-C | 1.8 months | not recommended (docs/BATTERY_LIFE.md) |")
+    w("| Energizer Ultimate Lithium L91 | 3.5 months | recommended |")
+    w("| eneloop pro (NiMH) | 2.1 months | recharge in any NiMH charger, outside the device; do not leave empty cells in |")
+    w("| alkaline | 1.8 months | cheap; remove when empty, they can leak |")
+    w("| 1.5 V Li-ion with USB-C | 1.6 months | not recommended (docs/BATTERY_LIFE.md) |")
+    w("| none, USB-C charger on J2 | unlimited | any USB-C charger (5 V, 1.5 A is enough); cells left in are the backup |")
     w("")
     w("Figures from `tools/battery_calculator/model.py`.")
     w("")

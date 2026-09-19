@@ -4,7 +4,7 @@
 
 Prices are single-unit European retail including VAT, rounded, as of September 2026. Mouser prices are shown there without VAT and are converted (x 1.19). They drift; treat them as an order of magnitude, not a quotation.
 
-**Total: EUR 160.60** including the first set of L91 cells (EUR 14.00).
+**Total: EUR 170.70** including the first set of L91 cells (EUR 14.00).
 
 Nothing on this list is a custom circuit board. Every electronic part is a finished module or a through-hole resistor (EDR-19).
 
@@ -14,9 +14,9 @@ Nothing on this list is a custom circuit board. Every electronic part is a finis
 |---|---|
 | sensors (Sunrise, SEN62, SGP40, SHT40, cables) | 98.86 |
 | controller (FireBeetle) | 7.50 |
-| power (holder, fuse, regulator, ideal diode, switch) | 20.64 |
+| power (holder, fuse, regulators, ideal diode, switch, USB-C power socket) | 30.64 |
 | first set of cells | 14.00 |
-| LED, button, resistors | 4.00 |
+| LED, button, resistors | 4.10 |
 | screws, wire, heat shrink | 15.60 |
 
 The Sunrise is the single most expensive part and the reason v1.3 costs more than v1.2. It is also the reason the CO2 number can be trusted: the SEN63C's CO2 channel loses its self-calibration when it is power-cycled (EDR-16).
@@ -36,8 +36,10 @@ The Sunrise is the single most expensive part and the reason v1.3 costs more tha
 | BT1 | 1 | battery holder 6 x AA, flat, 150 mm leads | `BH36AAW` | Mouser | 4.50 | Six AA cells side by side, screwed flat to the floor of the battery compartment behind its own door. Takes any AA: lithium L91 (recommended), NiMH or alkaline. |
 | CELL | 1 | Energizer Ultimate Lithium AA, first set of 6 | `L91` | dm / Rossmann / Reichelt | 14.00 | Primary lithium-iron-disulfide: the most energy per AA, no leakage, works to -40 C, 20 years shelf life. Nothing charges inside the device (EDR-18). eneloop pro or alkaline also work, for less runtime. |
 | F1 | 1 | PTC resettable fuse 0.5 A hold / 1.0 A trip | `MF-R050` | Reichelt | 0.30 | Short-circuit protection right at the holder's red lead: any fault downstream (a pinched wire, a failed regulator) is limited to 1 A. Trips within 4 s at 2.5 A. Soldered inline, under heat shrink. |
-| PS1 | 1 | Pololu S9V11E2A buck-boost, set to 4.00 V | `5719` | Eckstein / Pololu | 6.50 | Turns 5.4-10.8 V from the pack into a steady 4.0 V - what the FireBeetle expects on its battery input. Buck-boost, so the whole pack is usable. EN stays open (on). Set the trimpot before connecting anything (ASSEMBLY step 4). |
-| D1 | 1 | Adafruit LM66200 ideal diode breakout | `5830` | Adafruit / Berrybase | 3.50 | Feeds +4V0 into the FireBeetle's battery input and blocks every current the other way: with USB plugged in the FireBeetle's charger holds its battery input at 4.2 V, 0.2 V above +4V0, far past the 70 mV reverse-blocking threshold (TI SLVSG04). So the AA cells are never charged. VIN2 and ON to GND (truth table: VIN1 > VIN2, ON low = VIN1 feeds VOUT). 1.3 uA quiescent. ST is unused. |
+| PS1 | 1 | Pololu S9V11E2A buck-boost, set to 3.90 V | `5719` | Eckstein / Pololu | 6.50 | Turns 6-10.8 V from the pack into a steady 3.90 V for the FireBeetle's battery input. Buck-boost, so the whole pack is usable. Its EN pin, pulled up to VIN inside through 100k, gets R11 13k to GND: an undervoltage lockout that switches the device off at ~1.0 V per cell, before a weak cell can be driven into reversal or leak (EDR-20). Set the trimpot before connecting anything (ASSEMBLY step 4). |
+| D1 | 1 | Adafruit LM66200 ideal diode breakout | `5830` | Adafruit / Berrybase | 3.50 | Feeds +VREG into the FireBeetle's battery input and blocks every current the other way: with USB plugged in the FireBeetle's charger holds its battery input at 4.2 V, 0.3 V above +VREG, far past the 70 mV reverse-blocking threshold (TI SLVSG04). So the AA cells are never charged. Its second input takes the USB-C power branch at 4.20 V: the higher input feeds VOUT, so external power always wins and the cells become the backup, switched over without a gap (EDR-20). ON to GND. 1.3 uA quiescent. ST is unused. |
+| J2 | 1 | USB-C power socket, sunken breakout | `6050` | Adafruit / Mouser | 3.50 | Continuous operation from any USB-C charger (an 18 W phone charger is plenty): the board's 5.1k resistors on CC ask the charger for plain 5 V, up to 1.5 A, without any negotiation. Power only - the data lines stay open; configuration and updates keep using the FireBeetle's own USB-C. Screwed to two posts, so plugging in does not load the solder joints. |
+| PS2 | 1 | Pololu S9V11E2A buck-boost, set to 4.20 V | `5719` | Eckstein / Pololu | 6.50 | The external-power branch: 5 V from J2 to 4.20 V, 0.3 V above the cells' branch, so the LM66200 always prefers it. The same part as PS1 - one spare fits both. EN open (on). |
 | J1 | 1 | JST PH 2-way pigtail, 100 mm | `PHR-2 with leads` | Berrybase | 0.50 | LM66200 output to the FireBeetle's battery socket. Check the polarity against the '+' on the FireBeetle before plugging in: JST PH leads are not standardised. |
 | SW1 | 1 | Pololu Mini MOSFET Switch LV | `2810` | Eckstein | 5.34 | Switches the SEN62's 3.3 V off completely between windows. The slide switch must stay in OFF so the ON pin has control. Its red LED draws ~0.7 mA only while the switch is on. No soft start: see the ERC note. |
 | C1 | 1 | 100 nF ceramic, THT | `C320C104K5R5TA` | Reichelt / Mouser | 0.10 | Holds the pack-divider node steady for the ADC's sample capacitor. |
@@ -48,8 +50,9 @@ The Sunrise is the single most expensive part and the reason v1.3 costs more tha
 | R5 | 1 | 10 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-10k` | Reichelt / Mouser | 0.10 | Sunrise SDA pull-up to CO2_VDDIO (GPIO18). Senseair recommend 5-15k. Solder it across Sunrise pins 3 and 4. |
 | R6 | 1 | 10 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-10k` | Reichelt / Mouser | 0.10 | Sunrise SCL pull-up, across pins 3 and 5. |
 | R7 | 1 | 100 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-100k` | Reichelt / Mouser | 0.10 | Sunrise EN pull-down: EN must never float (PSP12440), also not while the ESP32 is in reset. |
-| R8 | 1 | 1 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-1k` | Reichelt / Mouser | 0.10 | Red: (4.0 V - 2.0 V) / 1k = 2.0 mA (2.2 mA on USB, 4.2 V). |
-| R9 | 1 | 330, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-330` | Reichelt / Mouser | 0.10 | Green: (4.0 V - 3.1 V) / 330 = 2.7 mA. |
+| R11 | 1 | 13 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-13k` | Reichelt / Mouser | 0.10 | PS1 undervoltage lockout: with the regulator's internal 100k pull-up, EN = VIN x 13/113. Off below 0.7 V on EN = 6.1 V pack (1.0 V per cell), on again only above 0.8 V = 7.0 V, i.e. with fresh cells. Draws 77 uA at 8.7 V. |
+| R8 | 1 | 1 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-1k` | Reichelt / Mouser | 0.10 | Red: (3.9 V - 2.0 V) / 1k = 1.9 mA (2.2 mA at 4.2 V on external power). |
+| R9 | 1 | 330, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-330` | Reichelt / Mouser | 0.10 | Green: (3.9 V - 3.1 V) / 330 = 2.4 mA. |
 | R10 | 1 | 330, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-330` | Reichelt / Mouser | 0.10 | Blue: as green. |
 | LED1 | 1 | RGB LED 5 mm diffused, common anode | `159` | Mouser / Adafruit | 1.20 | The only output: air quality at a glance, pairing, calibration, low battery. Anode on VSYS for green/blue headroom; cathodes sunk by GPIOs. |
 | LH1 | 1 | LED panel holder 5 mm, M8 x 0.75 | `SMR1089` | Reichelt (EBF A-5 S) | 1.10 | Holds LED1 in the front panel. |
@@ -58,7 +61,7 @@ The Sunrise is the single most expensive part and the reason v1.3 costs more tha
 | X2 | 1 | M2 x 6 screws + M2 nuts, 4 each | `DIN 912 M2x6` | Reichelt | 1.00 | FireBeetle to its standoffs. |
 | X3 | 1 | silicone wire 26 AWG, 4 colours | `-` | local | 3.00 | Harness. |
 | X5 | 1 | heat-shrink tubing assortment | `-` | local | 2.00 | Over every inline resistor, the fuse and every splice. |
-| | | | | | **160.60** | |
+| | | | | | **170.70** | |
 
 ## Optional but recommended
 
@@ -70,10 +73,11 @@ The Sunrise is the single most expensive part and the reason v1.3 costs more tha
 
 | cells | runtime, ECO, with margin | note |
 |---|---|---|
-| Energizer Ultimate Lithium L91 | 3.7 months | recommended |
-| eneloop pro (NiMH) | 2.2 months | recharge in any NiMH charger, outside the device |
-| alkaline | 2.1 months | cheap; remove when empty, they can leak |
-| 1.5 V Li-ion with USB-C | 1.8 months | not recommended (docs/BATTERY_LIFE.md) |
+| Energizer Ultimate Lithium L91 | 3.5 months | recommended |
+| eneloop pro (NiMH) | 2.1 months | recharge in any NiMH charger, outside the device; do not leave empty cells in |
+| alkaline | 1.8 months | cheap; remove when empty, they can leak |
+| 1.5 V Li-ion with USB-C | 1.6 months | not recommended (docs/BATTERY_LIFE.md) |
+| none, USB-C charger on J2 | unlimited | any USB-C charger (5 V, 1.5 A is enough); cells left in are the backup |
 
 Figures from `tools/battery_calculator/model.py`.
 

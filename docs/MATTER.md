@@ -82,16 +82,33 @@ Features `BAT` (Battery) and `REPLC` (Replaceable). Not `RECHG`: six AA cells
 the user replaces, and nothing is charged inside the device (EDR-18), so there
 is no `BatChargeState`.
 
+One Power Source only, describing the cells. Since v1.3.1 the device also
+runs from a USB-C charger (EDR-20), but no second, wired Power Source is
+declared: controllers show the battery either way, and its `Status` says
+what the cells are doing.
+
+| where the power comes from | `Status` | `BatPresent` | battery attributes |
+|---|---|---|---|
+| the cells (`power: cells`) | 1 Active | true | as below |
+| external power, cells in the holder as backup (`power: external, cells as backup`) | 2 Standby | true | as below; the percentage of the backup cells |
+| external power, holder empty (`power: external, no cells`) | 3 Unavailable | false | `BatPercentRemaining` null, `BatReplacementNeeded` false |
+
+External power is a charger in the USB-C power socket (J2) or a computer on
+the FireBeetle's USB-C: VSYS at or above 4.08 V on GPIO0, or an enumerated
+USB host. The holder counts as empty below 3.0 V pack. On external power the
+device enters no low or critical battery state, but `BatChargeLevel` still
+warns when the backup cells are at or below `low_battery_pct`.
+
 | attribute | what it carries |
 |---|---|
-| `Status` | 1 Active |
+| `Status` | 1 Active, 2 Standby, 3 Unavailable (table above) |
 | `Description` | "Battery" |
 | `BatPercentRemaining` | half-percent units. The lower of two estimates: the resting-voltage curve for the configured `cell_type`, and an energy counter of what the firmware has spent since the pack was fitted. It only goes up when a fresh pack is detected (a jump of +0.08 V per cell) |
 | `BatVoltage` | pack voltage in mV (all cells in series) |
 | `BatChargeLevel` | 0 OK, 1 Warning (at or below `low_battery_pct`, 20 %), 2 Critical (below 5 %) |
-| `BatReplacementNeeded` | true at Critical |
+| `BatReplacementNeeded` | true at Critical: change the cells now |
 | `BatReplaceability` | 2 UserReplaceable - two screws on the battery door, see `docs/ASSEMBLY.md` |
-| `BatPresent` | true |
+| `BatPresent` | true; false with the holder empty on external power |
 | `BatReplacementDescription` | "6 x AA (alkaline, NiMH or lithium)" |
 | `BatCommonDesignation` | 2 AA |
 | `BatQuantity` | 6 |
@@ -193,7 +210,7 @@ the device.
 * commissioning uses Matter's standard PASE/CASE handshake
 * the Matter console and the OpenThread CLI are compiled out
   (`CONFIG_OPENTHREAD_CLI=n`); the service console (`config`, `baseline`,
-  `co2`, `events`, `diag`) only starts while a USB host is connected, so it
-  needs physical access
+  `co2`, `events`, `diag`) only starts on external power and is only
+  reachable through the FireBeetle's USB-C, so it needs physical access
 * the device is read-only over Matter: every attribute it exposes is a
   measurement, and nothing a controller writes changes what it measures

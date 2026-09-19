@@ -1,18 +1,18 @@
 # Assembly
 
-v1.3 has no circuit board to make or order. Everything is a finished module;
-you solder wires to module pins and ten through-hole resistors in line, under
+v1.3.1 has no circuit board to make or order. Everything is a finished module;
+you solder wires to module pins and eleven through-hole resistors in line, under
 heat shrink. An evening's work once the parts and prints are on the desk.
 
 ```
-PARTS -> PRINT + BAKE -> SET THE REGULATOR -> WIRE -> FLASH -> INTO THE CASE -> CELLS -> PAIR -> SHARE
+PARTS -> PRINT + BAKE -> SET THE REGULATORS -> WIRE -> FLASH -> INTO THE CASE -> CELLS -> PAIR -> SHARE
 ```
 
 ![Inside, lid and door removed](../cad/drawings/open_view.png)
 
 The wiring list, the pin map and where each inline resistor goes are in
 [`electronics/schematic/NETLIST.md`](../electronics/schematic/NETLIST.md).
-That file is generated from `design.py` and checked by 510 rules; if this
+That file is generated from `design.py` and checked by 567 rules; if this
 guide and the netlist ever disagree, the netlist wins.
 
 ## 1. Parts
@@ -27,15 +27,18 @@ rest. Check off:
 - [ ] SparkFun Qwiic SGP40 (SEN-18345) and a Qwiic cable with open leads
 - [ ] Seeed Grove SHT40 (101021032) and a Grove-to-jumper cable
 - [ ] Pololu #2810 Mini MOSFET Switch LV
-- [ ] Pololu #5719 S9V11E2A regulator
+- [ ] 2 × Pololu #5719 S9V11E2A regulator (PS1 for the cells, PS2 for the USB-C power socket)
 - [ ] Adafruit #5830 LM66200 ideal diode
+- [ ] Adafruit #6050 sunken USB-C breakout (J2, the power socket)
 - [ ] MPD BH36AAW 6 × AA holder, Bourns MF-R050 PTC fuse
 - [ ] JST PH 2-way pigtail
 - [ ] RGB LED 5 mm common anode, SMR1089 panel holder, T 250A push button
-- [ ] resistors 1 M, 220 k, 100 k, 2 × 10 k, 2 × 4.7 k, 1 k, 2 × 330 Ω; one 100 nF
+- [ ] resistors 1 M, 220 k, 100 k, 13 k, 2 × 10 k, 2 × 4.7 k, 1 k, 2 × 330 Ω; one 100 nF
 - [ ] 6 × M2.5 heat-set inserts; M2.5 × 8 screws (6), M2.5 self-tappers (8),
-      M2 self-tappers (6); 26 AWG silicone wire; heat shrink
+      M2 self-tappers (8: two of them for J2); 26 AWG silicone wire; heat shrink
 - [ ] 6 × Energizer Ultimate Lithium L91 (or eneloop pro, or alkaline - one type, one age)
+- [ ] for continuous operation: any CE-marked USB-C charger (an 18 W phone
+      charger is plenty) and a USB-C cable
 
 ## 2. Print and bake
 
@@ -60,14 +63,35 @@ Six M2.5 inserts: four into the lid posts, two into the door posts in the
 side walls of the battery compartment. Iron at 220 °C, straight down until
 flush, let them cool.
 
-## 4. Set the regulator - before anything is connected to it
+## 4. Set the regulators - before anything is connected to them
 
-1. Solder three wires to the S9V11E2A: VIN, GND, VOUT (leave EN open: it has
-   its own pull-up to VIN).
-2. Put the holder with six cells on VIN/GND through the PTC fuse (step 5.1).
-3. Turn the trimpot until VOUT reads **4.00 V ± 0.03 V** on a multimeter.
-   Clockwise raises it. **Above 4.2 V the FireBeetle is out of its rating.**
+Two identical S9V11E2A modules, set to two different voltages. Mark them
+(PS1, PS2) as soon as they are set.
+
+**PS1, the cells' regulator: 3.90 V**
+
+1. Solder three wires to it: VIN, GND, VOUT. Solder **R11 13 k** directly
+   across its **EN** and **GND** pins, on the module, under heat shrink. With
+   the module's internal 100 k pull-up this is the undervoltage lockout: off
+   below ~6.1 V pack (1.0 V per cell), on again only above ~7.0 V.
+2. Put the holder with six **fresh** cells on VIN/GND through the PTC fuse
+   (step 5.1). With R11 fitted it does not start from a pack below ~7.0 V: if
+   VOUT stays at 0 V, check the cells first.
+3. Turn the trimpot until VOUT reads **3.90 V ± 0.03 V** on a multimeter.
+   Clockwise raises it. Not higher: above about 4.04 V (the firmware's 4.08 V
+   threshold minus the ADC's error) the device may take its own cells for
+   external power.
 4. Take the cells out again.
+
+**PS2, the USB-C power branch: 4.20 V**
+
+1. Solder J2 **VBUS** to PS2 **VIN**, J2 **GND** to PS2 **GND**, and a lead to
+   PS2 **VOUT**. PS2's EN stays open. J2's data, CC and SBU pins stay open.
+2. Plug a USB-C charger into J2.
+3. Turn the trimpot until VOUT reads **4.20 V ± 0.03 V**. Never above 4.23 V:
+   the FireBeetle's battery input is rated to 4.25 V (NETLIST.md). Not below
+   4.17 V: PS2 has to stay well above PS1 for the ideal diode to prefer it.
+4. Unplug the charger.
 
 ## 5. Wiring
 
@@ -79,19 +103,26 @@ blue = SDA, yellow = SCL, anything else for control lines.
 | from | to | note |
 |---|---|---|
 | holder red lead | **F1** PTC fuse | 2 cm from the holder, in line, heat shrink over it |
-| F1 | S9V11E2A VIN | through the partition notch |
-| holder black lead | S9V11E2A GND | |
-| S9V11E2A VOUT | LM66200 **VIN1** | |
-| LM66200 **VIN2**, **ON**, GND | GND | all three to ground - this makes VIN1 the only input, always enabled |
+| F1 | PS1 VIN | through the partition notch |
+| holder black lead | PS1 GND | |
+| PS1 VOUT | LM66200 **VIN1** | the cells' branch, 3.90 V |
+| PS1 EN - **R11 13 k** - PS1 GND | | on the module (step 4) |
+| J2 VBUS | PS2 VIN | 5 V from the charger (step 4) |
+| J2 GND, PS2 GND | GND | |
+| PS2 VOUT | LM66200 **VIN2** | the USB-C branch, 4.20 V. **VIN2 no longer goes to GND** (it did up to v1.3) |
+| LM66200 **ON**, GND | GND | ON low = always enabled; the higher of VIN1 and VIN2 feeds VOUT |
 | LM66200 VOUT | JST PH pigtail **+** | |
 | pigtail **−** | GND | |
 | pigtail **+** | Sunrise pin 2 (VBB) and the LED's common anode | spliced onto the + lead |
-| pack divider: **R1 1 M** | from S9V11E2A VIN to FireBeetle **IO3** | |
+| pack divider: **R1 1 M** | from PS1 VIN to FireBeetle **IO3** | |
 | **R2 220 k** and **C1 100 nF** | IO3 to GND | at the FireBeetle |
 
 **Check the pigtail polarity against the "+" on the FireBeetle** before you
 plug it in. JST PH leads are not standardised. Then plug it into the
 FireBeetle's battery socket.
+
+USB 5 V never touches the pack: J2 only reaches PS2, and the LM66200 keeps
+both branches apart. The cells are never charged, also not on a charger.
 
 ### 5.2 SEN62 and its switch
 
@@ -167,7 +198,7 @@ idf.py -p /dev/tty.usbmodem* flash monitor
 Within a few seconds:
 
 ```
-I (xxx) aircheck: 3D Printing AIR CHECK 1.3.0
+I (xxx) aircheck: 3D Printing AIR CHECK 1.3.1
 I (xxx) aircheck: serial AC-XXXX-XXXX
 I (xxx) sgp40: VOC index algorithm at a 10 s sampling interval
 I (xxx) aircheck: SEN62 <serial>
@@ -177,8 +208,9 @@ I (xxx) ac_matter: endpoints: ...
 I (xxx) aircheck: not commissioned; manual code ..., QR MT:...
 ```
 
-then a CO2 reading (`sunrise: CO2 ... ppm`) and, with USB plugged in, the
-SEN62's fan running (continuous mode). If an error line appears instead,
+then a CO2 reading (`sunrise: CO2 ... ppm`), `power: external, cells as
+backup (VSYS 4.2x V, pack ... V)` (the computer on USB counts as external
+power) and the SEN62's fan running (continuous mode). If an error line appears instead,
 stop here: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md). It is far easier to
 debug on the bench.
 
@@ -191,6 +223,10 @@ python3 tools/configuration/aircheck_config.py --port /dev/tty.usbmodem* set alt
 
 Press the button once: the air-quality colour for 3 s. Hold it 3 s: blue,
 pairing mode. Check red, green and blue each light.
+
+Then the power sources (TESTING T-P7..T-P9): a charger in J2 as well - the
+log stays at `external, cells as backup`; unplug the computer, then the
+charger - `power: cells`, without a reset.
 
 ## 7. Into the case
 
@@ -208,9 +244,14 @@ pairing mode. Check red, green and blue each light.
 3. **FireBeetle** onto its four posts, M2 self-tappers, USB-C in the opening
    in the right-hand wall.
 4. **Power modules** into their pockets beside the FireBeetle: #2810 and
-   S9V11E2A (trimpot facing the lid), the LM66200 on two M2 self-tappers.
-5. **LED holder and button** through the front, nuts from the inside.
-6. **Battery holder** into the compartment on its four bosses (M2.5
+   PS1 (trimpot facing the lid), the LM66200 on two M2 self-tappers, PS2
+   next to the LM66200, near the top wall.
+5. **J2**, the USB-C power socket, onto its two posts at the top wall with two
+   M2 self-tappers, socket in the opening in the top wall, towards the
+   right-hand side seen from the front (above the FireBeetle's own USB-C).
+   The screws take the plugging force, not the solder joints.
+6. **LED holder and button** through the front, nuts from the inside.
+7. **Battery holder** into the compartment on its four bosses (M2.5
    self-tappers through the holder's floor), leads at the right-hand end
    seen from the back, out through the partition notch.
 
@@ -237,8 +278,22 @@ on the door. For the dashboard: Home app → the sensor → Accessory Settings �
 |---|---|
 | `cell_type` | always: `lithium`, `nimh` or `alkaline` - the battery % depends on it |
 | `altitude_m` | always: the CO2 pressure correction (1.6 % per 10 hPa) |
-| `default_mode` | NORMAL next to a busy printer, if you accept changing cells every 5 weeks |
+| `default_mode` | NORMAL next to a busy printer, if you accept changing cells every 5 weeks. On a USB-C charger it does not matter: the device runs CONTINUOUS |
 | `name` | published as Matter NodeLabel so the dashboard can tell units apart |
+
+## Running from a USB-C charger
+
+Plug any USB-C charger into J2, the socket in the top wall (an 18 W phone
+charger is plenty; the device draws at most ~0.6 A at 5 V). J2 asks for plain
+5 V, no negotiation. The device then runs CONTINUOUS, like on a computer, and
+the cells are the backup: pull the charger and it carries on from them
+without a gap. Nothing charges them.
+
+Left in as the backup, the cells last about 15 months (L91), 10 (eneloop
+pro) or 9 (alkaline) (`docs/BATTERY_LIFE.md`). For permanent mains operation
+the holder may stay empty; the device does not raise a battery alarm then.
+
+The FireBeetle's own USB-C stays for configuration and updates.
 
 ## Placement
 
@@ -253,8 +308,18 @@ standing about 3 mm proud of the wall.
 
 ## Changing cells
 
-Two screws, door off, six new cells of one type and age, door on. The device
-notices the higher voltage and resets its energy counter by itself. Never mix
-old and new cells, never mix chemistries. If you switch chemistry, set
-`cell_type`. Rechargeable cells go into their own charger, outside the
-device - nothing charges them in here.
+The yellow low-battery blink and Matter's `BatReplacementNeeded` mean
+**change the cells now**. Two screws, door off, six new cells of one type and
+age, door on. The device notices the higher voltage and resets its energy
+counter by itself. Never mix old and new cells, never mix chemistries. If you
+switch chemistry, set `cell_type`. Rechargeable cells go into their own
+charger, outside the device - nothing charges them in here.
+
+**Take empty cells out promptly - especially NiMH; for L91 it is
+uncritical.** The undervoltage lockout switches the device off at ~1.0 V per
+cell, but ~55 µA still flow through PS1's EN pull-up and R11, plus ~5 µA
+through the pack divider. Over weeks that can take a NiMH pack below 1.0 V
+per cell and drive the weakest cell into reversal.
+
+With a charger in J2 the cells can be changed without switching anything
+off.

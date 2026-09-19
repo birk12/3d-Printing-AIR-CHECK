@@ -3,6 +3,30 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-09-19
+
+### Added
+
+- **Continuous operation from any USB-C charger** (EDR-20): a USB-C power
+  socket (Adafruit #6050) on the top, a second Pololu S9V11E2A at 4.20 V into
+  the LM66200's second input. External power always wins; cells left in are
+  the backup, switched in without a gap (L91 about 15 months as backup). The
+  holder may also stay empty.
+- **Undervoltage lockout** at 1.0 V per cell (13 kΩ on the cells' regulator's
+  EN): no cell reversal, no leaking alkalines. Restarts only with fresh cells.
+- Firmware recognises external power from VSYS (≥ 4.08 V) and an empty
+  holder; CONTINUOUS mode and no battery alarms on external power. Matter
+  Power Source `Status` 1/2/3 and `BatPresent`.
+- `ac_power_classify()` in `ac_battery` - shared with the Sleeper Frame, which
+  adopts the same power block.
+
+### Changed
+
+- The cells' regulator is trimmed to 3.90 V (was 4.00 V).
+- ECO on L91: 3.5 months with margin (was 3.7): the lockout's resistors cost
+  about 8 %. Alkaline cells now count only down to 1.0 V per cell.
+- BOM EUR 171.
+
 ## [1.3.0] - 2026-09-19
 
 Measurements you can trust, a battery you cannot overcharge, and no circuit

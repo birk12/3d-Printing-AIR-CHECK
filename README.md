@@ -61,23 +61,28 @@ ECO  --VOC rises-->  ACTIVE  --air clears-->  POST-PRINT  -->  ECO
 
 ## Battery life
 
-**6 × AA**, swapped like a remote's - nothing is charged inside the device
-(EDR-18). ECO mode, with a **25 % engineering margin**:
+**6 × AA or any USB-C charger.** On a USB-C charger (an 18 W phone charger
+is plenty) it runs permanently; cells left in are an automatic backup for a
+power cut. Nothing is ever charged inside the device (EDR-18, EDR-20).
+
+On the cells, ECO mode, with a **25 % engineering margin**:
 
 | cells | runtime |
 |---|---|
-| **Energizer Ultimate Lithium L91** (recommended) | **3.7 months** (3.1 in the worst case) |
-| eneloop pro (NiMH, charged outside) | 2.2 months |
-| alkaline | 2.1 months |
+| **Energizer Ultimate Lithium L91** (recommended) | **3.5 months** (2.9 in the worst case) |
+| eneloop pro (NiMH, charged outside) | 2.1 months |
+| alkaline | 1.8 months |
+| as backup while on a charger | L91 about 15 months |
 
 | mode | particles every | runtime on L91 |
 |---|---|---|
-| **ECO** (default) | 1 h | **3.7 months** |
+| **ECO** (default) | 1 h | **3.5 months** |
 | NORMAL | 15 min | 5 weeks |
-| ACTIVE | 2 min | 6 days (automatic, time-limited) |
+| ACTIVE | 2 min | 5–6 days (automatic, time-limited) |
 
-A particle window every 2 h gives 5.6 months on L91 and over three months on
-NiMH or alkaline. These figures include a dashboard reading the sensor every
+A particle window every 2 h gives 5.0 months on L91 and 3.0 on NiMH. The
+device switches itself off at 1.0 V per cell so no cell is reversed or leaks;
+take empty cells out promptly. These figures include a dashboard reading the sensor every
 15 minutes. Every input is traced to a datasheet or a measurement in
 [docs/BATTERY_LIFE.md](docs/BATTERY_LIFE.md), which is generated from a model
 you can re-run.
@@ -88,11 +93,11 @@ you can re-run.
 |---|---|
 | MCU | DFRobot FireBeetle 2 ESP32-C6 |
 | Sensors | SEN62 (switched off between windows), Sunrise (EN-pin shutdown, ABC state kept by the host), SGP40 + SHT40 (always on) |
-| Power | 6 × AA → PTC fuse → Pololu 4.0 V buck-boost → LM66200 ideal diode → FireBeetle; nothing can charge the cells |
+| Power | 6 × AA → PTC fuse → Pololu buck-boost 3.90 V ─┐ LM66200 ideal diode → FireBeetle; USB-C socket → Pololu 4.20 V ─┘ (the higher wins); undervoltage lockout at 1.0 V/cell; nothing can charge the cells |
 | Boards | **no custom PCB**: finished modules and ten through-hole resistors (EDR-19) |
 | Status | one panel button, one RGB LED in a panel holder |
 | Case | **130 × 146 × 34 mm**, PETG, three zones: battery compartment with a screwed door, a walled gas bay, electronics |
-| Cost | **about EUR 160** in parts including the first set of cells ([docs/BOM.md](docs/BOM.md)) |
+| Cost | **about EUR 171** in parts including the first set of cells ([docs/BOM.md](docs/BOM.md)) |
 
 ## The LED and the button
 
@@ -134,8 +139,9 @@ PARTS -> PRINT + BAKE -> WIRE -> FLASH -> CELLS IN -> PAIR -> SHARE WITH THE DAS
    idf.py set-target esp32c6
    idf.py -p /dev/tty.usbmodem* flash monitor
    ```
-5. **Cells:** six AA, all the same type and age; tell the device which
-   (`config set cell_type lithium`) and your altitude (`config set altitude_m 520`)
+5. **Power:** six AA, all the same type and age, and/or a USB-C charger in the
+   socket on top; tell the device the cell type (`config set cell_type lithium`)
+   and your altitude (`config set altitude_m 520`)
 6. **Pair** with Apple Home: [docs/APPLE_HOME.md](docs/APPLE_HOME.md)
 7. **Share** with the dashboard: [docs/DASHBOARD_INTERFACE.md](docs/DASHBOARD_INTERFACE.md)
 
@@ -146,8 +152,8 @@ AIR CHECK has been built. What *has* been done:
 
 | | |
 |---|---|
-| measurement core | 529 host checks, run on every build |
-| electrical design | 510 automated rule checks over the wiring list, incl. "the cells can never be charged" and firmware pin table = wiring |
+| measurement core | 546 host checks, run on every build |
+| electrical design | 567 automated rule checks over the wiring list, incl. "the cells can never be charged", external power always wins, detection margins, lockout thresholds, firmware pin table = wiring |
 | enclosure | OpenSCAD asserts: every module against every other, every post, every zone; manifold check; fits a 250 × 210 bed |
 | firmware | full ESP-IDF + esp-matter build for esp32c6: 1.69 MB, 14 % OTA headroom |
 | Matter attribute IDs | checked against the Matter SDK's generated headers |
@@ -164,7 +170,7 @@ contribute.
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | how the whole thing fits together |
 | [DASHBOARD_INTERFACE.md](docs/DASHBOARD_INTERFACE.md) | **everything a dashboard needs**: pairing, attribute IDs, timing, power |
-| [ENGINEERING_DECISIONS.md](docs/ENGINEERING_DECISIONS.md) | nineteen decisions and what they cost |
+| [ENGINEERING_DECISIONS.md](docs/ENGINEERING_DECISIONS.md) | twenty decisions and what they cost |
 | [BATTERY_LIFE.md](docs/BATTERY_LIFE.md) | the energy model, with sources |
 | [BOM.md](docs/BOM.md) | parts, prices, where to buy |
 | [ASSEMBLY.md](docs/ASSEMBLY.md) | step by step |

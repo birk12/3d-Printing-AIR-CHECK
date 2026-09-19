@@ -108,8 +108,15 @@ Then   Send notification "AIR CHECK printer unit needs new cells."
 
 At 20 % in ECO mode there is still time left, which is why the first
 notification can be calm. Below 5 % the device stops measuring and
-reports over Matter that the cells need replacing. Nothing charges inside the device;
-the cells are swapped (EDR-18).
+reports over Matter that the cells need replacing - change them now, and take
+empty cells out promptly (especially NiMH). Nothing charges inside the
+device; the cells are swapped (EDR-18).
+
+On a USB-C charger (v1.3.1) the cells are only the backup: the device raises
+no low-battery state of its own, but the backup cells' level is still
+published and falls slowly, so a 20 % trigger can still fire for them. With
+the holder empty the level is null and nothing is reported as needing
+replacement (how Home shows that is not verified).
 
 ---
 

@@ -35,8 +35,10 @@ esp_err_t ac_matter_start(void);
  * changed: every attribute is compared before it is written, because a write
  * is what triggers a Thread transmission to every subscriber. */
 esp_err_t ac_matter_publish(const ac_engine_t *e);
-esp_err_t ac_matter_publish_battery(float percent, float volts,
-                                    ac_charge_state_t charge, bool low);
+/* status: Matter Power Source Status (1 Active, 2 Standby, 3 Unavailable);
+ * present: cells in the holder; percent < 0: unknown. */
+esp_err_t ac_matter_publish_battery(float percent, float volts, bool low,
+                                    uint8_t status, bool present);
 bool ac_matter_is_commissioned(void);
 /* Called with true/false when a controller starts/stops Identify. */
 void ac_matter_set_identify_cb(void (*cb)(bool on));

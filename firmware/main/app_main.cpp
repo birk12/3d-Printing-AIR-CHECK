@@ -39,7 +39,7 @@
 
 static const char *TAG = "aircheck";
 
-#define AC_FW_VERSION "1.3.0"
+#define AC_FW_VERSION "1.3.1"
 #define WDT_TIMEOUT_S 120
 /* Today's outdoor CO2 background, the reference for a fresh-air
  * calibration (NOAA global mean, 2026: about 425 ppm). */
@@ -69,6 +69,9 @@ static volatile bool s_asc_pending;     /* rewrite the Sunrise's ABC setting */
 #define SGP40_SAMPLE_MWH   (0.2f * 10.0f / 3600.0f) /* 0.2 mW at 10 s */
 #define IDLE_3V3_MW        ((121.88f + 29.0f) * 3.3f / 1000.0f) /* ICD + board */
 #define REG_IQ_MA          0.2f                     /* Pololu S9V11: < 0.2 mA */
+/* Always across the pack: the regulator's 100k EN pull-up in series with the
+ * 13k undervoltage-lockout resistor, and the 1M/220k pack divider. */
+#define PACK_LEAK_MA(v)    ((v) / 113.0f + (v) / 1220.0f)
 
 static float site_pressure_hpa(int altitude_m)
 {
@@ -235,6 +238,9 @@ static void do_co2_calibration(uint16_t ppm)
     s_led_event = err == ESP_OK ? AC_LED_EVENT_CAL_OK : AC_LED_EVENT_CAL_FAIL;
 }
 
+/* External power (the USB-C power socket, or a computer on the FireBeetle's
+ * port) counts like USB always has: CONTINUOUS mode, no battery alarms.  The
+ * cells are then the backup; with the holder empty there is no battery at all. */
 static void read_battery(void)
 {
     float pack = 0, reg = 0;
@@ -248,13 +254,25 @@ static void read_battery(void)
         unlock();
         return;
     }
-    float pct = ac_pack_update(&s_pack, pack);
+    ac_power_src_t src = ac_power_classify(pack, reg, usb);
+    bool ext = src != AC_SRC_BATTERY;
+    bool cells = src != AC_SRC_MAINS_NO_CELLS;
+    float pct = cells ? ac_pack_update(&s_pack, pack) : -1.0f;
     s_engine.health.battery_ok = true;
-    ac_engine_set_power(&s_engine, usb, false, pct, pack, now_ms());
-    bool low = s_engine.state == AC_STATE_LOW_BATTERY ||
-               s_engine.state == AC_STATE_CRITICAL_BATTERY;
+    ac_engine_set_power(&s_engine, ext, false, pct, pack, now_ms());
+    bool low = cells && (s_engine.state == AC_STATE_LOW_BATTERY ||
+                         s_engine.state == AC_STATE_CRITICAL_BATTERY ||
+                         (ext && pct >= 0.0f && pct <= s_engine.cfg.low_battery_pct));
     unlock();
-    ac_matter_publish_battery(pct, pack, AC_CHG_DISCHARGING, low);
+    static ac_power_src_t last_src = (ac_power_src_t)-1;
+    if (src != last_src) {
+        ESP_LOGI(TAG, "power: %s (VSYS %.2f V, pack %.2f V)",
+                 src == AC_SRC_BATTERY ? "cells" :
+                 src == AC_SRC_MAINS ? "external, cells as backup" : "external, no cells",
+                 (double)reg, (double)pack);
+        last_src = src;
+    }
+    ac_matter_publish_battery(pct, pack, low, ac_power_matter_status(src), cells);
 }
 
 static void persist(void)
@@ -380,7 +398,7 @@ static void measure_task(void *arg)
             lock();
             float pack_v = s_engine.last.battery_v > 1.0f ? s_engine.last.battery_v : 8.0f;
             ac_pack_spend(&s_pack, dt_h * ((s_engine.usb_present ? 0.0f : IDLE_3V3_MW / EFF_3V3)
-                                         + REG_IQ_MA * pack_v));
+                                         + (REG_IQ_MA + PACK_LEAK_MA(pack_v)) * pack_v));
             s_co2.abc_ms += (uint32_t)((t - last_t) / 1000);
             unlock();
             last_t = t;

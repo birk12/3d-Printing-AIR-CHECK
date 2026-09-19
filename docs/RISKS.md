@@ -30,7 +30,8 @@ not a health assessment.
 * In ECO mode the particle channel samples once an hour: a 60 s window, of
   which the first 30 s are discarded while the module settles. Short particle
   events that produce no VOC will be missed. This is a deliberate trade for
-  battery life and is explained in `docs/BATTERY_LIFE.md`.
+  battery life and is explained in `docs/BATTERY_LIFE.md`. On a USB-C charger
+  the device runs CONTINUOUS and this limitation does not apply.
 
 ### VOC
 
@@ -83,16 +84,21 @@ not a health assessment.
   TESTING T-E1..T-E3 are the measurements that would settle it.
 * The least certain line is the Pololu regulator's quiescent current. Pololu
   give only "< 0.2 mA for most combinations", and at that figure it is about
-  a fifth of the ECO budget. At 0.4 mA ECO on L91 falls from 3.7 to 3.1
+  a fifth of the ECO budget. At 0.4 mA ECO on L91 falls from 3.5 to 2.9
   months; a particle window every 2 h recovers that.
+* The undervoltage lockout costs about 8 % of the ECO budget (R11 and PS1's
+  internal pull-up, ~77 uA at 8.7 V). That is the price of never driving a
+  cell into reversal (see Battery safety).
 * The second least certain is the FireBeetle's board quiescent current, a
-  vendor figure minus the chip (29 uA). At 150 uA ECO falls to 3.5 months.
+  vendor figure minus the chip (29 uA). At 150 uA ECO falls to 3.3 months.
 * The Thread radio figure is an independent PPK2 measurement of an ESP32-C6
   ICD. A different Thread network, a weaker link or more retries all cost
   more than that trace shows.
-* The three-month target is met with L91 cells only. eneloop pro and alkaline
-  give 2.2 and 2.1 months in ECO, and need a particle window every 2 h to
-  clear three months.
+* The three-month target is met with L91 cells only (3.5 months, 2.9 in the
+  worst case). eneloop pro and alkaline give 2.1 and 1.8 months in ECO, and
+  need a particle window every 2 h to clear three months (3.0 and 2.7).
+* Where that is not enough, the device runs from any USB-C charger and the
+  cells become the backup (EDR-20).
 
 ---
 
@@ -127,11 +133,26 @@ Since v1.3 the device runs from six AA cells, not a LiPo, because the charger
 was the one part of v1.2 that could start a fire (EDR-18).
 
 * **Nothing charges inside the device.** With USB plugged in, the FireBeetle's
-  charger holds its battery input at 4.2 V; the LM66200 ideal diode blocks any
-  current back towards the regulator once its output is more than 70 mV above
-  its input. The cells never see a charge current, not even rechargeable
+  charger holds its battery input at 4.2 V; with a charger in the USB-C power
+  socket (J2), PS2 feeds the LM66200's second input at 4.20 V. Either way the
+  LM66200 ideal diode blocks any current back towards the cells' regulator
+  once its output is more than 70 mV above that input. USB 5 V never touches
+  the pack. The cells never see a charge current, not even rechargeable
   ones. The ERC checks the wiring for this; the bench test (TESTING T-P2)
   has to confirm it on the real build.
+* **Undervoltage lockout.** R11 (13 k) on PS1's EN pin, against the module's
+  internal 100 k pull-up, switches the device off at ~6.1 V pack (1.0 V per
+  cell) and lets it restart only above ~7.0 V, i.e. with fresh cells. So the
+  device never drives a weak cell into reversal, which is what makes cells
+  leak (EDR-20; bench test T-P10). The thresholds rest on Pololu's EN levels
+  (off below 0.7 V, on above 0.8 V), not on a measurement.
+* **Take empty cells out promptly - especially NiMH; for L91 it is
+  uncritical.** After the lockout has switched the device off, ~55 uA still
+  flow through PS1's pull-up and R11, plus ~5 uA through the pack divider.
+  An empty pack left in the holder keeps draining; over weeks a NiMH pack can
+  drop below 1.0 V per cell and the weakest cell can reverse. The yellow
+  low-battery blink and Matter's `BatReplacementNeeded` mean **change the
+  cells now**.
 * **Fault energy is limited.** A PTC fuse (Bourns MF-R050, 1 A trip) sits in
   the holder's red lead, 2 cm from the holder, so a pinched wire or a failed
   module downstream is limited. The design stays within IEC 62368-1 power
@@ -150,6 +171,25 @@ was the one part of v1.2 that could start a fire (EDR-18).
   hides the state of charge.
 * Route the leads through the partition notch so the lid and the door cannot
   pinch them, and heat-shrink every joint.
+
+### Mains operation (v1.3.1)
+
+* **Use a CE-marked USB-C charger** from a regular shop. The device draws at
+  most ~0.6 A at 5 V; J2's 5.1 k resistors on CC ask for plain 5 V without any
+  negotiation, so any USB-C charger will do, and an 18 W phone charger is
+  plenty. The charger is the only part on mains voltage, and its quality is
+  outside this design.
+* **The cells as backup are still never charged.** They only lose the
+  regulator's quiescent current, the lockout and divider resistors and their
+  own self-discharge: about 15 months (L91), 10 (eneloop pro), 9 (alkaline)
+  before they are spent (`docs/BATTERY_LIFE.md`). Check them now and then, or
+  leave the holder empty for permanent mains operation; the device raises no
+  battery alarm then.
+* **No switch turns PS1 off on mains.** A MOSFET for that would still leave
+  ~87 uA through the EN pull-up, so the chain stays module-only and the cells
+  pay the regulator's quiescent current while on standby.
+* J2 is screwed to two posts, so plugging and unplugging does not load the
+  solder joints.
 * **Standards.** IEC 62133-2 and UN 38.3 apply to the cells and are the
   manufacturers' job: buy branded cells from a regular shop. The EU Battery
   Regulation 2023/1542 applies to whoever places a battery-powered product on
@@ -176,7 +216,9 @@ was the one part of v1.2 that could start a fire (EDR-18).
 
 * `ac_core` - the scheduling, filtering, baseline, classification, event
   detection, history, 24 h statistics, LED logic and battery percentage - is
-  covered by 529 host checks that run on every build.
+  covered by 546 host checks that run on every build. Which power source is
+  in use (cells, external with backup, external without cells) is decided
+  there too, from VSYS.
 * `ac_hal` - the actual sensor drivers - is **not covered by any automated
   test**. It cannot be, without hardware. Every register address, command
   code and timing in it was taken from a manufacturer datasheet and checked by

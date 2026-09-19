@@ -35,10 +35,16 @@ blue for 5 minutes; the manual code is on the label (and in the serial log).
 | temperature | Temperature Measurement | **yes**, as a separate sensor in the same accessory |
 | humidity | Relative Humidity Measurement | **yes** on iOS 26 and later |
 | battery | Power Source (battery feature) | **yes** - level, and a low-battery warning |
-| cells need replacing | Power Source `BatReplacementNeeded` | published; whether Home shows it separately from the low-battery warning is not verified |
+| cells need replacing | Power Source `BatReplacementNeeded` | published; whether Home shows it separately from the low-battery warning is not verified. It means: change the cells now |
+| mains or battery | Power Source `Status` (1 on the cells, 2 on a charger with the cells as backup, 3 on a charger with the holder empty) | published; whether Home shows the difference is not verified |
 
-There is no charging state: the device runs from six AA cells and nothing is
-charged inside it (EDR-18). A USB-C cable is for configuration and updates.
+There is no charging state: nothing is charged inside the device (EDR-18).
+It runs from six AA cells or, since v1.3.1, from any USB-C charger in the
+power socket in the top wall, with the cells as the backup (EDR-20). The
+FireBeetle's own USB-C is for configuration and updates. With the holder
+empty on a charger, the device reports no battery (`BatPresent` false) and
+raises no low-battery warning; what Home then shows on the battery row is not
+verified.
 
 ### The VOC caveat
 
@@ -127,7 +133,8 @@ editor. `docs/SHORTCUTS.md` has working recipes for:
    sensor. During a detected print they update every 2 minutes. CO₂ updates
    every 5 minutes, temperature and humidity every 10 seconds (each only when
    the value has moved). Switch to NORMAL for a 15-minute PM cadence if you
-   can change the cells about every 5 weeks (L91, docs/BATTERY_LIFE.md).
+   can change the cells about every 5 weeks (L91, docs/BATTERY_LIFE.md), or
+   run it from a USB-C charger: then it measures continuously.
 5. **The air-quality *reason* is not exported.** Matter has nowhere to put it.
 6. **Everything in this table should be verified against your own setup.**
    Apple changes what Home surfaces between iOS releases. Nothing here has

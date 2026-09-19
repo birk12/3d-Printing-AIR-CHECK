@@ -72,6 +72,37 @@ void  ac_pack_spend(ac_pack_t *p, float mwh);
  * never climbs back up except when a new pack is detected. */
 float ac_pack_update(ac_pack_t *p, float pack_volts);
 
+/* ---- where the power comes from (v1.3.1) -----------------------------
+ *
+ * Two inputs share the FireBeetle's battery input (VSYS) through the LM66200
+ * ideal diode: the AA pack through a regulator set to 3.90 V, and a USB-C
+ * power socket through a second regulator set to 4.20 V.  The higher one
+ * wins.  With a computer on the FireBeetle's own USB-C its charger holds VSYS
+ * at 4.2 V as well.  So VSYS alone tells the two apart:
+ *
+ *   battery branch   3.82 .. 3.98 V  (3.90 V +-2 %)
+ *   mains branch     4.17 .. 4.24 V  (4.20 V trimmed, or the CN3165's 4.2 V +-1 %)
+ *
+ * AC_EXT_POWER_V sits in the middle, more than the ADC's calibrated error
+ * (~40 mV at VSYS) away from both. */
+#define AC_EXT_POWER_V    4.08f
+/* Below this the holder is empty (six cells at 0.5 V would be long dead). */
+#define AC_PACK_ABSENT_V  3.0f
+
+typedef enum {
+    AC_SRC_BATTERY = 0,      /* running on the cells                          */
+    AC_SRC_MAINS,            /* external power, cells present as the backup  */
+    AC_SRC_MAINS_NO_CELLS,   /* external power, holder empty                  */
+} ac_power_src_t;
+
+/* usb_host: a computer has enumerated the USB port - external power too,
+ * whatever VSYS reads.  vsys_v <= 0: no reading. */
+ac_power_src_t ac_power_classify(float pack_v, float vsys_v, bool usb_host);
+
+/* Matter Power Source Status for the battery source: 1 Active, 2 Standby
+ * (present but not in use), 3 Unavailable. */
+uint8_t ac_power_matter_status(ac_power_src_t s);
+
 #ifdef __cplusplus
 }
 #endif

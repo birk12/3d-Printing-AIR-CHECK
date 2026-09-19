@@ -376,9 +376,26 @@ esp_err_t ac_matter_publish(const ac_engine_t *e)
     return ESP_OK;
 }
 
-esp_err_t ac_matter_publish_battery(float percent, float volts,
-                                    ac_charge_state_t charge, bool low)
+esp_err_t ac_matter_publish_battery(float percent, float volts, bool low,
+                                    uint8_t status, bool present)
 {
+    /* Status of this (battery) source: Standby while external power carries
+     * the device and the cells wait as the backup, Unavailable with the holder
+     * empty.  A second, wired Power Source is not declared: controllers show
+     * the battery either way, and Status says what it is doing. */
+    esp_matter_attr_val_t st = esp_matter_enum8(status);
+    attribute::update(0, PowerSource::Id, PowerSource::Attributes::Status::Id, &st);
+    esp_matter_attr_val_t pr = esp_matter_bool(present);
+    attribute::update(0, PowerSource::Id, PowerSource::Attributes::BatPresent::Id, &pr);
+    if (!present) {
+        esp_matter_attr_val_t none = esp_matter_nullable_uint8(nullable<uint8_t>());
+        attribute::update(0, PowerSource::Id,
+                          PowerSource::Attributes::BatPercentRemaining::Id, &none);
+        esp_matter_attr_val_t ok = esp_matter_bool(false);
+        attribute::update(0, PowerSource::Id,
+                          PowerSource::Attributes::BatReplacementNeeded::Id, &ok);
+        return ESP_OK;
+    }
     if (percent < 0.0f) return ESP_OK;
     /* BatPercentRemaining is in half percent units, spec 11.7.6.14 */
     esp_matter_attr_val_t pct = esp_matter_nullable_uint8(
@@ -396,7 +413,6 @@ esp_err_t ac_matter_publish_battery(float percent, float volts,
                       PowerSource::Attributes::BatChargeLevel::Id, &lvl);
 
     /* No BatChargeState: the pack is never charged in the device. */
-    (void)charge;
     esp_matter_attr_val_t need = esp_matter_bool(low && percent < 5.0f);
     attribute::update(0, PowerSource::Id,
                       PowerSource::Attributes::BatReplacementNeeded::Id, &need);

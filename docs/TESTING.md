@@ -17,11 +17,12 @@ believed.
 
 | area | status | evidence |
 |---|---|---|
-| measurement core logic | SIMULATED, 529 checks | `firmware/test/host/test_ac_core.c` |
-| status LED logic | SIMULATED | part of the 529; every pattern and its timing |
-| battery percentage from the AA pack | SIMULATED | part of the 529; per-chemistry curves, energy counter, fresh cells detected |
+| measurement core logic | SIMULATED, 546 checks | `firmware/test/host/test_ac_core.c` |
+| status LED logic | SIMULATED | part of the 546; every pattern and its timing |
+| battery percentage from the AA pack | SIMULATED | part of the 546; per-chemistry curves, energy counter, fresh cells detected |
+| power source (cells / external / holder empty) | SIMULATED | part of the 546; VSYS thresholds with the ADC error on both sides, Matter Status per source |
 | energy model | BUILD-VERIFIED | `tools/battery_calculator/model.py`, inputs traced to datasheets |
-| electrical design | BUILD-VERIFIED | 510 rule checks in `electronics/schematic/design.py`, one standing warning (T-P3) |
+| electrical design | BUILD-VERIFIED | 567 rule checks in `electronics/schematic/design.py`, one standing warning (T-P3) |
 | enclosure | BUILD-VERIFIED | OpenSCAD asserts over every module, post and zone, and `tools/diagnostics/stl_check.py`: all four parts manifold, 1.1 % overhang on the front shell |
 | firmware build | BUILD-VERIFIED | full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6: 1.69 MB image (14 % free in the OTA slot), 210 kB DIRAM (46.5 %) |
 | sensor drivers | **untested** | register addresses and timings read from datasheets |
@@ -38,7 +39,7 @@ cc -std=c99 -Wall -Wextra -O1 -Ifirmware/components/ac_core/include \
    -lm -o /tmp/ac_test && /tmp/ac_test
 ```
 
-529 checks in about 10 ms. What they cover:
+546 checks in about 10 ms. What they cover:
 
 | area | examples |
 |---|---|
@@ -51,7 +52,8 @@ cc -std=c99 -Wall -Wextra -O1 -Ifirmware/components/ac_core/include \
 | engine | a cold engine measures immediately but publishes nothing; warm-up ends after the SGP40's documented 60 s; ECO over two hours gives exactly 2 SEN62 windows, 24 CO2 shots and 720 VOC samples; VOC keeps its 10 s grid through a 60 s particle window; an event escalates to ACTIVE; USB switches to continuous, which keeps the SEN62 running between windows; critical battery stops measuring; a dead SEN62 does not stop the other channels; SEN62, Sunrise and SGP40 all dead is an ERROR; publishing is driven by change, not by the clock; factory reset restores every default |
 | status LED | dark in normal operation; a press shows the air-quality colour for exactly 3 s; pairing blinks blue and times out with the commissioning window; warm-up, low battery, critical battery and fault each have their own pattern; the unprompted critical-battery blip stays under 50 ms per 10 s; holding the button shows blue / cyan / red at 3 / 8 / 12 s and nothing past 20 s; calibration blinks cyan for longer than its 3 min settling, then green or red |
 | 24 h statistics | no history means no value, not zero; a one-minute spike survives into the 24 h peak; a 1 h window ending before the spike does not see it; the bucket in progress is included |
-| AA pack | every cell curve (alkaline, NiMH, L91) is monotonic and clamped, a NaN from a dead ADC reads 0 %; flat L91 cells are carried by the energy counter; a voltage near the end wins over an optimistic counter; the value never climbs on noise, but fresh cells reset it |
+| AA pack | every cell curve (alkaline, NiMH, L91) is monotonic and clamped, a NaN from a dead ADC reads 0 %; flat L91 cells are carried by the energy counter; a voltage near the end wins over an optimistic counter; the value never climbs on noise, but fresh cells reset it; the same cells taken out on mains and put back keep their counter |
+| power source | VSYS at 3.98 V + ADC error is still the cells, 4.17 V - ADC error is already external power; an enumerated USB host is external power without any reading; a pack under 3.0 V on external power is an empty holder; Matter Status 1 / 2 / 3 for cells / external with backup / external, holder empty |
 
 The suite was checked against a deliberately injected bug (inverting one
 air-quality comparison) to confirm it fails when it should.
@@ -63,18 +65,24 @@ python3 electronics/schematic/design.py
 ```
 
 ```
-ERC: 510 checks, 0 error(s), 1 warning(s)
+ERC: 567 checks, 0 error(s), 1 warning(s)
   WARN  SW1 has no soft start: the SEN62's switch-on step lands on the FireBeetle's 3.3 V buck - verify on the bench (TESTING T-P3)
 ```
 
-What the 510 cover: every pin exists on its part and every pin of every part
+What the 567 cover: every pin exists on its part and every pin of every part
 is connected or declared open, no net has one connection, no pin is on two
 nets, every supply is within its part's range and the part really sits on
 that rail, the pack reaches nothing except through the PTC fuse, **nothing
-can charge the cells** (the LM66200 is the only link between +4V0 and VSYS,
-its ON and VIN2 are grounded, and the charger's 4.2 V is far enough above
-+4V0 for it to block), the regulator, the #2810 and the fuse carry their
-loads with margin, the pack divider stays inside the ADC range, I2C
+can charge the cells** (the LM66200 is the only link between +VREG and VSYS,
+and the FireBeetle charger's 4.2 V is far enough above +VREG for it to
+block), **USB 5 V never touches the pack** (VBUS_EXT and VPACK_F share
+nothing), PS2 feeds VIN2 and nothing else, +VEXT is far enough above +VREG
+for external power to take over and stays inside the FireBeetle's rating,
+the firmware's external-power threshold (`AC_EXT_POWER_V`, read from
+`ac_battery.h`) is clear of both branches including the ADC's error, the
+undervoltage lockout (R11 on PS1's EN) switches off at no less than 1.0 V per
+cell and restarts from a fresh NiMH pack, the regulator, the #2810 and the
+fuse carry their loads with margin, the pack divider stays inside the ADC range, I2C
 addresses are unique, each switched bus has exactly one pull-up pair on the
 rail that powers its devices and the LP bus uses the modules' own, the
 Sunrise's VDDIO shares GPIO18 with its pull-ups, COMSEL is grounded and EN
@@ -175,25 +183,30 @@ and re-render - the asserts re-check the gas bay.
 ## Bench tests, before the case is closed
 
 These need hardware and are the first thing to do once you have it. Unless a
-test says otherwise, run it on cells with USB unplugged: with a computer on
-USB the device switches to CONTINUOUS and the FireBeetle feeds VSYS itself.
+test says otherwise, run it on cells with USB unplugged and nothing in J2:
+on external power (a computer on the FireBeetle's USB-C, or a charger in J2)
+the device switches to CONTINUOUS and VSYS no longer comes from the cells.
 
 ### Power
 
 | # | test | pass |
 |---|---|---|
-| T-P1 | regulator set | the S9V11E2A reads **4.00 V ± 0.03 V** on its own, from the cells through the fuse, **before anything is connected to it** (ASSEMBLY step 4). Above 4.2 V the FireBeetle is out of its rating |
-| T-P2 | **cells never charged** | cells in, a computer on USB, an ammeter (or the PPK2) in the pack lead: current only ever flows out of the pack, never into it - also while the SEN62 switches and the Sunrise measures. VSYS (FireBeetle BAT) reads about 4.2 V on USB and about 4.0 V without. Repeat with NiMH cells if you use them |
+| T-P1 | regulators set | **before anything is connected to them** (ASSEMBLY step 4): PS1 reads **3.90 V ± 0.03 V** from the cells through the fuse, with R11 fitted; PS2 reads **4.20 V ± 0.03 V** from a charger in J2. PS2 above 4.23 V puts the FireBeetle out of its rating; PS1 above about 4.04 V can be read as external power |
+| T-P2 | **cells never charged** | cells in, an ammeter (or the PPK2) in the pack lead, once with a computer on the FireBeetle's USB and once with a charger in J2: current only ever flows out of the pack, never into it - also while the SEN62 switches and the Sunrise measures. VSYS (FireBeetle BAT) reads about 4.2 V on either and about 3.9 V on the cells alone. Repeat with NiMH cells if you use them |
 | T-P3 | **SEN62 switch-on dip** | a scope on the FireBeetle's 3.3 V while the #2810 switches the SEN62 on: the rail stays at or above 3.20 V (NETLIST.md), the ESP32-C6 does not reset, and the SGP40/SHT40 reading taken during the window succeeds. This is the ERC's standing warning; the #2810 has no soft start |
 | T-P4 | rails | +3V3_SEN is off between windows and 3.2-3.4 V during one; the #2810's slide switch is in OFF; GPIO18 (Sunrise VDDIO) and GPIO14 (EN) are high only during a Sunrise measurement, and GPIO17/21 are quiet while EN is low; the red LED only flickers during boot (GPIO16 is U0TXD) |
 | T-P5 | battery voltage | `diag` shows the AA pack voltage; it agrees with a multimeter across the pack (note the difference - the 1M/220k divider multiplies any ADC error by 5.5); with `cell_type` set, the percentage falls across a day and never climbs back on battery; fresh cells bring it back near 100 |
-| T-P6 | USB | a computer on USB: the log shows `state CHARGING, mode CONTINUOUS` (the state name is historical - nothing charges) and the SEN62 runs continuously; unplugged, it stops within one loop. A USB charger or power bank does **not** switch the mode: only an enumerated USB host counts, on purpose |
+| T-P6 | USB | a computer on the FireBeetle's USB: the log shows `power: external, cells as backup (VSYS 4.2x V, pack ... V)` and `state CHARGING, mode CONTINUOUS` (the state name is historical - nothing charges), and the SEN62 runs continuously; unplugged, `power: cells` and back to ECO within one battery read (`battery_interval_s`, 5 min by default). Since v1.3.1 the mode follows VSYS, not only an enumerated USB host |
+| T-P7 | **mains priority** | cells in, a charger in J2, USB unplugged: VSYS reads about 4.2 V; the current in the pack lead is only in the µA range (the regulator's quiescent current and the resistors across the pack, T-E0), not mA; the log shows `power: external, cells as backup`; a controller reads Power Source `Status` 2 (Standby) |
+| T-P8 | **seamless switchover** | as T-P7, then pull the charger during a SEN62 window (fan running): no reset (uptime continues, no boot banner), the window completes, the log shows `power: cells` at the next battery read and Matter `Status` returns to 1 (Active). Plug it back in: `external, cells as backup` again |
+| T-P9 | **holder empty on mains** | cells out, a charger in J2: the device runs, the log shows `power: external, no cells`, no battery alarm (no yellow blink, no red blip), Matter `Status` 3 (Unavailable), `BatPresent` false, `BatPercentRemaining` null, `BatReplacementNeeded` false |
+| T-P10 | **undervoltage lockout** | a lab supply in place of the pack (through the fuse), J2 empty, USB unplugged. Lower it slowly from 8.7 V: the device switches off between ~5.9 and ~6.3 V; raise it again: it restarts between ~6.8 and ~7.2 V, not before. Nominal 6.1 / 7.0 V from Pololu's EN thresholds (off below 0.7 V, on above 0.8 V) with the internal 100 k and R11 13 k; the tolerance band is the uncertainty of those EN levels. Switched off, the supply still delivers about 60 µA (~55 µA through the EN path, ~5 µA through the pack divider) |
 
 ### Firmware and controls
 
 | # | test | pass |
 |---|---|---|
-| T-B1 | flash and boot | the banner `3D Printing AIR CHECK 1.3.0` appears, no panic, no reset loop |
+| T-B1 | flash and boot | the banner `3D Printing AIR CHECK 1.3.1` appears, no panic, no reset loop |
 | T-B2 | status LED | white at boot, all three colours on a press, blue when pairing, readable in daylight in its panel holder |
 | T-B3 | button | short, long (3-8 s), calibrate (8-12 s) and very long all do the right thing, and the hold colour matches; over 20 s does nothing |
 | T-B4 | service console | with USB in, `aircheck_config.py get` lists the settings, `set name ...` changes the Matter NodeLabel, `diag` shows live values and the health of all four sensors; on battery, the console is not running |
@@ -224,19 +237,18 @@ USB the device switches to CONTINUOUS and the FireBeetle feeds VSYS itself.
 ### Energy
 
 The battery claim rests on a model (`docs/BATTERY_LIFE.md`). These replace
-its least certain lines with measurements. Cells in, USB unplugged, Thread
-attached. The PPK2's ammeter mode only works up to 5 V, so it cannot sit in
-the 5.4-10.8 V pack lead: put it in the **4.0 V line between the regulator's
-VOUT and the LM66200's VIN1** (everything the device draws, at 4.0 V), and
-measure the regulator's own share separately (T-E0).
+its least certain lines with measurements. Cells in, USB unplugged, J2 empty,
+Thread attached. The PPK2's ammeter mode only works up to 5 V, so it cannot
+sit in the 5.4-10.8 V pack lead: put it in the **3.9 V line between PS1's
+VOUT and the LM66200's VIN1** (everything the device draws, at 3.9 V), and
+measure what hangs on the pack itself separately (T-E0).
 
 | # | test | model | pass |
 |---|---|---|---|
-| T-E0 | **regulator quiescent**: 4.0 V output disconnected, a multimeter on its µA range in the pack lead (it then sees the regulator plus the 1.22 MΩ pack divider) | < 0.2 mA + 7 µA (Pololu, divider) | recorded; above 0.2 mA the ECO runtime drops as in BATTERY_LIFE.md "What would change these numbers" |
-
-| T-E1 | **idle floor**: SEN62 off, averaged between two windows (VOC samples, Sunrise shots and Thread polls included) | about 1.1 mW at 4.0 V, i.e. the 2.8 mW at the cells minus the regulator's quiescent share (T-E0) | recorded, and fed back into `model.py`. Well above the model: look for the #2810's slide switch in ON, the SparkFun LED jumper not cut, the FireBeetle's green LED (GPIO15), or a pin back-feeding an unpowered sensor |
-| T-E2 | **one full ECO hour**, SEN62 window included | 8.4 mWh at the cells = about 5.5 mWh at 4.0 V plus the regulator's losses and T-E0 | recorded; this is the number the 3.7 months rests on |
-| T-E3 | **one SEN62 window** on its own | 5.5 mWh at the cells, about 4.7 mWh at 4.0 V | recorded; replaces the datasheet figure |
+| T-E0 | **regulator quiescent**: PS1's 3.9 V output disconnected, a multimeter on its µA range in the pack lead (it then sees the regulator, the 1.22 MΩ pack divider and the 113 kΩ EN path of the lockout) | < 0.2 mA + ~84 µA at 8.7 V (Pololu; divider ~7 µA, EN path ~77 µA) | recorded; above 0.2 mA for the regulator the ECO runtime drops as in BATTERY_LIFE.md "What would change these numbers" |
+| T-E1 | **idle floor**: SEN62 off, averaged between two windows (VOC samples, Sunrise shots and Thread polls included) | about 0.85 mW at 3.9 V, i.e. the 3.5 mW at the cells (≈ 0.40 mA at 8.7 V) minus the regulator's quiescent current and the resistors across the pack (T-E0) and the regulator's conversion loss | recorded, and fed back into `model.py`. Well above the model: look for the #2810's slide switch in ON, the SparkFun LED jumper not cut, the FireBeetle's green LED (GPIO15), or a pin back-feeding an unpowered sensor |
+| T-E2 | **one full ECO hour**, SEN62 window included | 9.0 mWh at the cells = about 5.5 mWh at 3.9 V plus the regulator's losses and T-E0 | recorded; this is the number the 3.5 months rests on |
+| T-E3 | **one SEN62 window** on its own | 5.5 mWh at the cells, about 4.7 mWh at 3.9 V | recorded; replaces the datasheet figure |
 
 If the regulator's quiescent current comes in worse than Pololu's "< 0.2 mA",
 a particle window every 2 h recovers it without any hardware change.
@@ -246,7 +258,7 @@ a particle window every 2 h recovers it without any hardware change.
 | # | test | pass |
 |---|---|---|
 | T-N1 | commissioning | the QR code scans, the device joins Thread, it appears in Apple Home |
-| T-N2 | attributes | PM2.5, PM10, CO2, VOC, temperature, humidity and battery all appear; the battery shows as replaceable, 6 × AA |
+| T-N2 | attributes | PM2.5, PM10, CO2, VOC, temperature, humidity and battery all appear; the battery shows as replaceable, 6 × AA; Power Source `Status` follows T-P7..T-P9 (1 on cells, 2 on mains with cells, 3 on mains without) |
 | T-N3 | reporting | a change at the sensor reaches the Home app within about 15 s |
 | T-N4 | reconnect | power-cycle the HomePod; the device re-attaches on its own |
 | T-N5 | offline | unplug the border router; the device keeps measuring and its history keeps filling |

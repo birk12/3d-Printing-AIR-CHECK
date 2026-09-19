@@ -6,9 +6,12 @@
 
 ```
 6 x AA (BT1) --F1 PTC 0.5 A--> VPACK_F 5.4..10.8 V
-   VPACK_F --> PS1 Pololu S9V11E2A (buck-boost) --> +4V0
+   VPACK_F --> PS1 Pololu S9V11E2A (buck-boost) --> +VREG 3.90 V
    VPACK_F --R1 1M--+--R2 220k-- GND        PACK_ADC on GPIO3 (C1 100 nF)
-+4V0 --> D1 LM66200 (ideal diode, blocks reverse) --> VSYS --> FireBeetle BAT (J1)
+   VPACK_F --100k (inside PS1)-- PS1 EN --R11 13k-- GND   UVLO: off < 6.1 V, on > 7.0 V
+USB-C power socket J2 (5 V) --> PS2 Pololu S9V11E2A --> +VEXT 4.20 V
++VREG 3.90 V --> D1 LM66200 VIN1 -+
++VEXT 4.20 V --> D1 LM66200 VIN2 -+-> the higher one --> VSYS --> FireBeetle BAT (J1)
 VSYS --> Sunrise VBB, LED common anode (spliced onto the J1 + lead)
 USB-C --> FireBeetle CN3165 --> VSYS at 4.2 V: D1 blocks, the cells are never charged;
           the Sunrise and the LED then run from USB too
@@ -23,8 +26,10 @@ GPIO18 --> CO2_VDDIO --> Sunrise VDDIO, R5/R6 pull-ups  (EN = GPIO14, R7 pull-do
 |---|---|---|---|---|
 | VPACK | 5.40 V | 8.70 V | 10.80 V | 6 x AA in series: 0.9 V/cell floor, 1.45 V L91 average, 1.8 V open-circuit of a fresh L91 |
 | VPACK_F | 5.40 V | 8.70 V | 10.80 V | VPACK behind the PTC fuse F1 |
-| +4V0 | 3.92 V | 4.00 V | 4.08 V | Pololu S9V11E2A, trimpot set to 4.00 V +-2 %; always on |
-| VSYS | 3.88 V | 4.00 V | 4.24 V | FireBeetle battery input: +4V0 through the LM66200, or the FireBeetle's own CN3165 at 4.2 V +-1 % while USB is plugged in |
+| +VREG | 3.82 V | 3.90 V | 3.98 V | PS1 Pololu S9V11E2A from the cells, trimmed to 3.90 V +-2 %; off below ~6.1 V pack (UVLO through R11 on its EN) |
+| VBUS_EXT | 4.75 V | 5.00 V | 5.25 V | USB-C power socket J2: 5 V from any USB-C charger (5.1k on CC) |
+| +VEXT | 4.17 V | 4.20 V | 4.23 V | PS2 Pololu S9V11E2A from J2, trimmed to 4.20 V |
+| VSYS | 3.80 V | 3.90 V | 4.24 V | FireBeetle battery input, the higher of +VREG and +VEXT through the LM66200, or the FireBeetle's own CN3165 at 4.2 V +-1 % while a computer is on its USB-C |
 | +3V3 | 3.20 V | 3.30 V | 3.40 V | FireBeetle TPS62A02 buck, always on |
 | +3V3_SEN | 3.20 V | 3.30 V | 3.40 V | +3V3 behind the Pololu #2810 switch |
 | CO2_VDDIO | 0.00 V | 3.30 V | 3.40 V | GPIO18 driven high only while the Sunrise is enabled |
@@ -34,7 +39,7 @@ GPIO18 --> CO2_VDDIO --> Sunrise VDDIO, R5/R6 pull-ups  (EN = GPIO14, R7 pull-do
 
 | GPIO | header label | signal | dir | LP pad | note |
 |---|---|---|---|---|---|
-| 0 | (on board) | REG_ADC | analog in | yes | FireBeetle 1M/1M divider from VSYS: 4.0 V on the pack, 4.2 V on USB |
+| 0 | (on board) | REG_ADC | analog in | yes | FireBeetle 1M/1M divider from VSYS: 3.9 V on the cells, 4.2 V on external power |
 | 1 | 1 | BTN | in | yes | wake source, internal pull-up, active low |
 | 2 | 2 | SEN_EN | out | yes | held LOW in sleep |
 | 3 | 3 | PACK_ADC | analog in | yes | pack / 5.545, ADC1 channel 3 |
@@ -81,11 +86,14 @@ Every net is one or more wires. Solder, then heat-shrink every joint.
 |---|---|
 | `VPACK` | BT1.+, F1.1 |
 | `VPACK_F` | F1.2, PS1.VIN, R1.1 |
-| `+4V0` | PS1.VOUT, D1.VIN1 |
+| `+VREG` | PS1.VOUT, D1.VIN1 |
+| `PS1_EN` | PS1.EN, R11.1 |
+| `VBUS_EXT` | J2.VBUS, PS2.VIN |
+| `+VEXT` | PS2.VOUT, D1.VIN2 |
 | `VSYS` | D1.VOUT, J1.+, M1.BAT+, U4.2, LED1.A |
 | `+3V3` | M1.3V3, SW1.VIN, U2.3V3, U3.VCC |
 | `+3V3_SEN` | SW1.VOUT, U1.1, U1.6, R3.1, R4.1 |
-| `GND` | BT1.-, PS1.GND, D1.GND, D1.VIN2, D1.ON, J1.-, M1.BAT-, M1.GND, SW1.GND, U1.2, U1.5, U2.GND, U3.GND, U4.1, U4.6, R2.2, C1.2, R7.2, SW2.2 |
+| `GND` | BT1.-, PS1.GND, D1.GND, D1.ON, J2.GND, PS2.GND, R11.2, J1.-, M1.BAT-, M1.GND, SW1.GND, U1.2, U1.5, U2.GND, U3.GND, U4.1, U4.6, R2.2, C1.2, R7.2, SW2.2 |
 | `PACK_ADC` | R1.2, R2.1, C1.1, M1.IO3 |
 | `SEN_EN` | M1.IO2, SW1.ON |
 | `CO2_EN` | M1.IO14, U4.9, R7.1 |
@@ -109,6 +117,7 @@ Every net is one or more wires. Solder, then heat-shrink every joint.
 | ref | part | where |
 |---|---|---|
 | F1 | PTC resettable fuse 0.5 A hold / 1.0 A trip | in the red lead of the battery holder, 2 cm from the holder |
+| R11 | 13 k, 1 %, 0.25 W, metal film, THT | across PS1's EN and GND pins, on the module |
 | R1 | 1 M, 1 %, 0.25 W, metal film, THT | at the regulator's VIN pad, on its own wire to FireBeetle IO3 |
 | R2 | 220 k, 1 %, 0.25 W, metal film, THT | at FireBeetle IO3 to GND, together with C1 |
 | C1 | 100 nF ceramic, THT | at FireBeetle IO3 to GND |
@@ -127,6 +136,12 @@ Every net is one or more wires. Solder, then heat-shrink every joint.
 |---|---|
 | U4.7 (nRDY) | see U4 in the BOM |
 | U4.8 (DVCC) | see U4 in the BOM |
-| PS1.EN (enable, 100k pull-up to VIN) | see PS1 in the BOM |
 | D1.ST (status, open drain) | see D1 in the BOM |
+| J2.D+ (data) | see J2 in the BOM |
+| J2.D- (data) | see J2 in the BOM |
+| J2.CC1 (config) | see J2 in the BOM |
+| J2.CC2 (config) | see J2 in the BOM |
+| J2.SBU1 (sideband) | see J2 in the BOM |
+| J2.SBU2 (sideband) | see J2 in the BOM |
+| PS2.EN (enable, 100k pull-up to VIN) | see PS2 in the BOM |
 | SW1.SW (slide-switch contact) | see SW1 in the BOM |

@@ -3,7 +3,8 @@
 Nothing a user needs to change requires a firmware rebuild. Everything lives
 in one NVS blob with a CRC, and everything is range-checked on the device by
 `ac_config_validate()` before it is applied. The tool talks to a service
-console on the USB-C port, which only runs while a computer is connected.
+console on the FireBeetle's USB-C port, which only runs on external power
+(in practice: while a computer is connected there).
 
 ```bash
 python3 tools/configuration/aircheck_config.py list
@@ -30,14 +31,16 @@ are the numbers the energy model is built on:
 
 | profile field | default | |
 |---|---|---|
-| `pm_interval_s` | ECO 1 h, NORMAL 15 min, ACTIVE 2 min, POST_PRINT 5 min, CONTINUOUS 0 (always on) | how often the SEN62 runs. ECO at 2 h (7200) gives 5.6 months on L91 cells |
+| `pm_interval_s` | ECO 1 h, NORMAL 15 min, ACTIVE 2 min, POST_PRINT 5 min, CONTINUOUS 0 (always on) | how often the SEN62 runs. ECO at 2 h (7200) gives 5.0 months on L91 cells (NiMH 3.0, alkaline 2.7) |
 | `pm_window_s` | 60 s | how long it runs. **Never below 60 s**: the first 30 s are discarded while the SEN62 settles, the rest is averaged; the validator enforces the floor |
 | `co2_interval_s` | 5 min; ACTIVE 2 min, CONTINUOUS 1 min | one Sunrise single measurement. Floor 60 s. Costs almost nothing: every 10 min instead of 5 makes no visible difference to the runtime |
 | `voc_interval_s` | 10 s; CONTINUOUS 1 s | SGP40, with the SHT40's temperature and humidity read just before it. Clamped to 1-10 s, the range the Gas Index Algorithm is validated at |
 | `icd_slow_poll_s` | 15 s; ACTIVE, POST_PRINT, CONTINUOUS 5 s | clamped to 15 s, the Matter SIT ICD limit. The energy model uses it; the firmware does not apply it at runtime - the radio polls at the 15 s set in `sdkconfig.defaults` |
 
-CONTINUOUS is used automatically while a computer is connected over USB; the
-cells are not charged meanwhile (EDR-18).
+CONTINUOUS is used automatically on external power - a USB-C charger in the
+power socket, or a computer on the FireBeetle's USB-C - whatever
+`default_mode` says. The cells are not charged meanwhile (EDR-18); they are
+the backup (EDR-20).
 
 Change any of these and re-run the energy model before believing the runtime:
 
@@ -89,7 +92,7 @@ configurable, on purpose.
 | setting | default | |
 |---|---|---|
 | `led_show_air_quality` | true | a short button press shows the air-quality colour for 3 s. Off: it only blinks green once, as a sign of life |
-| `battery_interval_s` | 300 s | how often the pack voltage is read (60-3600 s). Also how quickly a connected computer is noticed |
+| `battery_interval_s` | 300 s | how often the pack voltage and VSYS are read (60-3600 s). Also how quickly a change of power source (charger or computer in or out) is noticed |
 
 ## Battery
 
@@ -97,13 +100,16 @@ configurable, on purpose.
 |---|---|---|
 | `cell_type` | `alkaline` | `alkaline`, `nimh` or `lithium` (Energizer L91 class): selects the voltage curve and the usable energy for the battery percentage. Set it to what is in the compartment |
 | `cells` | 6 | AA cells in series, 1-8. The holder takes 6 |
-| `low_battery_pct` | 20 % | 5-50 %. Reported to Apple Home as a warning |
-| `critical_battery_pct` | 5 % | 1-20 %. Measurement stops; only battery is still reported |
+| `low_battery_pct` | 20 % | 5-50 %. Reported to Apple Home as a warning. On external power only as `BatChargeLevel` for the backup cells, no low-battery state |
+| `critical_battery_pct` | 5 % | 1-20 %. Measurement stops; only battery is still reported. Not on external power |
 
 The percentage is the lower of two estimates: the chemistry's voltage curve
 and an energy counter of what the firmware has spent. Fresh cells are
 recognised by their voltage jump and restart the counter; changing
-`cell_type` or `cells` restarts it too.
+`cell_type` or `cells` restarts it too. On external power only the
+regulator's quiescent current and the resistors across the pack are booked
+against the cells. With the holder empty on external power there is no
+percentage at all, and `cell_type` does not matter.
 
 ## Site
 

@@ -102,6 +102,11 @@ BODIES = [
     ["SW1 Pololu 2810", SW1_X, SW1_Y, MOD_Z, SW1_S, SW1_S, 5.0],
     ["PS1 Pololu S9V11E2A", PS1_X, PS1_Y, MOD_Z, PS1_W, PS1_L, PS1_T + 2.0],
     ["D1 LM66200", D1_X, D1_Y, MOD_Z + 3.0, D1_L, D1_W, 2.2 + 2.0],
+    ["PS2 Pololu S9V11E2A", PS2_X, PS2_Y, MOD_Z, PS1_L, PS1_W, PS1_T + 2.0],
+    ["J2 USB-C power socket", J2_X, J2_Y, J2_Z, J2_L, J2_W, J2_T],
+    ["J2 socket", J2_X + J2_SOCKET_X0, J2_Y + J2_SOCKET_Y0, J2_Z + J2_T / 2 - J2_SOCKET_H / 2,
+        J2_SOCKET_X1 - J2_SOCKET_X0, J2_W - J2_SOCKET_Y0, J2_SOCKET_H],
+    ["J2 solder side", J2_X, J2_Y, J2_Z - 1.0, J2_L, J2_SOCKET_Y0, 1.0],
     ["LED holder", LED_CX - LED_NUT_D / 2, LED_CY - LED_NUT_D / 2, FACE,
         LED_NUT_D, LED_NUT_D, LED_BEHIND],
     ["button", BTN_CX - BTN_BODY_D / 2, BTN_CY - BTN_BODY_D / 2, FACE,
@@ -133,6 +138,9 @@ module mock_all() {
     mock("SW1 Pololu 2810", "Green");
     mock("PS1 Pololu S9V11E2A", "Green");
     mock("D1 LM66200", "MidnightBlue");
+    mock("PS2 Pololu S9V11E2A", "Green");
+    mock("J2 USB-C power socket", "Black");
+    mock("J2 socket", "Silver");
     mock("LED holder", "Silver");
     mock("button", "Black");
 }
@@ -141,9 +149,14 @@ module mock_all() {
 // negatives
 // ---------------------------------------------------------------------
 
+J2_CX = J2_X + (J2_SOCKET_X0 + J2_SOCKET_X1) / 2;
+J2_CZ = J2_Z + J2_T / 2;
 module usbc_opening() {
     translate([-1, USB_CY - USBC_CLEAR_W / 2, USB_CZ - USBC_CLEAR_H / 2])
         cube([WALL + 2, USBC_CLEAR_W, USBC_CLEAR_H]);
+    // the power socket, through the top wall
+    translate([J2_CX - J2_OPEN_W / 2, CASE_H - WALL - 1, J2_CZ - J2_OPEN_H / 2])
+        cube([J2_OPEN_W, WALL + 2, J2_OPEN_H]);
 }
 
 module sen_ports() {
@@ -237,11 +250,13 @@ module gas_bay_mounts() {
 module electronics_mounts() {
     for (h = FB_HOLES) post(h[0], h[1], FACE, FB_Z, 4.6);
     // pads + fences for the two Pololu boards
-    for (m = [[SW1_X, SW1_Y, SW1_S, SW1_S], [PS1_X, PS1_Y, PS1_W, PS1_L]]) {
+    for (m = [[SW1_X, SW1_Y, SW1_S, SW1_S], [PS1_X, PS1_Y, PS1_W, PS1_L],
+              [PS2_X, PS2_Y, PS1_L, PS1_W]]) {
         box_at(m[0] + 2, m[1] + 2, FACE, m[2] - 4, m[3] - 4, MOD_Z - FACE);
         fence(m[0], m[1], m[2], m[3], FACE, MOD_Z + POCKET_H);
     }
     for (h = D1_HOLES) post(D1_X + h[0], D1_Y + h[1], FACE, MOD_Z + 3.0, 5.0);
+    for (h = J2_HOLES) post(J2_X + h[0], J2_Y + h[1], FACE, J2_Z, 5.0);
     // holder bosses
     for (h = HOLDER_HOLES) post(h[0], h[1], FACE, HOLDER_Z, HOLDER_BOSS_D);
 }
@@ -294,6 +309,7 @@ module front_shell_body() {
         for (h = HOLDER_HOLES) translate([h[0], h[1], HOLDER_Z - 2.9]) cylinder(d = SELFTAP_M25, h = 3.0);
         for (h = FB_HOLES) translate([h[0], h[1], FB_Z - 4.5]) cylinder(d = SELFTAP_M2, h = 5);
         for (h = D1_HOLES) translate([D1_X + h[0], D1_Y + h[1], MOD_Z]) cylinder(d = SELFTAP_M2, h = 4);
+        for (h = J2_HOLES) translate([J2_X + h[0], J2_Y + h[1], J2_Z - 5]) cylinder(d = SELFTAP_M2, h = 5.1);
         // branding on the compartment's front, engraved, mirrored (seen from -Z)
         translate([CASE_W / 2, HOLDER_Y + HOLDER_W / 2, -0.01]) mirror([1, 0, 0])
             linear_extrude(0.7)
@@ -451,7 +467,9 @@ function in_elec(b) = b[2] >= UP_Y0 && !(b[1] < GAS_X1 + GAS_WALL_T && b[2] < GA
 for (i = [0 : len(BODIES) - 1], j = [0 : len(BODIES) - 1])
     if (i < j && !(BODIES[i][0] == "SEN62" && BODIES[j][0] == "SEN62 plug keep-out")
               && !(BODIES[i][0] == "Sunrise" && BODIES[j][0] == "Sunrise filter clearance")
-              && !(BODIES[i][0] == "FireBeetle" && BODIES[j][0] == "FireBeetle solder side"))
+              && !(BODIES[i][0] == "FireBeetle" && BODIES[j][0] == "FireBeetle solder side")
+              && !(BODIES[i][0] == "J2 USB-C power socket" && BODIES[j][0] == "J2 socket")
+              && !(BODIES[i][0] == "J2 USB-C power socket" && BODIES[j][0] == "J2 solder side"))
         assert(!overlap(BODIES[i], BODIES[j]), str(BODIES[i][0], " collides with ", BODIES[j][0]));
 // 2. everything inside the case (the USB plug excepted), and in its zone
 for (b = BODIES) if (b[0] != "USB-C plug") assert(inside_case(b), str(b[0], " is outside the case"));
@@ -459,7 +477,8 @@ for (n = ["SHT40", "SGP40", "Sunrise", "Sunrise filter clearance"])
     for (b = BODIES) if (b[0] == n) assert(in_gas(b), str(n, " is not inside the gas bay"));
 for (b = BODIES) if (b[0] == "holder + cells") assert(in_batc(b), "the holder is not in the compartment");
 for (n = ["FireBeetle", "SW1 Pololu 2810", "PS1 Pololu S9V11E2A", "D1 LM66200", "LED holder",
-          "button", "SEN62", "SEN62 plug keep-out"])
+          "button", "SEN62", "SEN62 plug keep-out", "PS2 Pololu S9V11E2A",
+          "J2 USB-C power socket", "J2 socket"])
     for (b = BODIES) if (b[0] == n) assert(in_elec(b), str(n, " is not in the electronics zone"));
 // 3. posts against bodies
 for (p = POST_XY, b = BODIES) if (b[0] != "USB-C plug")
@@ -500,6 +519,11 @@ assert(FACE + BTN_BEHIND < LID_IN_Z - 1, "the button does not fit the depth");
 // 8. USB-C
 assert(USB_CZ - USBC_CLEAR_H / 2 > FACE && USB_CZ + USBC_CLEAR_H / 2 < WALL_TOP_Z, "USB-C opening out of range");
 assert(USB_CY - USBC_CLEAR_W / 2 > GAS_Y1 + GAS_WALL_T, "the USB-C opening cuts into the gas bay");
+// 8b. USB-C power socket: opening inside the wall, clear of the top posts
+assert(J2_CZ - J2_OPEN_H / 2 > FACE && J2_CZ + J2_OPEN_H / 2 < WALL_TOP_Z, "power socket opening out of range");
+assert(J2_CX - J2_OPEN_W / 2 > POST_XY[2][0] + POST_D / 2 && J2_CX + J2_OPEN_W / 2 < POST_XY[3][0] - POST_D / 2,
+       "power socket opening runs into a lid post");
+assert(J2_Y + J2_W <= CASE_H - WALL, "the power socket board pokes into the top wall");
 // 9. keyholes
 for (x = KEYHOLE_X)
     assert(!(x > WALL && x < GAS_X1 + GAS_WALL_T && KEYHOLE_Y < GAS_Y1 + GAS_WALL_T),

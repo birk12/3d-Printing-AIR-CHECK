@@ -8,8 +8,11 @@
  * left" and "nearly empty"; they are not a fuel gauge. */
 typedef struct { float v, pct; } pt_t;
 
+/* 0 % is where the regulator's undervoltage lockout switches the device off:
+ * 6.1 V on the pack, about 1.0 V per cell (docs/ENGINEERING_DECISIONS.md,
+ * EDR-20).  Below that a weak cell could be driven into reversal. */
 static const pt_t k_alk[] = {
-    { 0.90f, 0 }, { 1.00f, 5 }, { 1.10f, 15 }, { 1.15f, 25 }, { 1.20f, 40 },
+    { 1.00f, 0 }, { 1.05f, 6 }, { 1.10f, 15 }, { 1.15f, 25 }, { 1.20f, 40 },
     { 1.25f, 55 }, { 1.30f, 70 }, { 1.35f, 80 }, { 1.40f, 88 }, { 1.45f, 94 },
     { 1.55f, 100 },
 };
@@ -20,7 +23,7 @@ static const pt_t k_nimh[] = {
 };
 /* Flat for most of its life: the energy counter does the work there. */
 static const pt_t k_li[] = {
-    { 0.90f, 0 }, { 1.20f, 3 }, { 1.30f, 6 }, { 1.38f, 12 }, { 1.42f, 25 },
+    { 1.00f, 0 }, { 1.20f, 3 }, { 1.30f, 6 }, { 1.38f, 12 }, { 1.42f, 25 },
     { 1.45f, 45 }, { 1.47f, 65 }, { 1.50f, 85 }, { 1.55f, 95 }, { 1.70f, 100 },
 };
 
@@ -99,4 +102,20 @@ float ac_pack_update(ac_pack_t *p, float pack_v)
 
     if (p->pct < 0.0f || fresh || now < p->pct) p->pct = now;
     return p->pct;
+}
+
+ac_power_src_t ac_power_classify(float pack_v, float vsys_v, bool usb_host)
+{
+    bool ext = usb_host || vsys_v >= AC_EXT_POWER_V;
+    if (!ext) return AC_SRC_BATTERY;
+    return pack_v < AC_PACK_ABSENT_V ? AC_SRC_MAINS_NO_CELLS : AC_SRC_MAINS;
+}
+
+uint8_t ac_power_matter_status(ac_power_src_t s)
+{
+    switch (s) {
+    case AC_SRC_MAINS:          return 2;
+    case AC_SRC_MAINS_NO_CELLS: return 3;
+    default:                    return 1;
+    }
 }

@@ -591,7 +591,7 @@ particle sensor's own flow path, not the gas bay.
 
 ---
 
-## EDR-18: six AA cells, nothing is charged inside the device
+## EDR-18: six AA cells, nothing is charged inside the device — *extended by EDR-20 in v1.3.1*
 
 **Decision (2026-09-19).** Run from **6 × AA** in a screwed compartment
 (MPD BH36AAW holder), through a **PTC fuse**, a **Pololu S9V11E2A**
@@ -683,4 +683,77 @@ Sunrise's drawing 740-00993 (the pin rows come from a third-party footprint).
 ROM boot log toggles it after every reset. The Sunrise must see no signal on
 its bus while EN is low (TDE7318), so the Sunrise bus moved to GPIO17/21 and
 the red LED went to GPIO16, where the boot log only makes it flicker.
+
+---
+
+## EDR-20: continuous operation from a USB-C charger; undervoltage lockout; one power block for every project
+
+**Decision (2026-09-19).** Add a second input: a **USB-C power socket**
+(Adafruit #6050, sunken breakout) feeding a **second Pololu S9V11E2A at
+4.20 V** into the LM66200's second input. Lower the cells' regulator to
+**3.90 V**. Add a **13 kΩ resistor from the cells' regulator's EN pin to GND**
+as an undervoltage lockout. This chain is the common power block for the
+user's battery devices (AIR CHECK, Sleeper Frame, and whatever comes next).
+
+**Why the socket.** The user wants to run the device permanently from an
+18 W USB-C charger. The FireBeetle's own USB-C would work with cells in, but
+without cells the Sunrise and the LED would hang on the FireBeetle's LiPo
+charger (CN3165) - a charger used as a power supply, with no specified
+behaviour without a battery. Feeding the header's VCC pin instead would keep
+the CN3165 powered all the time: 350-660 µA (CN3165 datasheet, operating
+current). A separate socket with its own regulator is deterministic:
+
+* The #6050's 5.1 kΩ resistors on CC ask any USB-C charger for plain 5 V (up
+  to 1.5 A) with a C-to-C cable, without negotiation. The device draws at
+  most about 0.6 A at 5 V.
+* The LM66200 passes the higher of its inputs. 4.20 V beats 3.90 V by at
+  least 0.19 V after tolerances, far past its 70 mV threshold, so external
+  power always wins and the cells are the backup, switched in without a gap
+  when the power goes (SLVSG04: no soft start during switchover).
+* USB 5 V never reaches the pack, and the cells still cannot be charged: the
+  only way into them would be backwards through a buck-boost regulator and an
+  ideal diode.
+* One part number for both regulators - one spare fits either.
+
+**How the firmware knows.** VSYS, the FireBeetle's battery input, already
+has a 1M/1M divider to GPIO0. It reads 3.82-3.98 V on the cells and
+4.17-4.24 V on external power (4.2 V also when a computer is on the
+FireBeetle's port, from its charger). `ac_power_classify()` puts the
+threshold at 4.08 V, clear of the calibrated ADC error (~40 mV at VSYS) on
+both sides; `design.py` checks those margins against the header. On external
+power the device runs in CONTINUOUS mode, raises no battery alarms, and books
+only the regulator's quiescent current and the resistor leakage against the
+cells. Matter: the battery Power Source reports `Status` 1 Active (on the
+cells), 2 Standby (external power, cells present) or 3 Unavailable (holder
+empty, `BatPresent` false). No second, wired Power Source is declared.
+
+**Why the lockout.** The S9V11E2A keeps running down to 2 V input - 0.33 V
+per cell. Long before that the weakest cell of a series string is driven into
+reversal; alkaline cells then leak, NiMH cells are damaged. The regulator's
+EN pin has a 100 kΩ pull-up to VIN inside and switches off below 0.7 V and on
+above 0.8 V (Pololu). With 13 kΩ to GND: off at 6.1 V (1.0 V per cell), on
+again only above 7.0 V - with fresh cells, so it cannot oscillate on a
+recovering empty pack. The price is the current through those resistors,
+77 µA at 8.7 V, about 8 % of the ECO budget. The state-of-charge curves now
+end at 1.00 V per cell. After the lockout about 60 µA still flow (pull-up,
+R11, divider): **take empty cells out promptly**, especially NiMH (hint from
+the battery coordination session).
+
+**Rejected.** A MOSFET that switches the cells' regulator off on external
+power: EN low would still draw VIN/100 kΩ ≈ 87 µA through the internal
+pull-up, so the backup would last about 40 instead of about 15 months (L91),
+for one more discrete part in a module-only chain. For permanent mains
+operation the holder can simply stay empty.
+
+**Cost.** EUR 10 (socket + second regulator); the BOM is EUR 171. ECO on L91
+3.5 months with margin (NiMH 2.1, alkaline 1.8); as mains backup L91 ~15
+months (`docs/BATTERY_LIFE.md`).
+
+**Shared with other projects.** The Sleeper Frame (e-ink dashboard) uses the
+same block 1:1 (holder, PTC, 2 × S9V11E2A at 3.90/4.20 V, LM66200, #6050,
+13 kΩ lockout, 1M/220k pack divider, 4.08 V threshold) and the `ac_battery`
+module; the battery coordination session agreed: AA everywhere (L91 or
+eneloop pro), never charged in a device. Motor projects keep the same cells
+and block for their logic and take motor current straight from the pack
+through their own, larger fuse.
 

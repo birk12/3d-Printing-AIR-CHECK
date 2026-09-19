@@ -86,14 +86,34 @@ All values are standard clusters on four endpoints. No vendor extensions.
 | cluster | attribute | id | type / unit | meaning |
 |---|---|---|---|---|
 | Basic Information `0x0028` | NodeLabel | `0x0005` | string ≤ 32 | **the device name** ("3D Printer", "Room"). Use this to label tiles. Apple Home's own names are not visible to a second fabric. |
-| Power Source `0x002F` | BatPercentRemaining | `0x000C` | uint8, **half-percent** (0–200) | divide by 2 |
+| Power Source `0x002F` | Status | `0x0000` | enum8 | **1 Active** = on the cells, **2 Standby** = on external power, cells as backup, **3 Unavailable** = on external power, holder empty |
+| Power Source | BatPresent | `0x0011` | bool | false = holder empty |
+| Power Source | BatPercentRemaining | `0x000C` | uint8, **half-percent** (0–200), nullable | divide by 2; null with the holder empty |
 | Power Source | BatVoltage | `0x000B` | uint32, mV | pack voltage, six cells in series |
 | Power Source | BatChargeLevel | `0x000E` | enum8 | 0 OK, 1 Warning (≤ 20 %), 2 Critical (< 5 %) |
-| Power Source | BatReplacementNeeded | `0x000F` | bool | true at Critical: change the cells |
+| Power Source | BatReplacementNeeded | `0x000F` | bool | true at Critical: **change the cells now**. Always false with the holder empty |
 | Power Source | BatReplacementDescription | `0x0013` | string | "6 x AA (alkaline, NiMH or lithium)" |
 | Power Source | BatQuantity | `0x0019` | uint8 | 6 |
 
 There is no BatChargeState: nothing is charged inside the device (EDR-18).
+
+#### Mains or battery
+
+Since v1.3.1 the sensor also runs from a USB-C charger, with the cells as the
+backup (EDR-20). There is still only one Power Source cluster, the battery's;
+no second, wired source is declared. Read `Status` and `BatPresent` together:
+
+| `Status` | `BatPresent` | show |
+|---|---|---|
+| 1 Active | true | **battery**: percentage, and a warning at `BatChargeLevel` ≥ 1 |
+| 2 Standby | true | **mains**, cells as backup: optionally the backup's percentage |
+| 3 Unavailable | false | **mains**, no cells: no battery tile, no warning |
+
+On mains the sensor raises no low or critical battery state of its own, but
+`BatChargeLevel` still reports weak backup cells - worth a quiet hint, not an
+alarm. The sensor decides the source from its supply voltage and updates
+these attributes on every battery read (every 5 min by default), so a
+change can take that long to show.
 
 ### Endpoint 1: air quality
 
@@ -139,8 +159,9 @@ not zero. Show "—". A null means "not measured yet", never "clean air".
 Since v1.3 each quantity has its own sensor and its own clock: particles from
 the SEN62, CO₂ from the Senseair Sunrise, temperature and humidity from the
 SHT40 together with the VOC sample. In NORMAL, particles come every 15 min;
-CO₂ stays at 5 min. With a computer on the USB-C port the device runs
-CONTINUOUS (particles continuously, CO₂ every minute). The battery percentage is the lower of a voltage-curve
+CO₂ stays at 5 min. On external power (a USB-C charger, or a computer on the
+FireBeetle's USB-C) the device runs CONTINUOUS (particles continuously, CO₂
+every minute), whatever the configured mode; `Status` 2 or 3 tells you so. The battery percentage is the lower of a voltage-curve
 estimate for the configured cell type and an energy counter; with lithium
 cells, whose voltage curve is flat, the counter carries most of it. It is a
 model, not a fuel gauge.
@@ -209,4 +230,5 @@ The cluster and attribute layout is **build-verified**: it is what
 `firmware/main/ac_matter.cpp` creates, and the firmware compiles. It has
 **not** been exercised by a real second controller, because no AIR CHECK has
 been built yet. The first time a dashboard reads a sensor, check in this
-order: NodeLabel, one MeasuredValue, one PeakMeasuredValue, battery.
+order: NodeLabel, one MeasuredValue, one PeakMeasuredValue, battery, and
+Power Source `Status` with and without a charger in the sensor's USB-C socket.

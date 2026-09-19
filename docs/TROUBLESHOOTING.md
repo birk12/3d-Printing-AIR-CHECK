@@ -7,9 +7,11 @@ Work down the list. Almost everything is one of the first five.
 | check | |
 |---|---|
 | are the cells in? | six AA, matching the + marks in the holder, all of one type and age |
-| is the power path complete? | holder red lead → PTC fuse → S9V11E2A VIN; VOUT → LM66200 VIN1 → pigtail + into the FireBeetle's battery socket. Check the pigtail polarity against the "+" on the FireBeetle |
-| is the regulator set? | 4.00 V at its VOUT (ASSEMBLY step 4). 0 V: the fuse has tripped or a lead is open |
-| does USB-C bring it up? | if yes, the MCU is fine and the problem is in the pack path above: flat cells, the fuse, the regulator or the ideal diode |
+| are the cells above the lockout? | R11 on PS1's EN switches the device off below ~6.1 V pack (1.0 V per cell) and lets it start again only above ~7.0 V. Tired cells put back in stay off: fresh cells, or a charger in J2 |
+| is the power path complete? | holder red lead → PTC fuse → PS1 VIN; PS1 VOUT → LM66200 VIN1 → pigtail + into the FireBeetle's battery socket. Check the pigtail polarity against the "+" on the FireBeetle |
+| is the regulator set? | 3.90 V at PS1's VOUT (ASSEMBLY step 4). 0 V: the fuse has tripped, a lead is open, or the pack is below the lockout |
+| does a charger in J2 bring it up? | if yes, everything after the LM66200 is fine and the problem is in the pack path: flat cells, the lockout, the fuse or PS1. If not, check PS2: 4.20 V at its VOUT, into LM66200 VIN2 (not to GND - it was up to v1.3) |
+| does the FireBeetle's USB-C bring it up? | if yes, the MCU is fine; if neither the cells nor J2 do, suspect the LM66200 (ON to GND?) and the pigtail |
 | does it flash white at power-on? | if not, check the LED's orientation: long lead (common anode) to VSYS |
 | does the serial log show the banner? | `idf.py monitor`; if yes the MCU runs and the problem is the LED |
 
@@ -23,7 +25,7 @@ during boot is normal: it sits on GPIO16, which the ROM boot log toggles.
 | blue, slow blink | pairing mode (5 min): not commissioned yet, or you held the button 3–8 s |
 | green / yellow / red / purple for 3 s after a press | air quality good / elevated / high / very high |
 | white pulse after a press | still warming up (first minute after power-on) |
-| yellow short blinks after a press | battery low: change the cells |
+| yellow short blinks after a press | battery low: **change the cells now** |
 | red blinks for 3 s after a press | all sensors failed: check the log |
 | red blip every 10 s, unprompted | battery critical, measurement paused |
 | red blip every 5 s, unprompted | all sensors failed: check the log |
@@ -38,7 +40,8 @@ during boot is normal: it sits on GPIO16, which the ROM boot log toggles.
 A missing green or blue channel is almost always the LED fitted the wrong way
 round, or a wrong resistor (R8 1 k on red to GPIO16, R9/R10 330 Ω on green and
 blue to GPIO22/23). Green and blue need about 3 V, so they only light because
-the anode is on VSYS (about 4.0 V), not on 3V3.
+the anode is on VSYS (about 3.9 V on the cells, 4.2 V on external power), not
+on 3V3.
 
 ## `SGP40 init failed` / `SHT40 not responding`
 
@@ -79,6 +82,38 @@ The boot log shows `sunrise: not answering: ...` first.
 `EEPROM configuration updated (n register(s)), sensor reset` on the very
 first boot is normal: the firmware writes single-measurement mode, 32
 samples and its ABC settings once, and only what differs.
+
+## Low or empty battery
+
+The yellow low-battery blink and Matter's `BatReplacementNeeded` mean
+**change the cells now** (`ASSEMBLY.md`, "Changing cells").
+
+**Take empty cells out promptly - especially NiMH; for L91 it is
+uncritical.** The undervoltage lockout switches the device off at ~1.0 V per
+cell, but even then ~55 µA flow through PS1's EN pull-up and R11 and ~5 µA
+through the pack divider. An empty pack left in the holder keeps draining;
+over weeks a NiMH pack can drop below 1.0 V per cell and the weakest cell can
+reverse.
+
+On external power there is no low or critical battery state: the cells are
+only the backup. Matter still reports `BatChargeLevel` for them, so weak
+backup cells show up as a warning. With the holder empty on external power
+there is no battery alarm at all (`Status` 3, `BatPresent` false).
+
+## Which power source is it using?
+
+The log prints the source on every change, with VSYS and the pack voltage:
+
+| log | meaning | Matter Power Source `Status` |
+|---|---|---|
+| `power: cells` | running on the AA pack, VSYS about 3.9 V | 1 Active |
+| `power: external, cells as backup` | a charger in J2 (or a computer on the FireBeetle's USB-C), VSYS about 4.2 V | 2 Standby |
+| `power: external, no cells` | as above, holder empty (pack under 3.0 V) | 3 Unavailable |
+
+External power is recognised from VSYS on GPIO0: at or above 4.08 V, or when
+a USB host has enumerated. A charger in J2 that does not show up as external:
+measure PS2's VOUT (4.20 V) and VSYS. `power: external` with no charger and
+no computer: PS1 is set too high - it must read 3.90 V.
 
 ## The battery percentage looks wrong
 
@@ -194,12 +229,13 @@ thermometer you trust, note the offset - there is no offset setting yet
 3. A 15 s gap is normal. The device polls every 15 s by design; the Home app
    will sometimes show it as briefly unresponsive.
 4. Critical battery. Below 5 % the device stops measuring and only reports
-   battery.
+   battery. At ~1.0 V per cell the lockout switches it off altogether.
 
 ## Battery drains far faster than expected
 
-ECO on L91 cells is modelled at 3.7 months, NiMH 2.2, alkaline 2.1
-(`docs/BATTERY_LIFE.md`). In order of likelihood:
+ECO on L91 cells is modelled at 3.5 months, NiMH 2.1, alkaline 1.8
+(`docs/BATTERY_LIFE.md`). If that is not enough, run it from a USB-C charger
+in J2 and keep the cells as the backup. In order of likelihood:
 
 1. **It is not in ECO mode.** The serial log prints the mode on every change. If
    it says NORMAL, that is about five weeks on L91 and it is working correctly.
@@ -208,8 +244,11 @@ ECO on L91 cells is modelled at 3.7 months, NiMH 2.2, alkaline 2.1
 2. **It never leaves ACTIVE.** A workshop with a permanently raised VOC level
    will re-trigger constantly. Reset the baseline once the room is at its
    normal state.
-3. **Measure the idle current** (TESTING T-E1): PPK2 in the pack lead, the
-   model says about 0.33 mA from the pack with the SEN62 off. The usual
+3. **Measure the idle current** (TESTING T-E0, T-E1): the model says about
+   3.5 mW at the cells with the SEN62 off (≈ 0.40 mA at 8.7 V), of which the
+   regulator's quiescent current and the lockout and divider resistors are
+   the biggest part. The PPK2 goes in the 3.9 V line between PS1 and the
+   LM66200, not in the pack lead. The usual
    suspects above that: the #2810's slide switch in ON (the SEN62 then never
    switches off, and the #2810's red LED stays lit), the SparkFun PWR jumper
    not cut, the FireBeetle's green LED on GPIO15 being driven, or a pin
@@ -252,6 +291,7 @@ cd firmware && idf.py -p /dev/tty.usbmodem* monitor
 | `stored config failed its CRC, using defaults` | NVS corruption; defaults were used rather than garbage |
 | `baseline restored: PM2.5 8.1, VOC 100` | normal |
 | `power: 6 x AA lithium, 1234 mWh used; site 520 m = 952 hPa` | the cell type, the energy counter and the pressure the CO2 is corrected to |
+| `power: cells (VSYS 3.90 V, pack 8.70 V)` | the power source changed: `cells`, `external, cells as backup` or `external, no cells` |
 | `SEN62: ESP_ERR_TIMEOUT` | the particle module did not answer |
 | `window 60s: PM2.5 7.3 ug/m3 averaged over 30 s` | a normal particle window |
 | `fan speed warning (status 0x...)` | the SEN62's fan is off its nominal speed; watch whether it turns into an error |
