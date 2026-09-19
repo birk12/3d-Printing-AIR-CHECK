@@ -21,7 +21,7 @@
 extern "C" {
 #endif
 
-/* SEN63C windows: AC_PM_MIN_WINDOW_S (ac_config.h) is the floor.  Continuous
+/* SEN62 windows: AC_PM_MIN_WINDOW_S (ac_config.h) is the floor.  Continuous
  * mode keeps the module running between windows, so each window there is just
  * a reporting interval. */
 /* SGP40: "time until reliably detecting VOC events < 60 s", "time until the
@@ -31,23 +31,24 @@ extern "C" {
 #define AC_SGP40_SPEC_S      3600u
 typedef enum {
     AC_ACT_NONE = 0,
-    AC_ACT_SAMPLE_PM,            /* one SEN63C window: PM + CO2 + T/RH */
-    AC_ACT_SAMPLE_VOC,
+    AC_ACT_SAMPLE_PM,            /* one SEN62 window */
+    AC_ACT_SAMPLE_VOC,           /* SHT40 T/RH, then SGP40 */
+    AC_ACT_SAMPLE_CO2,           /* one Sunrise single measurement */
     AC_ACT_SAVE_STATE,
 } ac_action_t;
 
 typedef struct {
     ac_action_t action;
     uint32_t    pm_window_s;     /* only meaningful for AC_ACT_SAMPLE_PM */
-    bool        pm_keep_running; /* leave the SEN63C measuring afterwards */
+    bool        pm_keep_running; /* leave the SEN62 measuring afterwards */
     uint32_t    sleep_ms;        /* how long the caller may sleep */
     bool        status_dirty;
     bool        publish_dirty;   /* a reported Matter attribute changed */
 } ac_plan_t;
 
 typedef struct {
-    bool sen6x_ok, sgp40_ok, battery_ok;
-    uint16_t sen6x_errors, sgp40_errors;
+    bool sen6x_ok, sgp40_ok, co2_ok, sht_ok, battery_ok;
+    uint16_t sen6x_errors, sgp40_errors, co2_errors, sht_errors;
     char last_error[48];
 } ac_health_t;
 
@@ -69,7 +70,7 @@ typedef struct {
     ac_mode_t mode;
     ac_time_ms_t boot_ms;
     ac_time_ms_t state_since;
-    ac_time_ms_t next_pm, next_voc;
+    ac_time_ms_t next_pm, next_voc, next_co2;
 
     uint32_t voc_samples;
     bool     warm;               /* warm-up complete, values publishable */
@@ -92,6 +93,11 @@ void ac_engine_submit(ac_engine_t *e, const ac_sample_t *s);
 ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now);
 
 void ac_engine_set_mode(ac_engine_t *e, ac_mode_t m, ac_time_ms_t now);
+/* While a long action (a 60 s particle window, a 10 s CO2 measurement) is
+ * running, the VOC channel must keep its fixed 10 s cadence: the Gas Index
+ * Algorithm assumes equally spaced samples.  Returns true, and books the
+ * sample, when one is due. */
+bool ac_engine_take_voc(ac_engine_t *e, ac_time_ms_t now);
 void ac_engine_set_power(ac_engine_t *e, bool usb_present, bool charging,
                          float battery_pct, float battery_v, ac_time_ms_t now);
 void ac_engine_set_state(ac_engine_t *e, ac_device_state_t s, ac_time_ms_t now);

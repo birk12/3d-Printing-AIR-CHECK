@@ -73,12 +73,11 @@ static esp_err_t attach(void)
 
 esp_err_t ac_sgp40_init(uint32_t sampling_interval_s)
 {
-    /* Prove the sensor is there once at boot; after that the rail is only up
-     * while a sample is being taken. */
-    esp_err_t err = ac_rail_sensors(true);
-    if (err == ESP_OK) err = attach();
+    /* The SparkFun board has no LDO and its LED jumper is cut, so since v1.3
+     * the sensor stays powered: heater-off idle is exactly the state
+     * Sensirion's low-power example was tested in. */
+    esp_err_t err = attach();
     if (err == ESP_OK) err = ac_sgp40_self_test();
-    ac_rail_sensors(false);
     if (err != ESP_OK) return err;
     /* The algorithm is validated at 1 s and 10 s.  Anything else is outside
      * Sensirion's tested range, so the engine's config validator already
@@ -133,22 +132,20 @@ static esp_err_t heater_off(void)
     return tx(cmd, sizeof(cmd));
 }
 
-esp_err_t ac_sgp40_measure(float t_c, float rh, bool pulse_rail,
-                           int32_t *raw_out, int32_t *index_out)
+esp_err_t ac_sgp40_measure(float t_c, float rh, int32_t *raw_out, int32_t *index_out)
 {
-    esp_err_t err = ac_rail_sensors(true);
-    if (err == ESP_OK) err = attach();
-    if (err != ESP_OK) { if (pulse_rail) ac_rail_sensors(false); return err; }
+    esp_err_t err = attach();
+    if (err != ESP_OK) return err;
 
     uint16_t raw = 0;
-    /* first, discarded measurement: this is what turns the hotplate on */
+    /* First, discarded measurement: this is what turns the hotplate on.
+     * Sensirion's low_power_example then waits 170 ms before the real one. */
     err = measure_raw(t_c, rh, &raw);
     if (err == ESP_OK) {
-        vTaskDelay(pdMS_TO_TICKS(135)); /* 170 ms total including the 35 above */
+        vTaskDelay(pdMS_TO_TICKS(170));
         err = measure_raw(t_c, rh, &raw);
     }
     heater_off();
-    if (pulse_rail) ac_rail_sensors(false);
     if (err != ESP_OK) return err;
 
     if (raw_out) *raw_out = raw;
@@ -172,12 +169,4 @@ esp_err_t ac_sgp40_serial(uint64_t *out)
     if (err != ESP_OK) return err;
     *out = ((uint64_t)w[0] << 32) | ((uint64_t)w[1] << 16) | w[2];
     return ESP_OK;
-}
-
-void ac_sgp40_detach(void)
-{
-    if (s_dev) {
-        i2c_master_bus_rm_device(s_dev);
-        s_dev = NULL;
-    }
 }

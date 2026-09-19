@@ -72,8 +72,12 @@ static void test_config(void)
     CASE("every profile obeys the sensor datasheets");
     for (int m = 0; m < AC_MODE_COUNT; m++) {
         const ac_profile_t *p = &c.profile[m];
-        /* SEN63C: no CO2 for 22..24 s after start, PM settles in 30 s */
+        /* SEN62: 30 s start-up discarded, at least 30 s averaged */
         CHECK(p->pm_window_s >= AC_PM_MIN_WINDOW_S);
+        CHECK(p->pm_window_s >= AC_PM_SETTLE_S + 30);
+        /* Sunrise: 32 samples x 300 ms must fit between measurements */
+        if (p->co2_interval_s)
+            CHECK(p->co2_interval_s >= AC_CO2_MIN_INTERVAL_S);
         if (p->voc_interval_s)
             CHECK(p->voc_interval_s >= 1 && p->voc_interval_s <= 10);
         /* Matter 1.4 caps a SIT ICD slow poll at 15 s */
@@ -119,13 +123,19 @@ static void test_config(void)
     ac_config_defaults(&wild);
     wild.pm25_high = 1.0f;          /* below elevated */
     wild.battery_interval_s = 99999;
-    wild.profile[AC_MODE_ECO].pm_window_s = 20;  /* too short for any CO2 */
+    wild.profile[AC_MODE_ECO].pm_window_s = 40;  /* too short to settle and average */
+    wild.profile[AC_MODE_ECO].co2_interval_s = 5;
+    wild.cell_type = 9;
+    wild.altitude_m = 9000;
     wild.profile[AC_MODE_ECO].icd_slow_poll_s = 900;
     int fixed = ac_config_validate(&wild);
     CHECK(fixed >= 4);
     CHECK(wild.pm25_high > wild.pm25_elevated);
     CHECK(wild.battery_interval_s <= 3600);
     CHECK(wild.profile[AC_MODE_ECO].pm_window_s >= AC_PM_MIN_WINDOW_S);
+    CHECK(wild.profile[AC_MODE_ECO].co2_interval_s >= AC_CO2_MIN_INTERVAL_S);
+    CHECK(wild.cell_type <= 2);
+    CHECK(wild.altitude_m <= 4000);
     CHECK(wild.profile[AC_MODE_ECO].icd_slow_poll_s <= 15);
 }
 
@@ -516,8 +526,8 @@ static void test_engine(void)
     CHECK(ac_engine_values_valid(&e));
     CHECK(e.state == AC_STATE_NORMAL);
 
-    CASE("ECO schedules the SEN63C an hour out, not sooner");
-    /* drain the immediate VOC work first */
+    CASE("ECO schedules the SEN62 an hour out, not sooner");
+    /* drain the immediate VOC and CO2 work first */
     for (int i = 0; i < 6; i++) ac_engine_tick(&e, t);
     p = ac_engine_tick(&e, t);
     CHECK(p.action == AC_ACT_NONE || p.action == AC_ACT_SAMPLE_VOC);
@@ -573,7 +583,7 @@ static void test_engine(void)
     CHECK(p.action == AC_ACT_NONE);
     CHECK(p.sleep_ms >= 60000);
 
-    CASE("a dead SEN63C does not stop the VOC channel");
+    CASE("a dead SEN62 does not stop the other channels");
     ac_engine_t e3;
     ac_engine_init(&e3, &c, 0);
     for (int i = 0; i < 5; i++)
@@ -583,12 +593,14 @@ static void test_engine(void)
     ac_sample_t q = mk(w, -1.0f, 100, -1.0f);
     ac_engine_submit(&e3, &q);
     p = ac_engine_tick(&e3, w);
-    CHECK(p.action == AC_ACT_SAMPLE_VOC);
+    CHECK(p.action == AC_ACT_SAMPLE_CO2 || p.action == AC_ACT_SAMPLE_VOC);
     CHECK(e3.state != AC_STATE_ERROR);
 
-    CASE("both sensors dead is an ERROR, not silence");
-    for (int i = 0; i < 10; i++)
+    CASE("all three sensors dead is an ERROR, not silence");
+    for (int i = 0; i < 10; i++) {
         ac_engine_sensor_failed(&e3, AC_ACT_SAMPLE_VOC, "nack");
+        ac_engine_sensor_failed(&e3, AC_ACT_SAMPLE_CO2, "nack");
+    }
     ac_engine_tick(&e3, w);
     CHECK(e3.state == AC_STATE_ERROR);
     CHECK(strlen(e3.health.last_error) > 0);
@@ -600,18 +612,36 @@ static void test_engine(void)
     for (int i = 0; i < 6; i++) {
         p = ac_engine_tick(&e4, week);
         CHECK(p.action == AC_ACT_NONE || p.action == AC_ACT_SAMPLE_PM ||
-              p.action == AC_ACT_SAMPLE_VOC);
+              p.action == AC_ACT_SAMPLE_VOC || p.action == AC_ACT_SAMPLE_CO2);
     }
 
-    CASE("one PM window is the only CO2 source: no separate CO2 action");
+    CASE("VOC keeps its 10 s grid through a long particle window");
+    ac_engine_t e9;
+    ac_engine_init(&e9, &c, 0);
+    ac_engine_tick(&e9, 0);                     /* the boot PM window ... */
+    int taken = 0;
+    for (ac_time_ms_t tt = 0; tt <= 60000; tt += 1000)   /* ... runs 60 s */
+        if (ac_engine_take_voc(&e9, tt)) taken++;
+    CHECK(taken == 7);                          /* 0, 10, ..., 60 s */
+    CHECK(e9.next_voc == 70000);
+    CHECK(!ac_engine_take_voc(&e9, 65000));
+
+    CASE("ECO: particles hourly, CO2 every 5 min, VOC every 10 s");
     ac_engine_t e8;
     ac_engine_init(&e8, &c, 0);
-    int pm_windows = 0;
+    int pm_windows = 0, co2_shots = 0, voc_samples = 0;
     for (ac_time_ms_t tt = 0; tt < 2ull * 3600ull * 1000ull; tt += 1000) {
-        p = ac_engine_tick(&e8, tt);
-        if (p.action == AC_ACT_SAMPLE_PM) pm_windows++;
+        for (int k = 0; k < 4; k++) {
+            p = ac_engine_tick(&e8, tt);
+            if (p.action == AC_ACT_SAMPLE_PM) pm_windows++;
+            if (p.action == AC_ACT_SAMPLE_CO2) co2_shots++;
+            if (p.action == AC_ACT_SAMPLE_VOC) voc_samples++;
+            if (p.action == AC_ACT_NONE) break;
+        }
     }
-    CHECK(pm_windows == 2);      /* ECO: one at boot, one an hour later */
+    CHECK(pm_windows == 2);      /* one at boot, one an hour later */
+    CHECK(co2_shots == 24);      /* 2 h / 5 min */
+    CHECK(voc_samples == 720);   /* 2 h / 10 s */
 
     CASE("publishing is rate limited by a real change, not by the clock");
     ac_engine_t e5;
@@ -751,6 +781,7 @@ static void test_status(void)
     for (int i = 0; i < 10; i++) {
         ac_engine_sensor_failed(&dead, AC_ACT_SAMPLE_PM, "x");
         ac_engine_sensor_failed(&dead, AC_ACT_SAMPLE_VOC, "x");
+        ac_engine_sensor_failed(&dead, AC_ACT_SAMPLE_CO2, "x");
     }
     ac_engine_tick(&dead, 61000);
     p = ac_status_pattern(&dead, AC_LED_EVENT_NONE);
@@ -805,51 +836,58 @@ static void test_window(void)
     CHECK_NEAR(w.peak, 42.0, 0.01);
 }
 
-/* ---------------- battery from voltage ------------------------------ */
+/* ---------------- AA pack --------------------------------------------- */
 
 static void test_battery(void)
 {
-    CASE("the voltage curve is monotonic and spans 0..100 %");
-    float prev = -1.0f;
-    bool monotonic = true, bounded = true;
-    for (float v = 3.0f; v <= 4.3f; v += 0.005f) {
-        float p = ac_battery_soc(v);
-        if (p < prev) monotonic = false;
-        if (p < 0.0f || p > 100.0f) bounded = false;
-        prev = p;
+    CASE("every cell curve is monotonic, clamped, and NaN-safe");
+    for (int t = 0; t < AC_CELL_COUNT; t++) {
+        float prev = -1.0f;
+        bool mono = true, bounded = true;
+        for (float v = 0.8f; v <= 1.8f; v += 0.002f) {
+            float p = ac_cell_soc((ac_cell_type_t)t, v);
+            if (p < prev) mono = false;
+            if (p < 0.0f || p > 100.0f) bounded = false;
+            prev = p;
+        }
+        CHECK(mono);
+        CHECK(bounded);
+        CHECK(ac_cell_soc((ac_cell_type_t)t, 0.0f / 0.0f) == 0.0f);
+        CHECK(ac_cell_energy_mwh((ac_cell_type_t)t) > 2000.0f);
     }
-    CHECK(monotonic);
-    CHECK(bounded);
-    CHECK(ac_battery_soc(3.0f) == 0.0f);
-    CHECK(ac_battery_soc(4.25f) == 100.0f);
-    CHECK(ac_battery_soc(0.0f / 0.0f) == 0.0f);      /* NaN from a dead ADC */
 
-    CASE("the decision points sit where the curve is steep");
-    CHECK_NEAR(ac_battery_soc(3.73f), 20.0, 0.01);   /* low battery */
-    CHECK(ac_battery_soc(3.60f) < 5.0f);             /* critical */
-    CHECK_NEAR(ac_battery_soc(3.84f), 50.0, 0.01);
-    CHECK_NEAR(ac_battery_soc(3.835f), 48.75, 0.01); /* interpolated */
+    CASE("lithium primaries are flat: the energy counter carries them");
+    ac_pack_t li;
+    ac_pack_init(&li, AC_CELL_LITHIUM, 6);
+    float fresh = ac_pack_update(&li, 6 * 1.50f);
+    CHECK(fresh > 80.0f);
+    ac_pack_spend(&li, 6 * 5000.0f * 0.5f);     /* half the pack's energy */
+    float half = ac_pack_update(&li, 6 * 1.49f);  /* voltage barely moved */
+    CHECK_NEAR(half, 50.0, 0.5);
 
-    CASE("charge state follows USB and the termination voltage");
-    CHECK(ac_battery_charge_state(3.9f, false) == AC_CHG_DISCHARGING);
-    CHECK(ac_battery_charge_state(3.9f, true) == AC_CHG_CHARGING);
-    CHECK(ac_battery_charge_state(4.18f, true) == AC_CHG_FULL);
-    CHECK(ac_battery_charge_state(0.0f, true) == AC_CHG_UNKNOWN);
+    CASE("a voltage near the end wins over an optimistic counter");
+    ac_pack_t al;
+    ac_pack_init(&al, AC_CELL_ALKALINE, 6);
+    ac_pack_update(&al, 6 * 1.50f);
+    float low = ac_pack_update(&al, 6 * 1.05f);   /* counter still says 100 */
+    CHECK(low < 15.0f);
 
-    CASE("on battery the reported value never climbs back on noise");
-    ac_batt_track_t t;
-    ac_batt_track_init(&t);
-    float a = ac_batt_track_update(&t, 3.87f, false);   /* 60 % */
-    float b = ac_batt_track_update(&t, 3.85f, false);   /* 55 % */
-    float c = ac_batt_track_update(&t, 3.87f, false);   /* warm again: 60 % */
-    CHECK_NEAR(a, 60.0, 0.01);
-    CHECK_NEAR(b, 55.0, 0.01);
-    CHECK_NEAR(c, 55.0, 0.01);
+    CASE("the value never climbs on noise, but a new pack resets it");
+    ac_pack_t nm;
+    ac_pack_init(&nm, AC_CELL_NIMH, 6);
+    float a = ac_pack_update(&nm, 6 * 1.22f);      /* 50 % */
+    float b = ac_pack_update(&nm, 6 * 1.21f);
+    float c = ac_pack_update(&nm, 6 * 1.23f);      /* recovered a little */
+    CHECK_NEAR(a, 50.0, 0.1);
+    CHECK(b < a);
+    CHECK_NEAR(c, b, 0.001);
+    ac_pack_spend(&nm, 1000.0f);
+    float d = ac_pack_update(&nm, 6 * 1.36f);      /* fresh cells fitted */
+    CHECK(d > 95.0f);
+    CHECK(nm.used_mwh == 0.0f);
 
-    CASE("a freshly charged cell is recognised, charging is followed");
-    CHECK_NEAR(ac_batt_track_update(&t, 4.11f, false), 90.0, 0.01);
-    CHECK_NEAR(ac_batt_track_update(&t, 3.73f, false), 20.0, 0.01);
-    CHECK_NEAR(ac_batt_track_update(&t, 3.80f, true), 40.0, 0.01);
+    CASE("no reading leaves the last value alone");
+    CHECK_NEAR(ac_pack_update(&nm, 0.0f), d, 0.001);
 }
 
 /* ------------------------------------------------------------------ */

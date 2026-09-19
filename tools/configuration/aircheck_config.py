@@ -40,7 +40,10 @@ SETTINGS = {
     "low_battery_pct":      ("%", "low battery warning"),
     "critical_battery_pct": ("%", "measurement stops below this"),
     "voc_publish_index_as_ppb": ("bool", "publish the VOC index as a Matter number"),
-    "co2_self_calibration": ("bool", "the SEN63C's own CO2 self calibration (stored in the sensor)"),
+    "co2_self_calibration": ("bool", "Sunrise ABC: 180 h background calibration (needs fresh air ~1x/week)"),
+    "cell_type":            ("alkaline|nimh|lithium", "what is in the 6 x AA compartment (battery % curve)"),
+    "cells":                ("1..8", "number of AA cells in series (the holder takes 6)"),
+    "altitude_m":           ("m", "site altitude; CO2 pressure compensation (1.6 %/kPa)"),
     "auto_escalate":        ("bool", "switch to ACTIVE on a detected event"),
 }
 
@@ -110,7 +113,7 @@ def main() -> int:
     elif a.cmd == "diag":
         print(command(port, "diag"))
     elif a.cmd == "frc":
-        print("This rewrites the SEN63C's CO2 calibration. The device must be")
+        print("This rewrites the Sunrise's CO2 calibration. The device must be")
         print("OUTDOORS or at a wide-open window, away from people and traffic.")
         print("It runs 3 minutes first; the LED blinks cyan, then green or red.")
         if input("continue? [y/N] ").strip().lower() != "y":

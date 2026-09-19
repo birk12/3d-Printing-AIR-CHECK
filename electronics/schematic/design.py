@@ -1,11 +1,15 @@
 """
-3D Printing AIR CHECK - electrical design source of truth.
+3D Printing AIR CHECK - electrical design source of truth (v1.3).
 
-This module *is* the schematic.  It declares every part, every net and every
-connection, then runs an electrical rule check over them.  From it we emit:
+Since v1.3 there is no custom circuit board (EDR-19).  The device is a set of
+off-the-shelf modules joined by wires; the handful of resistors that are left
+are through-hole parts soldered at a module's pins and covered with heat
+shrink.  This module *is* the wiring diagram: it declares every module, every
+wire and every connection, then runs an electrical rule check over them.  From
+it we emit:
 
   * electronics/schematic/aircheck.net   KiCad-compatible flat netlist
-  * electronics/schematic/NETLIST.md     human-readable net list + pin map
+  * electronics/schematic/NETLIST.md     wiring list, pin map, power tree
   * electronics/bom/bom.csv              bill of materials
   * docs/BOM.md                          the same, rendered
 
@@ -23,8 +27,7 @@ import csv
 import io
 import os
 import sys
-from dataclasses import dataclass, field
-from typing import Iterable
+from dataclasses import dataclass
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -41,13 +44,20 @@ class Rail:
     source: str
 
 RAILS = {
-    "VUSB":        Rail("VUSB", 4.75, 5.00, 5.25, "USB-C VBUS on the FireBeetle (its VIN pin)"),
-    "VBAT":        Rail("VBAT", 3.20, 3.80, 4.20, "1S LiPo, protected"),
-    "+3V3":        Rail("+3V3", 3.20, 3.30, 3.40,
-                        "FireBeetle TPS62A02 buck, always on; 100 % duty below ~3.4 V VBAT"),
-    "+3V3_SEN6X":  Rail("+3V3_SEN6X", 3.20, 3.30, 3.40, "+3V3 behind load switch SW1"),
-    "+3V3_SENS":   Rail("+3V3_SENS", 3.20, 3.30, 3.40, "+3V3 behind load switch SW2"),
-    "GND":         Rail("GND", 0.0, 0.0, 0.0, "system ground"),
+    "VPACK":     Rail("VPACK", 5.40, 8.70, 10.80,
+                      "6 x AA in series: 0.9 V/cell floor, 1.45 V L91 average, "
+                      "1.8 V open-circuit of a fresh L91"),
+    "VPACK_F":   Rail("VPACK_F", 5.40, 8.70, 10.80, "VPACK behind the PTC fuse F1"),
+    "+4V0":      Rail("+4V0", 3.92, 4.00, 4.08,
+                      "Pololu S9V11E2A, trimpot set to 4.00 V +-2 %; always on"),
+    "VSYS":      Rail("VSYS", 3.88, 4.00, 4.24,
+                      "FireBeetle battery input: +4V0 through the LM66200, or the "
+                      "FireBeetle's own CN3165 at 4.2 V +-1 % while USB is plugged in"),
+    "+3V3":      Rail("+3V3", 3.20, 3.30, 3.40, "FireBeetle TPS62A02 buck, always on"),
+    "+3V3_SEN":  Rail("+3V3_SEN", 3.20, 3.30, 3.40, "+3V3 behind the Pololu #2810 switch"),
+    "CO2_VDDIO": Rail("CO2_VDDIO", 0.0, 3.30, 3.40,
+                      "GPIO18 driven high only while the Sunrise is enabled"),
+    "GND":       Rail("GND", 0.0, 0.0, 0.0, "system ground"),
 }
 
 # --------------------------------------------------------------------------
@@ -67,206 +77,235 @@ class Part:
     price_eur: float = 0.0
     supplier: str = ""
     required: bool = True
-    # electrical envelope, used by the ERC
+    nc: tuple = ()      # pins deliberately left unconnected, with the reason in `why`
     vsupply_min: float | None = None
     vsupply_max: float | None = None
-    io_vmax: float | None = None
     i_typ_ma: float | None = None
     i_max_ma: float | None = None
     i2c_addr: int | None = None
-    c_in_uf: float = 0.0          # input capacitance a load switch has to charge
     datasheet: str = ""
 
 
-def _r(ref, value, mpn, why, price=0.02):
-    return Part(ref=ref, value=value, mfr="Yageo", mpn=mpn, footprint="0603",
-                pins={"1": "a", "2": "b"}, why=why, price_eur=price, supplier="Mouser / LCSC")
-
-
-def _c(ref, value, mpn, footprint, why, price, c_uf=0.0):
-    return Part(ref=ref, value=value, mfr="Murata", mpn=mpn, footprint=footprint,
-                pins={"1": "+", "2": "-"}, why=why, price_eur=price,
-                supplier="Mouser / LCSC", c_in_uf=c_uf)
+def _r(ref, value, why, price=0.10):
+    return Part(ref=ref, value=f"{value}, 1 %, 0.25 W, metal film, THT", mfr="Yageo",
+                mpn=f"MFR-25FBF52-{value.replace(' ', '')}", footprint="axial, 6.3 mm body",
+                pins={"1": "a", "2": "b"}, why=why, price_eur=price,
+                supplier="Reichelt / Mouser")
 
 
 PARTS: list[Part] = [
+    # ---- controller -------------------------------------------------------
     Part(
         ref="M1", value="FireBeetle 2 ESP32-C6", mfr="DFRobot", mpn="DFR1075",
-        footprint="25.4 x 60 mm, 2 x 0.1in rows 22.86 mm apart, JST PH 2.0 battery",
+        footprint="60.0 x 25.4 mm, 4 x M2 holes at 1.7 mm from the edges, "
+                  "2 x 0.1in rows 22.86 mm apart, JST PH 2.0 battery socket",
         pins={
-            "3V3": "+3V3 out (TPS62A02 buck)", "GND": "ground", "VIN": "USB 5 V / VCC",
+            "3V3": "+3V3 out (TPS62A02 buck)", "GND": "ground", "VIN": "USB 5 V",
             "IO1": "GPIO1", "IO2": "GPIO2", "IO3": "GPIO3", "IO4": "GPIO4",
             "IO5": "GPIO5", "IO6": "GPIO6 / LP_SDA", "IO7": "GPIO7 / LP_SCL",
             "IO8": "GPIO8", "IO9": "GPIO9 / BOOT", "IO14": "GPIO14",
-            "IO15": "GPIO15 / green LED", "IO16": "GPIO16 / TX", "IO17": "GPIO17 / RX",
+            "IO15": "GPIO15 / green LED", "IO16": "GPIO16 / U0TXD", "IO17": "GPIO17 / U0RXD",
             "IO18": "GPIO18", "SDA": "GPIO19", "SCL": "GPIO20",
             "IO21": "GPIO21", "IO22": "GPIO22", "IO23": "GPIO23", "RST": "reset",
             "BAT+": "JST PH battery +", "BAT-": "JST PH battery -",
         },
-        why="ESP32-C6 (in-package flash) with native 802.15.4 for Thread, USB-C, a CN3165 "
-            "LiPo charger (R9 = 2.2k -> 540 mA), a TPS62A02 3.3 V buck and a 1M/1M battery "
-            "divider on GPIO0. DFRobot measure 36 uA in deep sleep for the whole board "
-            "(v1.2). No fuel gauge and no WS2812B - checked on DFRobot's own schematic, "
-            "see EDR-15.",
+        why="ESP32-C6 with native 802.15.4 for Thread, USB-C for configuration and "
+            "updates, a TPS62A02 3.3 V buck, a 1M/1M divider from the battery input "
+            "to GPIO0. Its CN3165 charger is present but never charges anything: the "
+            "LM66200 in front of the battery input blocks it (EDR-18).",
         price_eur=7.50, supplier="Botland / Berrybase / DFRobot",
-        vsupply_min=3.0, vsupply_max=4.2, io_vmax=3.6,
+        vsupply_min=3.0, vsupply_max=4.25,
         datasheet="https://wiki.dfrobot.com/SKU_DFR1075_FireBeetle_2_Board_ESP32_C6",
     ),
+    # ---- sensors ----------------------------------------------------------
     Part(
-        ref="U1", value="SEN63C", mfr="Sensirion", mpn="SEN63C-SIN-T",
-        footprint="55.2 x 25.6 x 21.3 mm module, ACES 51468-0064N-001 in a 6.35 mm pocket (JST GH compatible)",
+        ref="U1", value="SEN62 (PM1/2.5/4/10)", mfr="Sensirion", mpn="SEN62-SIN-T",
+        footprint="55.2 x 25.6 x 21.3 mm module, ACES 51468-0064N-001 6-way",
         pins={"1": "VDD", "2": "GND", "3": "SDA", "4": "SCL", "5": "GND", "6": "VDD"},
-        why="One module for PM1/PM2.5/PM4/PM10 (laser, sheath flow), CO2 (+-(100 ppm + "
-            "10 %)) and compensated temperature and humidity, at 3.3 V with no boost "
-            "converter. Replaces the SPS30, the SCD41 breakout and the 5 V boost of v1.1 "
-            "for less than the SPS30 alone. See EDR-15.",
-        price_eur=33.97, supplier="Mouser",
-        vsupply_min=3.15, vsupply_max=3.45, io_vmax=5.5,
-        i_typ_ma=80.0, i_max_ma=200.0, i2c_addr=0x6B, c_in_uf=10.0,
-        datasheet="Sensirion SEN6x Datasheet v0.5, October 2024",
+        why="Laser particle sensor with sheath flow, 3.3 V, 75 mA. Only particles: "
+            "CO2 comes from the Sunrise and T/RH from the SHT40, which are each better "
+            "at their job than the SEN6x combination modules (EDR-16, EDR-17). "
+            "Power-gated by SW1 because it idles at 3.3 mA.",
+        price_eur=20.71, supplier="Mouser (EUR 17.40 net)",
+        vsupply_min=3.15, vsupply_max=3.45, i_typ_ma=75.0, i_max_ma=190.0,
+        i2c_addr=0x6B, datasheet="Sensirion SEN6x Datasheet v0.92, December 2025",
+    ),
+    Part(ref="W1", value="JST GH 6-way cable, 150 mm, one end open", mfr="JST / generic",
+         mpn="GHR-06V-S + pre-crimped SSHL-002T-P0.2 leads", footprint="1.25 mm pitch",
+         pins={}, why="SEN62 connector to the wiring. Sensirion allow up to 50 cm.",
+         price_eur=2.00, supplier="Mouser / Berrybase"),
+    Part(
+        ref="U2", value="SparkFun Qwiic SGP40", mfr="SparkFun", mpn="SEN-18345",
+        footprint="25.4 x 25.4 mm, 4 x 3.3 mm holes 2.54 mm from the edges",
+        pins={"3V3": "3.3 V", "GND": "ground", "SDA": "I2C data", "SCL": "I2C clock"},
+        why="SGP40 MOX VOC sensor: the tripwire that speeds the particle sensor up. "
+            "No regulator on the board; the red power LED is cut at the PWR jumper, "
+            "the I2C jumper stays closed (4.7k pull-ups for the always-on bus). "
+            "Powered permanently, as the VOC algorithm wants (EDR-17).",
+        price_eur=16.45, supplier="Berrybase",
+        vsupply_min=1.7, vsupply_max=3.6, i_typ_ma=2.6, i_max_ma=4.0, i2c_addr=0x59,
+        datasheet="Sensirion SGP40 Datasheet v1.2; SparkFun Qwiic_Air_Quality_Sensor_SGP40",
+    ),
+    Part(ref="W2", value="Qwiic cable to open leads, 150 mm", mfr="SparkFun",
+         mpn="PRT-17261", footprint="JST SH 4-way", pins={},
+         why="SGP40 to the wiring. Qwiic colours: black GND, red 3V3, blue SDA, "
+             "yellow SCL.", price_eur=1.60, supplier="Berrybase / Eckstein"),
+    Part(
+        ref="U3", value="Seeed Grove SHT40", mfr="Seeed Studio", mpn="101021032",
+        footprint="20 x 40 mm Grove board, Grove 4-way 2.0 mm",
+        pins={"VCC": "supply", "GND": "ground", "SDA": "I2C data", "SCL": "I2C clock"},
+        why="Temperature and humidity, +-0.2 C / +-1.8 %RH, for the dashboard and for "
+            "the SGP40's compensation. Sits low in the gas bay, away from the Sunrise's "
+            "lamp and the ESP32 (EDR-17). 1.2 uA idle per Seeed. Seeed rate the "
+            "board for 3.3 V / 5 V; the SHT40 itself runs from 1.08-3.6 V, so a "
+            "small regulator dropout at the rail's 3.2 V minimum is harmless.",
+        price_eur=6.60, supplier="Seeed / robot-italy / Berrybase",
+        vsupply_min=3.2, vsupply_max=5.0, i_typ_ma=0.4, i_max_ma=0.5, i2c_addr=0x44,
+        datasheet="Sensirion SHT4x Datasheet; wiki.seeedstudio.com/Grove-SHT4x",
+    ),
+    Part(ref="W3", value="Grove cable to female jumpers, 200 mm", mfr="Seeed Studio",
+         mpn="110990028", footprint="Grove 4-way", pins={},
+         why="SHT40 to the wiring. Grove colours: black GND, red VCC, white SDA, "
+             "yellow SCL.", price_eur=2.50, supplier="Berrybase / Seeed"),
+    Part(
+        ref="U4", value="Senseair Sunrise CO2", mfr="Senseair", mpn="006-0-0008",
+        footprint="33.5 x 19.7 x 11.5 mm, two 0.1in rows 30.48 mm apart (5 + 4 pins)",
+        pins={"1": "GND", "2": "VBB", "3": "VDDIO", "4": "RxD/SDA", "5": "TxD/SCL",
+              "6": "COMSEL", "7": "nRDY", "8": "DVCC", "9": "EN"},
+        why="NDIR CO2, +-(30 ppm + 3 %), built for battery single-measurement use: "
+            "EN low between measurements, the host keeps the ABC state (EDR-16). "
+            "COMSEL to GND selects I2C. VDDIO and the bus pull-ups come from GPIO18, "
+            "so nothing reaches the sensor's I/O while EN is low (TDE7318 'Low power "
+            "integration'). nRDY is not used: the firmware waits the worst-case "
+            "measurement time instead. DVCC is an output and stays open.",
+        price_eur=49.00, supplier="Mouser (EUR 41.18 net)",
+        nc=("7", "8"),
+        vsupply_min=3.05, vsupply_max=5.5, i_typ_ma=0.034, i_max_ma=125.0,
+        i2c_addr=0x68, datasheet="Senseair PSP12440, TDE7318, TDE5531",
+    ),
+    # ---- power -------------------------------------------------------------
+    Part(
+        ref="BT1", value="battery holder 6 x AA, flat, 150 mm leads", mfr="MPD",
+        mpn="BH36AAW", footprint="110.0 x 49.5 x 16.9 mm, 4 x 3.2 mm holes on 48.1 x 35.3",
+        pins={"+": "red lead", "-": "black lead"},
+        why="Six AA cells side by side, screwed flat to the floor of the battery "
+            "compartment behind its own door. Takes any AA: lithium L91 "
+            "(recommended), NiMH or alkaline.",
+        price_eur=4.50, supplier="Mouser",
+        vsupply_min=0.0, vsupply_max=10.8,
+    ),
+    Part(ref="CELL", value="Energizer Ultimate Lithium AA, first set of 6",
+         mfr="Energizer", mpn="L91", footprint="AA", pins={}, qty=1,
+         why="Primary lithium-iron-disulfide: the most energy per AA, no leakage, "
+             "works to -40 C, 20 years shelf life. Nothing charges inside the device "
+             "(EDR-18). eneloop pro or alkaline also work, for less runtime.",
+         price_eur=14.00, supplier="dm / Rossmann / Reichelt"),
+    Part(
+        ref="F1", value="PTC resettable fuse 0.5 A hold / 1.0 A trip", mfr="Bourns",
+        mpn="MF-R050", footprint="radial, 5.1 mm lead spacing, 7.9 x 13.7 x 3.1 mm",
+        pins={"1": "a", "2": "b"},
+        why="Short-circuit protection right at the holder's red lead: any fault "
+            "downstream (a pinched wire, a failed regulator) is limited to 1 A. "
+            "Trips within 4 s at 2.5 A. Soldered inline, under heat shrink.",
+        price_eur=0.30, supplier="Reichelt",
+        i_max_ma=500.0,
     ),
     Part(
-        ref="W1", value="JST GH 6-pin cable, 150 mm, pin 1 to pin 1", mfr="JST / generic",
-        mpn="2 x GHR-06V-S + SSHL-002T-P0.2", footprint="1.25 mm pitch",
-        pins={}, why="SEN63C to carrier. Sensirion allow up to 50 cm; 150 mm keeps it "
-                     "inside the 10 cm-ish range they recommend for unshielded I2C "
-                     "within reach.",
-        price_eur=2.00, supplier="Mouser / Berrybase"),
-    Part(ref="J1", value="JST GH 6-pin header, SMD", mfr="JST", mpn="SM06B-GHS-TB",
-         footprint="JST GH 1.25 mm, 6 way, top entry",
-         pins={"1": "VDD", "2": "GND", "3": "SDA", "4": "SCL", "5": "GND", "6": "VDD"},
-         why="Carrier end of the SEN63C cable, same pin order as the sensor.",
-         price_eur=0.60, supplier="Mouser / LCSC"),
-    Part(
-        ref="U2", value="SGP40 breakout", mfr="Adafruit", mpn="4829",
-        footprint="STEMMA QT breakout 25.5 x 17.7 mm",
-        pins={"VIN": "3.3V in", "GND": "ground", "SDA": "I2C data", "SCL": "I2C clock"},
-        why="SGP40 MOX VOC sensor with Sensirion's VOC Index algorithm and on-chip "
-            "humidity compensation. The VOC channel is the tripwire that escalates the "
-            "PM cadence during a print. NOTE, from Adafruit's own schematic: the board "
-            "carries an AP2112 LDO and a green power LED, ~185 uA together, so its rail "
-            "is only switched on for each 0.25 s sample (EDR-14).",
-        price_eur=14.90, supplier="Berrybase / Mouser",
-        vsupply_min=3.0, vsupply_max=5.5, io_vmax=5.5,
-        i_typ_ma=2.6, i_max_ma=3.0, i2c_addr=0x59, c_in_uf=20.1,
-        datasheet="Sensirion SGP40 Datasheet v1.2; Adafruit-SGP40-PCB schematic",
+        ref="PS1", value="Pololu S9V11E2A buck-boost, set to 4.00 V", mfr="Pololu",
+        mpn="5719", footprint="10.9 x 16.5 x 4.0 mm, 4 pins: VOUT GND VIN EN",
+        pins={"VIN": "input 2-16 V (3 V to start)", "GND": "ground",
+              "VOUT": "output 2.5-9 V (trimpot)", "EN": "enable, 100k pull-up to VIN"},
+        why="Turns 5.4-10.8 V from the pack into a steady 4.0 V - what the "
+            "FireBeetle expects on its battery input, and a supply for the Sunrise "
+            "and the LED. Buck-boost, so the whole pack is usable. EN stays open "
+            "(on). Set the trimpot before connecting anything (ASSEMBLY step 2).",
+        price_eur=6.50, supplier="Eckstein / Pololu",
+        nc=("EN",),
+        vsupply_min=3.0, vsupply_max=16.0, i_max_ma=1700.0,
     ),
     Part(
-        ref="SW1", value="TPS22918", mfr="Texas Instruments", mpn="TPS22918DBVR",
-        footprint="SOT-23-6",
-        pins={"1": "VIN", "2": "GND", "3": "ON", "4": "CT", "5": "QOD", "6": "VOUT"},
-        why="Power gate for the SEN63C, which idles at 3.3 mA. QOD tied to VOUT so the "
-            "rail really collapses when off (internal 25 R).",
-        price_eur=0.85, supplier="Mouser / LCSC",
-        vsupply_min=1.0, vsupply_max=5.5, i_max_ma=2000.0,
-        datasheet="TI TPS22918 datasheet SLVSDH4",
+        ref="D1", value="Adafruit LM66200 ideal diode breakout", mfr="Adafruit",
+        mpn="5830", footprint="16.51 x 10.16 mm, 2 x 2.5 mm holes, 6 pins",
+        pins={"VIN1": "input 1", "VIN2": "input 2", "GND": "ground", "VOUT": "output",
+              "ON": "active-low enable", "ST": "status, open drain"},
+        why="Feeds +4V0 into the FireBeetle's battery input and blocks every current "
+            "the other way: with USB plugged in the FireBeetle's charger holds its "
+            "battery input at 4.2 V, 0.2 V above +4V0, far past the 70 mV reverse-"
+            "blocking threshold (TI SLVSG04). So the AA cells are never charged. "
+            "VIN2 and ON to GND (truth table: VIN1 > VIN2, ON low = VIN1 feeds VOUT). "
+            "1.3 uA quiescent. ST is unused.",
+        price_eur=3.50, supplier="Adafruit / Berrybase",
+        nc=("ST",),
+        vsupply_min=1.6, vsupply_max=5.5, i_max_ma=2500.0,
+        datasheet="TI LM66200 SLVSG04; github.com/adafruit/Adafruit-LM66200-PCB",
     ),
+    Part(ref="J1", value="JST PH 2-way pigtail, 100 mm", mfr="generic",
+         mpn="PHR-2 with leads", footprint="JST PH 2.0 mm", pins={"+": "+", "-": "-"},
+         why="LM66200 output to the FireBeetle's battery socket. Check the polarity "
+             "against the '+' on the FireBeetle before plugging in: JST PH leads are "
+             "not standardised.", price_eur=0.50, supplier="Berrybase"),
     Part(
-        ref="SW2", value="TPS22918", mfr="Texas Instruments", mpn="TPS22918DBVR",
-        footprint="SOT-23-6",
-        pins={"1": "VIN", "2": "GND", "3": "ON", "4": "CT", "5": "QOD", "6": "VOUT"},
-        why="Power gate for the SGP40 breakout, pulsed per sample; also the hard reset "
-            "for a sensor that has hung its bus.",
-        price_eur=0.85, supplier="Mouser / LCSC",
-        vsupply_min=1.0, vsupply_max=5.5, i_max_ma=2000.0,
+        ref="SW1", value="Pololu Mini MOSFET Switch LV", mfr="Pololu", mpn="2810",
+        footprint="15.24 x 15.24 mm, pins on a 0.1in grid",
+        pins={"VIN": "input", "GND": "ground", "VOUT": "switched output",
+              "ON": "logic on (> ~1 V)", "SW": "slide-switch contact"},
+        why="Switches the SEN62's 3.3 V off completely between windows. The slide "
+            "switch must stay in OFF so the ON pin has control. Its red LED draws "
+            "~0.7 mA only while the switch is on. No soft start: see the ERC note.",
+        price_eur=5.34, supplier="Eckstein",
+        nc=("SW",),
+        vsupply_min=1.8, vsupply_max=16.0, i_max_ma=6000.0,
     ),
-    _c("C1", "22 uF / 10 V X5R", "GRM21BR61A226ME44L", "0805",
-       "Local reservoir on +3V3_SEN6X for the SEN63C's 200 mA / 2 ms current pulses.",
-       0.25, c_uf=22.0),
-    _c("C2", "4.7 nF / 50 V X7R", "GRM188R71H472KA01D", "0603",
-       "SW1 CT: slew 0.55 x 4700 + 30 = 2.6 ms/V, so charging C1 plus the sensor draws "
-       "about 12 mA instead of an amp-level spike that would brown out the MCU rail.",
-       0.05),
-    _c("C4", "1 uF / 16 V X7R", "GRM188R71C105KA12D", "0603",
-       "+3V3_SENS decoupling at the breakout connector.", 0.10, c_uf=1.0),
-    _c("C5", "1 nF / 50 V X7R", "GRM188R71H102KA01D", "0603",
-       "SW2 CT: 580 us/V, ~36 mA into the breakout's 20 uF, 1.7 ms rise.", 0.05),
-    _c("C6", "100 nF / 16 V X7R", "GRM188R71C104KA01D", "0603",
-       "Button RC debounce with R3.", 0.05),
-    _c("C7", "1 uF / 16 V X7R", "GRM188R71C105KA12D", "0603",
-       "Load-switch input bypass, per the TPS22918 layout guidance.", 0.10),
-    _r("R3", "100 k", "RC0603FR-07100KL",
-       "Button pull-up to +3V3 (always on, so the button works in any sleep state). "
-       "The button is on GPIO1, an LP pad."),
-    _r("R6", "4.7 k", "RC0603FR-074K7L",
-       "SGP40 bus SDA pull-up, to the *switched* rail it serves: when the rail is off "
-       "there is no pull-up left to back-feed the unpowered sensor."),
-    _r("R7", "4.7 k", "RC0603FR-074K7L", "SGP40 bus SCL pull-up, as R6."),
-    _r("R11", "4.7 k", "RC0603FR-074K7L",
-       "SEN63C bus SDA pull-up, to +3V3_SEN6X. Sensirion suggest 10k; 4.7k gives "
-       "margin for the cable capacitance."),
-    _r("R12", "4.7 k", "RC0603FR-074K7L", "SEN63C bus SCL pull-up, as R11."),
-    _r("R13", "68 k", "RC0603FR-0768KL",
-       "USB sense, top leg from VIN: 5.0 V x 100/168 = 2.98 V at GPIO18."),
-    _r("R14", "100 k", "RC0603FR-07100KL",
-       "USB sense, bottom leg. Draws 30 uA only while USB is connected; on battery VIN "
-       "is dead and so is the divider."),
-    Part(ref="SW4", value="tactile switch 6 x 6 x 5.0 mm, through hole",
-         mfr="Alps/Omron", mpn="B3F-4050 (or any 6x6x5.0 mm THT tactile)",
-         footprint="THT 6 x 6 mm, 5.0 mm total height",
-         pins={"1": "a", "2": "b"},
-         why="Single multifunction user button. The 5.0 mm overall height is what the "
-             "enclosure is dimensioned around: it puts the stem tip 3.5 mm behind the "
-             "front face, leaving 0.3 mm of travel under the printed cap.",
-         price_eur=0.30, supplier="Berrybase / Reichelt / Mouser"),
+    Part(ref="C1", value="100 nF ceramic, THT", mfr="KEMET", mpn="C320C104K5R5TA",
+         footprint="radial 2.54 mm", pins={"1": "+", "2": "-"},
+         why="Holds the pack-divider node steady for the ADC's sample capacitor.",
+         price_eur=0.10, supplier="Reichelt / Mouser"),
+    _r("R1", "1 M", "Pack divider, top: 10.8 V x 220k/1.22M = 1.95 V at most on GPIO3. "
+                   "Draws 7 uA from the pack."),
+    _r("R2", "220 k", "Pack divider, bottom."),
+    _r("R3", "4.7 k", "SEN62 SDA pull-up to +3V3_SEN: it switches off with the sensor, "
+                     "so no pull-up back-feeds the unpowered SEN62."),
+    _r("R4", "4.7 k", "SEN62 SCL pull-up, as R3."),
+    _r("R5", "10 k", "Sunrise SDA pull-up to CO2_VDDIO (GPIO18). Senseair recommend "
+                    "5-15k. Solder it across Sunrise pins 3 and 4."),
+    _r("R6", "10 k", "Sunrise SCL pull-up, across pins 3 and 5."),
+    _r("R7", "100 k", "Sunrise EN pull-down: EN must never float (PSP12440), also not "
+                     "while the ESP32 is in reset."),
+    _r("R8", "1 k", "Red: (4.0 V - 2.0 V) / 1k = 2.0 mA."),
+    _r("R9", "330", "Green: (4.0 V - 3.1 V) / 330 = 2.7 mA."),
+    _r("R10", "330", "Blue: as green."),
+    # ---- user interface ----------------------------------------------------
     Part(ref="LED1", value="RGB LED 5 mm diffused, common anode", mfr="Adafruit",
          mpn="159", footprint="THT 5 mm, 4 leads",
          pins={"A": "common anode", "R": "red cathode", "G": "green cathode",
                "B": "blue cathode"},
-         why="The only user-facing output: air quality at a glance, pairing mode, low "
-             "battery. Anode on VBAT so green and blue have forward-voltage headroom; "
-             "the cathodes are sunk by GPIOs. Shines through a 0.6 mm skin left in the "
-             "front face, no hole. German shops mostly stock common cathode - order this "
-             "one with the Mouser parcel.",
-         price_eur=1.20, supplier="Mouser / Adafruit",
-         vsupply_min=0.0, vsupply_max=5.0),
-    _r("R8", "1 k", "RC0603FR-071KL", "Red: (3.8 V - 2.0 V) / 1k = 1.8 mA."),
-    _r("R9", "330 R", "RC0603FR-07330RL", "Green: (3.8 V - 3.1 V) / 330R = 2.1 mA."),
-    _r("R10", "330 R", "RC0603FR-07330RL", "Blue: as green."),
-    Part(ref="J2", value="JST PH 2-pin header", mfr="JST", mpn="S2B-PH-K-S",
-         footprint="JST PH 2.0 mm, 2 way, THT side entry",
-         pins={"1": "+", "2": "-"},
-         why="Battery in. The cell plugs into the carrier, not the FireBeetle, so the "
-             "status LED can take its anode from VBAT - the FireBeetle does not bring "
-             "VBAT out to a header.",
-         price_eur=0.20, supplier="Mouser / LCSC"),
-    Part(ref="J3", value="JST PH 2-pin pigtail, 100 mm", mfr="generic",
-         mpn="PHR-2 one end, tinned leads", footprint="JST PH 2.0 mm / 2 solder pads",
-         pins={"1": "+", "2": "-"},
-         why="Carrier (soldered to the J3 pads) to the FireBeetle's battery socket. "
-             "Check polarity against the '+' mark on the FireBeetle before the first "
-             "plug-in: JST PH leads are not standardised.",
-         price_eur=0.50, supplier="Berrybase / Amazon"),
-    Part(ref="BT1", value="LiPo 3.7 V 4000 mAh, protected, 606090", mfr="EREMIT",
-         mpn="3.7V 4000mAh 606090 (JST PH 2.0)",
-         footprint="6.0 x 60 x 90 mm + PCM, JST PH 2.0 lead",
-         pins={"+": "positive", "-": "negative"},
-         why="Largest cell that fits the case upright; ~8 h charge at the FireBeetle's "
-             "540 mA. Must include a PCM (over-charge, over-discharge, over-current, "
-             "short circuit).",
-         price_eur=9.90, supplier="eremit.de / Berrybase",
-         vsupply_min=3.0, vsupply_max=4.2),
-    Part(ref="PCB1", value="AIR CHECK carrier board (ACC-1)", mfr="Aisler/JLCPCB",
-         mpn="ACC-1 rev C", footprint="2-layer, 70 x 35 mm, 1.6 mm FR4",
-         pins={}, why="Carries the two load switches, the button, the RGB LED, both "
-                      "sensor-bus pull-up pairs, the USB sense divider, the battery "
-                      "pass-through and the SEN63C connector, and holds the FireBeetle.",
-         price_eur=6.70, supplier="Aisler (3 boards ~EUR 20) / JLCPCB"),
-    Part(ref="X1", value="M2.5 brass heat-set inserts + M2.5x8 screws",
-         mfr="ruthex", mpn="RX-M2.5x5.7 (70 pcs) + DIN 912 M2.5x10",
-         footprint="-", pins={}, why="Serviceable, re-openable enclosure. The pack does "
-                                     "five devices; the price is the whole pack.",
-         price_eur=9.60, supplier="ruthex.de / Berrybase"),
-    Part(ref="X2", value="EPDM / PU foam strip 2 mm, self-adhesive", mfr="generic", mpn="-",
-         footprint="-", pins={}, why="Seals the SEN63C's inlets and outlet against the "
-                                     "case wall (Sensirion design-in guide 2.1) and "
-                                     "decouples the fan from the shell (section 3).",
-         price_eur=3.00, supplier="local"),
-    Part(ref="X3", value="silicone wire 26 AWG", mfr="generic",
-         mpn="-", footprint="-", pins={}, why="LED and button leads.",
-         price_eur=2.00, supplier="local"),
+         why="The only output: air quality at a glance, pairing, calibration, low "
+             "battery. Anode on +4V0 for green/blue headroom; cathodes sunk by GPIOs.",
+         price_eur=1.20, supplier="Mouser / Adafruit"),
+    Part(ref="LH1", value="LED panel holder 5 mm, M8 x 0.75", mfr="Signal Construct",
+         mpn="SMR1089", footprint="8.2 mm hole", pins={},
+         why="Holds LED1 in the front panel.", price_eur=1.10, supplier="Reichelt (EBF A-5 S)"),
+    Part(ref="SW2", value="miniature push button, momentary, 7 mm panel hole",
+         mfr="generic", mpn="T 250A SW", footprint="7 mm hole, ~29 mm long",
+         pins={"1": "a", "2": "b"},
+         why="The one button: pairing, fresh-air calibration, reset (hold times in "
+             "USER_GUIDE). To GND; the pull-up is inside the ESP32-C6.",
+         price_eur=0.60, supplier="Reichelt"),
+    # ---- mechanical and consumables ----------------------------------------
+    Part(ref="X1", value="M2.5 brass heat-set inserts + M2.5 screws", mfr="ruthex",
+         mpn="RX-M2.5x5.7 + DIN 912 M2.5x8", footprint="-", pins={},
+         why="Re-openable enclosure and module mounts.", price_eur=9.60,
+         supplier="ruthex.de / Berrybase"),
+    Part(ref="X2", value="M2 x 6 screws + M2 nuts, 4 each", mfr="generic", mpn="DIN 912 M2x6",
+         footprint="-", pins={}, why="FireBeetle to its standoffs.", price_eur=1.00,
+         supplier="Reichelt"),
+    Part(ref="X3", value="silicone wire 26 AWG, 4 colours", mfr="generic", mpn="-",
+         footprint="-", pins={}, why="Harness.", price_eur=3.00, supplier="local"),
+    Part(ref="X5", value="heat-shrink tubing assortment", mfr="generic", mpn="-",
+         footprint="-", pins={}, why="Over every inline resistor, the fuse and every "
+                                     "splice.", price_eur=2.00, supplier="local"),
     Part(ref="X4", value="Nordic PPK II power profiler", mfr="Nordic", mpn="nRF-PPK2",
-         footprint="-", pins={}, why="Only way to confirm the battery model on real "
+         footprint="-", pins={}, why="Only way to confirm the energy model on real "
                                      "hardware. Optional but strongly recommended.",
          price_eur=95.0, supplier="Mouser / Digi-Key", required=False),
 ]
@@ -275,54 +314,59 @@ PARTS_BY_REF = {p.ref: p for p in PARTS}
 
 # --------------------------------------------------------------------------
 # Nets  (net name -> [(ref, pin), ...])
-# The SEN63C is wired to J1 through W1 pin-for-pin; the netlist shows the
-# sensor pins directly on the nets they end up on.
 # --------------------------------------------------------------------------
 
 NETS: dict[str, list[tuple[str, str]]] = {
-    # ---- battery pass-through --------------------------------------------
-    "VBAT": [("BT1", "+"), ("J2", "1"), ("J3", "1"), ("M1", "BAT+"), ("LED1", "A")],
-    "BATN": [("BT1", "-"), ("J2", "2"), ("J3", "2"), ("M1", "BAT-")],
-    # ---- power ------------------------------------------------------------
-    "GND": [("M1", "GND"), ("SW1", "2"), ("SW2", "2"),
-            ("C1", "2"), ("C2", "2"), ("C4", "2"), ("C5", "2"), ("C6", "2"), ("C7", "2"),
-            ("U2", "GND"), ("J1", "2"), ("J1", "5"), ("U1", "2"), ("U1", "5"),
-            ("SW4", "2"), ("R14", "2")],
-    "+3V3": [("M1", "3V3"), ("SW1", "1"), ("SW2", "1"), ("C7", "1"), ("R3", "1")],
-    "+3V3_SEN6X": [("SW1", "6"), ("SW1", "5"), ("C1", "1"), ("R11", "1"), ("R12", "1"),
-                   ("J1", "1"), ("J1", "6"), ("U1", "1"), ("U1", "6")],
-    "+3V3_SENS": [("SW2", "6"), ("SW2", "5"), ("C4", "1"), ("R6", "1"), ("R7", "1"),
-                  ("U2", "VIN")],
-    "VIN_USB": [("M1", "VIN"), ("R13", "1")],
-    # ---- control ----------------------------------------------------------
-    "EN_SEN6X": [("M1", "IO2"), ("SW1", "3")],            # GPIO2, LP pad
-    "EN_SENS": [("M1", "IO3"), ("SW2", "3")],             # GPIO3, LP pad
-    "CT1": [("SW1", "4"), ("C2", "1")],
-    "CT2": [("SW2", "4"), ("C5", "1")],
-    "USB_SENSE": [("R13", "2"), ("R14", "1"), ("M1", "IO18")],
-    # ---- SEN63C bus: HP I2C on GPIO19/20 -----------------------------------
-    "SEN_SDA": [("M1", "SDA"), ("R11", "2"), ("J1", "3"), ("U1", "3")],     # GPIO19
-    "SEN_SCL": [("M1", "SCL"), ("R12", "2"), ("J1", "4"), ("U1", "4")],     # GPIO20
-    # ---- SGP40 bus: LP_I2C, fixed pads GPIO6/GPIO7 on the C6 ---------------
-    "SENS_SDA": [("M1", "IO6"), ("U2", "SDA"), ("R6", "2")],
-    "SENS_SCL": [("M1", "IO7"), ("U2", "SCL"), ("R7", "2")],
-    # ---- status LED, common anode on VBAT, cathodes sunk by GPIOs ---------
-    "LED_R": [("M1", "IO21"), ("R8", "1")],
-    "LED_R_K": [("R8", "2"), ("LED1", "R")],
-    "LED_G": [("M1", "IO22"), ("R9", "1")],
-    "LED_G_K": [("R9", "2"), ("LED1", "G")],
-    "LED_B": [("M1", "IO23"), ("R10", "1")],
-    "LED_B_K": [("R10", "2"), ("LED1", "B")],
-    # ---- button -----------------------------------------------------------
-    "BTN": [("M1", "IO1"), ("R3", "2"), ("SW4", "1"), ("C6", "1")],
+    # ---- power path ---------------------------------------------------------
+    "VPACK":     [("BT1", "+"), ("F1", "1")],
+    "VPACK_F":   [("F1", "2"), ("PS1", "VIN"), ("R1", "1")],
+    "+4V0":      [("PS1", "VOUT"), ("D1", "VIN1"), ("U4", "2"), ("LED1", "A")],
+    "VSYS":      [("D1", "VOUT"), ("J1", "+"), ("M1", "BAT+")],
+    "+3V3":      [("M1", "3V3"), ("SW1", "VIN"), ("U2", "3V3"), ("U3", "VCC")],
+    "+3V3_SEN":  [("SW1", "VOUT"), ("U1", "1"), ("U1", "6"), ("R3", "1"), ("R4", "1")],
+    "GND":       [("BT1", "-"), ("PS1", "GND"), ("D1", "GND"), ("D1", "VIN2"),
+                  ("D1", "ON"), ("J1", "-"), ("M1", "BAT-"), ("M1", "GND"),
+                  ("SW1", "GND"), ("U1", "2"), ("U1", "5"), ("U2", "GND"),
+                  ("U3", "GND"), ("U4", "1"), ("U4", "6"), ("R2", "2"), ("C1", "2"),
+                  ("R7", "2"), ("SW2", "2")],
+    # ---- measurement / control ---------------------------------------------
+    "PACK_ADC":  [("R1", "2"), ("R2", "1"), ("C1", "1"), ("M1", "IO3")],
+    "SEN_EN":    [("M1", "IO2"), ("SW1", "ON")],
+    "CO2_EN":    [("M1", "IO14"), ("U4", "9"), ("R7", "1")],
+    "CO2_VDDIO": [("M1", "IO18"), ("U4", "3"), ("R5", "1"), ("R6", "1")],
+    "BTN":       [("M1", "IO1"), ("SW2", "1")],
+    # ---- SEN62: HP I2C on GPIO19/20 ------------------------------------------
+    "SEN_SDA":   [("M1", "SDA"), ("U1", "3"), ("R3", "2")],
+    "SEN_SCL":   [("M1", "SCL"), ("U1", "4"), ("R4", "2")],
+    # ---- Sunrise: the same HP controller, re-routed to GPIO17/21 --------------
+    "CO2_SDA":   [("M1", "IO17"), ("U4", "4"), ("R5", "2")],
+    "CO2_SCL":   [("M1", "IO21"), ("U4", "5"), ("R6", "2")],
+    # ---- always-on bus: LP I2C, fixed pads GPIO6/7 --------------------------
+    "SENS_SDA":  [("M1", "IO6"), ("U2", "SDA"), ("U3", "SDA")],
+    "SENS_SCL":  [("M1", "IO7"), ("U2", "SCL"), ("U3", "SCL")],
+    # ---- status LED ------------------------------------------------------------
+    "LED_R":     [("M1", "IO16"), ("R8", "1")],
+    "LED_R_K":   [("R8", "2"), ("LED1", "R")],
+    "LED_G":     [("M1", "IO22"), ("R9", "1")],
+    "LED_G_K":   [("R9", "2"), ("LED1", "G")],
+    "LED_B":     [("M1", "IO23"), ("R10", "1")],
+    "LED_B_K":   [("R10", "2"), ("LED1", "B")],
 }
 
-NET_ALIASES: list[tuple[str, str]] = []
-
-# Which rail each net belongs to (for the voltage-compatibility check)
-NET_RAIL = {
-    "VBAT": "VBAT", "GND": "GND", "+3V3": "+3V3", "+3V3_SEN6X": "+3V3_SEN6X",
-    "+3V3_SENS": "+3V3_SENS", "VIN_USB": "VUSB",
+# Where each inline part is physically soldered (for NETLIST.md and ASSEMBLY).
+SOLDER_AT = {
+    "F1": "in the red lead of the battery holder, 2 cm from the holder",
+    "R1": "at the regulator's VIN pad, on its own wire to FireBeetle IO3",
+    "R2": "at FireBeetle IO3 to GND, together with C1",
+    "C1": "at FireBeetle IO3 to GND",
+    "R3": "from SW1 VOUT to the SEN62 SDA wire",
+    "R4": "from SW1 VOUT to the SEN62 SCL wire",
+    "R5": "across Sunrise pins 3 (VDDIO) and 4 (SDA)",
+    "R6": "across Sunrise pins 3 (VDDIO) and 5 (SCL)",
+    "R7": "at FireBeetle IO14 to GND",
+    "R8": "on the LED's red lead",
+    "R9": "on the LED's green lead",
+    "R10": "on the LED's blue lead",
 }
 
 # --------------------------------------------------------------------------
@@ -339,27 +383,33 @@ class GpioUse:
     strapping: bool
     note: str
 
-# ESP32-C6: LP (RTC) GPIOs are GPIO0..GPIO7.  Strapping pins are GPIO4, GPIO5,
-# GPIO8, GPIO9 and GPIO15 (ESP32-C6 datasheet).
+# ESP32-C6: LP GPIOs are GPIO0..GPIO7.  Strapping pins GPIO4, 5, 8, 9, 15.
 C6_RTC_GPIO = set(range(0, 8))
 C6_STRAPPING = {4, 5, 8, 9, 15}
+C6_ROM_UART_TX = 16      # the ROM boot log toggles it after every reset
 
 GPIO_MAP = [
-    GpioUse(0,  "(on board)", "BAT_ADC",  "analog in", True, False,
-            "FireBeetle R15/R16 1M/1M VBAT divider, ADC1 channel 0 - not on a header"),
-    GpioUse(1,  "1",   "BTN",         "in",  True,  False, "wake source, active low"),
-    GpioUse(2,  "2",   "EN_SEN6X",    "out", True,  False, "held LOW in sleep"),
-    GpioUse(3,  "3",   "EN_SENS",     "out", True,  False, "held LOW in sleep, pulsed per VOC sample"),
-    GpioUse(6,  "6",   "SENS_SDA",    "bidir", True, False,
-            "LP_I2C SDA - a fixed IO_MUX pad on the C6, not remappable"),
-    GpioUse(7,  "7",   "SENS_SCL",    "bidir", True, False,
-            "LP_I2C SCL - a fixed IO_MUX pad on the C6, not remappable"),
-    GpioUse(18, "18",  "USB_SENSE",   "in",  False, False, "VIN / 1.68, high while USB is connected"),
-    GpioUse(19, "SDA", "SEN_SDA",     "bidir", False, False, "HP I2C, released to input when SW1 is off"),
-    GpioUse(20, "SCL", "SEN_SCL",     "bidir", False, False, "HP I2C, released to input when SW1 is off"),
-    GpioUse(21, "21",  "LED_R",       "out", False, False, "sink, active low"),
-    GpioUse(22, "22",  "LED_G",       "out", False, False, "sink, active low"),
-    GpioUse(23, "23",  "LED_B",       "out", False, False, "sink, active low"),
+    GpioUse(0,  "(on board)", "REG_ADC", "analog in", True, False,
+            "FireBeetle 1M/1M divider from VSYS: 4.0 V on the pack, 4.2 V on USB"),
+    GpioUse(1,  "1",   "BTN",       "in",    True,  False, "wake source, internal pull-up, active low"),
+    GpioUse(2,  "2",   "SEN_EN",    "out",   True,  False, "held LOW in sleep"),
+    GpioUse(3,  "3",   "PACK_ADC",  "analog in", True, False, "pack / 5.545, ADC1 channel 3"),
+    GpioUse(6,  "6",   "SENS_SDA",  "bidir", True,  False,
+            "LP_I2C SDA - a fixed pad on the C6, not remappable"),
+    GpioUse(7,  "7",   "SENS_SCL",  "bidir", True,  False,
+            "LP_I2C SCL - a fixed pad on the C6, not remappable"),
+    GpioUse(14, "14",  "CO2_EN",    "out",   False, False,
+            "R7 keeps it low through reset and sleep"),
+    GpioUse(16, "16",  "LED_R",     "out",   False, False,
+            "U0TXD: the ROM boot log only makes the red LED flicker"),
+    GpioUse(17, "17",  "CO2_SDA",   "bidir", False, False, "input while the Sunrise is off"),
+    GpioUse(18, "18",  "CO2_VDDIO", "out",   False, False,
+            "Sunrise VDDIO and its pull-ups; low whenever EN is low"),
+    GpioUse(19, "SDA", "SEN_SDA",   "bidir", False, False, "input while the SEN62 is off"),
+    GpioUse(20, "SCL", "SEN_SCL",   "bidir", False, False, "input while the SEN62 is off"),
+    GpioUse(21, "21",  "CO2_SCL",   "bidir", False, False, "input while the Sunrise is off"),
+    GpioUse(22, "22",  "LED_G",     "out",   False, False, "sink, active low"),
+    GpioUse(23, "23",  "LED_B",     "out",   False, False, "sink, active low"),
 ]
 
 RESERVED_GPIO = {
@@ -369,19 +419,26 @@ RESERVED_GPIO = {
     9:  "strapping pin, BOOT button on the FireBeetle",
     12: "native USB D-",
     13: "native USB D+",
-    14: "free",
-    15: "strapping pin, FireBeetle green LED (to GND via 2k) - driven low by the firmware",
-    16: "free (UART0 TX, console is on USB-Serial-JTAG)",
-    17: "free (UART0 RX)",
+    15: "strapping pin, FireBeetle green LED - driven low by the firmware",
 }
 
-# One bus per switched rail - see EDR-11 (v1.1) and EDR-15 (v1.2).
-I2C_BUS = {0x59: "SGP40 (LP_I2C, GPIO6/7, pull-ups to +3V3_SENS)"}
-SEN_BUS = {0x6B: "SEN63C (HP I2C, GPIO19/20, pull-ups to +3V3_SEN6X)"}
+# I2C buses and what hangs on them
+BUSES = {
+    "LP": {"sda": "SENS_SDA", "scl": "SENS_SCL", "rail": "+3V3",
+           "devices": {0x59: "U2", 0x44: "U3"},
+           "pullups": "on the boards: SparkFun 4.7k (I2C jumper closed), Grove board's own"},
+    "SEN": {"sda": "SEN_SDA", "scl": "SEN_SCL", "rail": "+3V3_SEN",
+            "devices": {0x6B: "U1"}, "pullups": "R3, R4"},
+    "CO2": {"sda": "CO2_SDA", "scl": "CO2_SCL", "rail": "CO2_VDDIO",
+            "devices": {0x68: "U4"}, "pullups": "R5, R6"},
+}
 
-# FireBeetle charger: CN3165, ICH = 1188 V / R9 (DFRobot schematic v1.1)
-CHARGER_R_ISET = 2.2e3
-CELL_MAH = 4000.0
+# Currents for the power checks (datasheets; see the Part entries)
+ESP_TX_PEAK_MA = 350.0      # ESP32-C6 802.15.4 TX peak at 3.3 V, conservative
+ADC_MAX_V = 2.9             # ESP32-C6 ADC, 12 dB attenuation, usable range
+LM66200_VRCB_MAX = 0.070    # reverse-current blocking threshold, max (SLVSG04)
+LED_VF = {"R": 1.8, "G": 2.9, "B": 2.9}     # minimum forward voltages
+PS1_EFF_MIN = 0.80
 
 
 # --------------------------------------------------------------------------
@@ -406,9 +463,8 @@ def _nets_of(ref: str, pin: str) -> list[str]:
 
 def run_erc() -> Erc:
     e = Erc()
-    alias = {a: b for a, b in NET_ALIASES}
 
-    # 1. every pin referenced by a net must exist on that part
+    # 1. every pin referenced by a net exists on that part
     for net, conns in NETS.items():
         for ref, pin in conns:
             e.check(ref in PARTS_BY_REF, f"net {net}: unknown part {ref}")
@@ -417,89 +473,124 @@ def run_erc() -> Erc:
                 e.check(pin in p.pins,
                         f"net {net}: {ref} has no pin '{pin}' (has {sorted(p.pins)})")
 
-    # 2. no net may be left with a single connection
+    # 2. no net with a single connection
     for net, conns in NETS.items():
-        n = len(conns) + (1 if net in alias else 0)
-        e.check(n >= 2, f"net {net} has only {len(conns)} connection(s)")
+        e.check(len(conns) >= 2, f"net {net} has only {len(conns)} connection(s)")
 
-    # 3. no pin may appear on two different nets
+    # 3. no pin on two nets
     seen: dict[tuple[str, str], str] = {}
     for net, conns in NETS.items():
         for c in conns:
             prev = seen.get(c)
-            e.check(prev is None,
-                    f"pin {c[0]}.{c[1]} is on both '{prev}' and '{net}'")
+            e.check(prev is None, f"pin {c[0]}.{c[1]} is on both '{prev}' and '{net}'")
             seen[c] = net
 
-    # 3b. every pin of every active part is connected, except the FireBeetle
-    #     header pins we deliberately leave alone
+    # 3b. every pin of every part is connected or declared NC, and an NC pin
+    #     really is unconnected
     for p in PARTS:
         if not p.pins or p.ref == "M1":
             continue
         for pin in p.pins:
-            e.check((p.ref, pin) in seen, f"{p.ref}.{pin} ({p.pins[pin]}) is unconnected")
+            if pin in p.nc:
+                e.check((p.ref, pin) not in seen, f"{p.ref}.{pin} is declared NC but wired")
+            else:
+                e.check((p.ref, pin) in seen,
+                        f"{p.ref}.{pin} ({p.pins[pin]}) is unconnected")
 
-    # 4. supply-voltage compatibility for every powered part
-    supply_of = {"U1": "+3V3_SEN6X", "U2": "+3V3_SENS", "M1": "VBAT"}
-    for ref, railname in supply_of.items():
+    # 4. supply-voltage compatibility
+    supply_of = {"U1": ("1", "+3V3_SEN"), "U2": ("3V3", "+3V3"), "U3": ("VCC", "+3V3"),
+                 "U4": ("2", "+4V0"), "PS1": ("VIN", "VPACK_F"), "D1": ("VIN1", "+4V0"),
+                 "SW1": ("VIN", "+3V3"), "M1": ("BAT+", "VSYS")}
+    for ref, (pin, railname) in supply_of.items():
         p = PARTS_BY_REF[ref]
         r = RAILS[railname]
+        e.check(_nets_of(ref, pin) == [railname],
+                f"{ref}.{pin} should be on {railname}, is on {_nets_of(ref, pin)}")
         e.check(p.vsupply_min <= r.vmin,
                 f"{ref} needs >= {p.vsupply_min} V but {railname} can fall to {r.vmin} V")
         e.check(p.vsupply_max >= r.vmax,
-                f"{ref} max supply {p.vsupply_max} V but {railname} can reach {r.vmax} V")
-        pin = {"U1": "1", "U2": "VIN", "M1": "BAT+"}[ref]
-        e.check(_nets_of(ref, pin) == [railname],
-                f"{ref}.{pin} should be on {railname}, is on {_nets_of(ref, pin)}")
+                f"{ref} max {p.vsupply_max} V but {railname} can reach {r.vmax} V")
+    e.check(PARTS_BY_REF["D1"].vsupply_max >= RAILS["VSYS"].vmax,
+            "LM66200 output side must tolerate the charger's 4.2 V")
 
-    # 5. logic levels: every sensor I/O must tolerate the 3.3 V bus
-    for ref in ("U1", "U2"):
-        e.check(PARTS_BY_REF[ref].io_vmax >= RAILS["+3V3"].vmax,
-                f"{ref} I/O must tolerate the +3V3 rail at its maximum")
+    # 5. the pack reaches nothing except through F1
+    e.check(sorted(NETS["VPACK"]) == [("BT1", "+"), ("F1", "1")],
+            "VPACK may only connect the holder to the fuse")
 
-    # 6. I2C addresses: unique, in range, and each part on the table of its bus
+    # 6. no path that could charge the AA cells: VSYS (where the FireBeetle's
+    #    charger sits) is separated from +4V0 by D1 alone, and D1 blocks
+    #    whenever the charger lifts VSYS above +4V0
+    e.check(("D1", "VIN1") in NETS["+4V0"] and ("D1", "VOUT") in NETS["VSYS"],
+            "D1 must sit between +4V0 and VSYS")
+    shared = {c for c in NETS["+4V0"]} & {c for c in NETS["VSYS"]}
+    e.check(not shared, f"+4V0 and VSYS share {shared}")
+    e.check(4.20 * 0.99 - RAILS["+4V0"].vmax > LM66200_VRCB_MAX,
+            "charger voltage is not far enough above +4V0 for D1 to block")
+    e.check(_nets_of("D1", "ON") == ["GND"] and _nets_of("D1", "VIN2") == ["GND"],
+            "D1: ON low (enabled) and VIN2 at GND so VIN1 always feeds VOUT")
+
+    # 7. current: regulator, switch, fuse
+    load_4v0_ma = ((PARTS_BY_REF["U1"].i_max_ma + ESP_TX_PEAK_MA
+                    + PARTS_BY_REF["U2"].i_max_ma) * 3.3 / (0.9 * 4.0)
+                   + PARTS_BY_REF["U4"].i_max_ma + 3 * 3.0)
+    e.check(load_4v0_ma < PARTS_BY_REF["PS1"].i_max_ma * 0.6,
+            f"worst-case +4V0 load {load_4v0_ma:.0f} mA leaves too little regulator margin")
+    e.check(PARTS_BY_REF["SW1"].i_max_ma >= 2 * PARTS_BY_REF["U1"].i_max_ma,
+            "SW1 must carry the SEN62's peaks with margin")
+    # sustained pack current: SEN62 window + radio average, at the lowest pack voltage
+    sustained_ma = ((PARTS_BY_REF["U1"].i_typ_ma + 30.0) * 3.3 / 0.9
+                    ) / (RAILS["VPACK"].vmin * PS1_EFF_MIN)
+    e.check(sustained_ma < 0.41 * 1000 * 0.5,
+            f"sustained {sustained_ma:.0f} mA is too close to F1's 0.41 A hold at 40 C")
+    e.check(False, "SW1 has no soft start: the SEN62's switch-on step lands on the "
+                   "FireBeetle's 3.3 V buck - verify on the bench (TESTING T-P3)", warn=True)
+
+    # 8. ADC ranges
+    v_adc = RAILS["VPACK_F"].vmax * 220e3 / (1e6 + 220e3)
+    e.check(v_adc <= ADC_MAX_V, f"pack divider gives {v_adc:.2f} V > {ADC_MAX_V} V")
+    e.check(RAILS["VSYS"].vmax / 2 <= ADC_MAX_V, "VSYS / 2 exceeds the ADC range")
+
+    # 9. I2C: unique addresses, pull-ups on the rail of the bus's devices
     addrs = [p.i2c_addr for p in PARTS if p.i2c_addr is not None]
     e.check(len(addrs) == len(set(addrs)), f"duplicate I2C address in {addrs}")
-    e.check(set(addrs) == set(I2C_BUS) | set(SEN_BUS), "bus tables and parts disagree")
-    for a in list(I2C_BUS) + list(SEN_BUS):
-        e.check(0x08 <= a <= 0x77, f"I2C address 0x{a:02x} outside the 7-bit range")
-
-    # 7. I2C pull-ups: exactly one pair per bus, on the switched rail that
-    #    powers the devices on that bus, so a switched-off rail leaves no
-    #    pull-up feeding an unpowered sensor.
-    for sda, scl, rail, dev in (("SENS_SDA", "SENS_SCL", "+3V3_SENS", "U2"),
-                                ("SEN_SDA", "SEN_SCL", "+3V3_SEN6X", "U1")):
-        pu = [r for r, _ in NETS[sda] if r.startswith("R")] + \
-             [r for r, _ in NETS[scl] if r.startswith("R")]
-        e.check(len(pu) == 2, f"{sda}/{scl} need exactly one pull-up each, have {pu}")
+    for name, b in BUSES.items():
+        for a, ref in b["devices"].items():
+            e.check(PARTS_BY_REF[ref].i2c_addr == a, f"{name}: {ref} is not at 0x{a:02x}")
+            e.check(0x08 <= a <= 0x77, f"I2C address 0x{a:02x} outside the 7-bit range")
+            e.check((ref, "SDA") in NETS[b["sda"]] or (ref, "3") in NETS[b["sda"]]
+                    or (ref, "4") in NETS[b["sda"]], f"{ref} is not on {b['sda']}")
+        pu = [r for r, _ in NETS[b["sda"]] + NETS[b["scl"]] if r.startswith("R")]
+        if name == "LP":
+            e.check(not pu, "the LP bus uses the modules' own pull-ups")
+            continue
+        e.check(len(pu) == 2, f"{name} bus needs exactly one pull-up per line, has {pu}")
         for r in pu:
-            e.check(_nets_of(r, "1") == [rail], f"{r} must pull up to {rail}")
-        devpin = {"U2": "VIN", "U1": "1"}[dev]
-        e.check(_nets_of(dev, devpin) == [rail],
-                f"{dev} and its pull-ups must share a rail ({rail})")
+            e.check(_nets_of(r, "1") == [b["rail"]], f"{r} must pull up to {b['rail']}")
+    e.check(_nets_of("U4", "3") == ["CO2_VDDIO"],
+            "Sunrise VDDIO must share the switched net with its pull-ups")
+    e.check(_nets_of("U4", "6") == ["GND"], "Sunrise COMSEL to GND selects I2C")
+    e.check(("R7", "1") in NETS["CO2_EN"] and _nets_of("R7", "2") == ["GND"],
+            "Sunrise EN needs its pull-down")
+    gpio18_ma = 2 * 3.4 / 10e3 * 1e3
+    e.check(gpio18_ma < 20.0, f"GPIO18 sources {gpio18_ma:.1f} mA")
+
+    # 10. GPIO usage
     gm = {g.signal: g.gpio for g in GPIO_MAP}
     e.check(gm.get("SENS_SDA") == 6 and gm.get("SENS_SCL") == 7,
             "LP_I2C on the ESP32-C6 only exists on GPIO6 (SDA) / GPIO7 (SCL)")
-
-    # 8. GPIO usage
     used = {}
     for g in GPIO_MAP:
-        e.check(g.gpio not in used,
-                f"GPIO{g.gpio} used twice: {used.get(g.gpio)} and {g.signal}")
+        e.check(g.gpio not in used, f"GPIO{g.gpio} used twice: {used.get(g.gpio)} and {g.signal}")
         used[g.gpio] = g.signal
-        e.check(g.gpio not in C6_STRAPPING,
-                f"GPIO{g.gpio} ({g.signal}) is an ESP32-C6 strapping pin")
+        e.check(g.gpio not in C6_STRAPPING, f"GPIO{g.gpio} ({g.signal}) is a strapping pin")
         e.check(g.rtc_capable == (g.gpio in C6_RTC_GPIO),
-                f"GPIO{g.gpio} RTC capability declared {g.rtc_capable} but "
-                f"ESP32-C6 LP GPIOs are 0..7")
-    for g in GPIO_MAP:
+                f"GPIO{g.gpio} LP capability declared wrongly")
         if "held" in g.note or "wake" in g.note:
-            e.check(g.gpio in C6_RTC_GPIO,
-                    f"GPIO{g.gpio} ({g.signal}) must be an LP GPIO to hold/wake in sleep")
+            e.check(g.gpio in C6_RTC_GPIO, f"GPIO{g.gpio} must be an LP GPIO to hold/wake")
+    e.check(used.get(C6_ROM_UART_TX, "").startswith("LED"),
+            "GPIO16 is toggled by the ROM boot log: only an LED may sit on it")
     for gpio in RESERVED_GPIO:
-        e.check(gpio not in used,
-                f"GPIO{gpio} is reserved ({RESERVED_GPIO[gpio]}) but used for {used.get(gpio)}")
-    # the net list and the GPIO map must agree on every MCU pin
+        e.check(gpio not in used, f"GPIO{gpio} is reserved but used for {used.get(gpio)}")
     pin_to_gpio = {"SDA": 19, "SCL": 20}
     for net, conns in NETS.items():
         for ref, pin in conns:
@@ -507,55 +598,29 @@ def run_erc() -> Erc:
                 continue
             gpio = pin_to_gpio.get(pin, int(pin[2:]) if pin.startswith("IO") else -1)
             e.check(gm.get(net) == gpio,
-                    f"net {net} is on M1.{pin} (GPIO{gpio}) but the GPIO map says "
-                    f"GPIO{gm.get(net)}")
+                    f"net {net} is on M1.{pin} (GPIO{gpio}) but the GPIO map says {gm.get(net)}")
+    # the firmware's pin table must agree with the wiring
+    hal = os.path.join(ROOT, "firmware/components/ac_hal/include/ac_hal/ac_hal.h")
+    if os.path.exists(hal):
+        pins = {}
+        for line in open(hal):
+            parts = line.split()
+            if len(parts) >= 3 and parts[0] == "#define" and parts[1].startswith("AC_PIN_"):
+                pins[parts[1][7:]] = int(parts[2])
+        for sig, gpio in gm.items():
+            if sig in pins:
+                e.check(pins[sig] == gpio,
+                        f"firmware says AC_PIN_{sig} = {pins[sig]}, wiring says {gpio}")
+        for sig in ("SEN_EN", "CO2_EN", "CO2_IO", "CO2_SDA", "CO2_SCL", "SEN_SDA",
+                    "SEN_SCL", "LED_R", "LED_G", "LED_B", "BUTTON", "PACK_ADC"):
+            e.check(sig in pins, f"firmware has no AC_PIN_{sig}")
+        e.check(pins.get("CO2_IO") == gm["CO2_VDDIO"] and pins.get("BUTTON") == gm["BTN"],
+                "firmware CO2_IO / BUTTON disagree with the wiring")
 
-    # 9. load switches: current capacity and inrush.  TPS22918 slew rate
-    #    SR = 0.55 us/(V pF) x CT + 30 us/V (datasheet eq. 3); I = C_load / SR.
-    ct_of = {"SW1": "C2", "SW2": "C5"}
-    for sw, rail, loads in (("SW1", "+3V3_SEN6X", ("U1", "C1")),
-                            ("SW2", "+3V3_SENS", ("U2", "C4"))):
-        ct_pf = {"C2": 4700.0, "C5": 1000.0}[ct_of[sw]]
-        e.check(_nets_of(ct_of[sw], "1") == [f"CT{sw[-1]}"],
-                f"{sw} CT pin needs its capacitor {ct_of[sw]}")
-        sr_s_per_v = (0.55 * ct_pf + 30.0) * 1e-6
-        c_load = sum(PARTS_BY_REF[r].c_in_uf for r in loads) * 1e-6
-        inrush_ma = c_load / sr_s_per_v * 1e3
-        e.check(inrush_ma <= 100.0,
-                f"{sw} inrush {inrush_ma:.0f} mA into {c_load*1e6:.0f} uF would dip +3V3")
-        e.check(_nets_of(sw, "5") == [rail],
-                f"{sw} QOD must be tied to VOUT ({rail}) so the rail collapses when off")
-    e.check(PARTS_BY_REF["SW1"].i_max_ma >= 2 * PARTS_BY_REF["U1"].i_max_ma,
-            "SW1 must carry the SEN63C's 200 mA peaks with margin")
-
-    # 10. charger vs cell: C-rate must be safe and the charge time sane
-    i_charge_ma = 1188.0 / CHARGER_R_ISET * 1e3
-    e.check(i_charge_ma <= CELL_MAH,
-            f"charge current {i_charge_ma:.0f} mA exceeds 1C for {CELL_MAH:.0f} mAh")
-    e.check(CELL_MAH / i_charge_ma <= 12.0,
-            f"charge time {CELL_MAH / i_charge_ma:.1f} h is unreasonable", warn=True)
-
-    # 11. both load switches are driven from LP GPIOs so they hold in sleep
-    for sw, net in (("SW1", "EN_SEN6X"), ("SW2", "EN_SENS")):
-        gp = [g for g in GPIO_MAP if g.signal == net]
-        e.check(len(gp) == 1 and gp[0].gpio in C6_RTC_GPIO,
-                f"{sw} enable net {net} is not on an LP GPIO")
-        e.check((sw, "3") in NETS[net], f"{sw}.ON is not on {net}")
-
-    # 12. USB sense: a logic high on USB, never above the pad's maximum
-    r_top, r_bot = 68e3, 100e3
-    vusb = RAILS["VUSB"]
-    v_lo = vusb.vmin * r_bot / (r_top + r_bot)
-    v_hi = vusb.vmax * r_bot / (r_top + r_bot)
-    e.check(v_lo >= 0.75 * RAILS["+3V3"].vnom,
-            f"USB sense {v_lo:.2f} V at 4.75 V VBUS is below VIH")
-    e.check(v_hi <= RAILS["+3V3"].vmin + 0.3,
-            f"USB sense {v_hi:.2f} V at 5.25 V VBUS exceeds VDD + 0.3 V")
-
-    # 13. the LED anode is on VBAT (the only rail with headroom for blue/green)
-    e.check(_nets_of("LED1", "A") == ["VBAT"], "LED1 anode must be on VBAT")
-    e.check(("M1", "BAT+") in NETS["VBAT"] and ("M1", "BAT-") in NETS["BATN"],
-            "the battery must reach the FireBeetle through the carrier")
+    # 11. LED: on when sunk, off when the GPIO is high
+    for c in "RGB":
+        e.check(RAILS["+4V0"].vmax - RAILS["+3V3"].vmin < LED_VF[c],
+                f"LED {c} would glow with its GPIO high")
 
     return e
 
@@ -592,22 +657,20 @@ def netlist_markdown() -> str:
     w = o.append
     w("<!-- GENERATED by electronics/schematic/design.py -->")
     w("")
-    w("# AIR CHECK - net list and pin map (ACC-1 rev C, v1.2)")
+    w("# AIR CHECK - wiring list and pin map (v1.3, no custom PCB)")
     w("")
     w("## Power tree")
     w("")
     w("```")
-    w("1S LiPo 4000 mAh --J2--+--J3--> FireBeetle BAT (JST PH)")
-    w("                       `------> LED1 common anode (VBAT)")
-    w("")
-    w("USB-C (FireBeetle) --> CN3165 charger, 540 mA --> VBAT")
-    w("VBAT / USB --> TPS62A02 buck --> +3V3 (always on, FireBeetle)")
-    w("")
-    w("+3V3 --[SW1 TPS22918, CT 4.7 nF, GPIO2]--> +3V3_SEN6X --> SEN63C, R11/R12 pull-ups")
-    w("+3V3 --[SW2 TPS22918, CT 1 nF,   GPIO3]--> +3V3_SENS  --> SGP40 breakout, R6/R7 pull-ups")
-    w("+3V3 ---------------------------------->  ESP32-C6, button pull-up")
-    w("VIN (USB 5 V) --68k--+--100k-- GND        USB_SENSE on GPIO18")
-    w("VBAT --1M--+--1M-- GND  (on the FireBeetle)  BAT_ADC on GPIO0")
+    w("6 x AA (BT1) --F1 PTC 0.5 A--> VPACK_F 5.4..10.8 V")
+    w("   VPACK_F --> PS1 Pololu S9V11E2A (buck-boost) --> +4V0")
+    w("   VPACK_F --R1 1M--+--R2 220k-- GND        PACK_ADC on GPIO3 (C1 100 nF)")
+    w("+4V0 --> D1 LM66200 (ideal diode, blocks reverse) --> VSYS --> FireBeetle BAT (J1)")
+    w("+4V0 --> Sunrise VBB, LED common anode")
+    w("USB-C --> FireBeetle CN3165 --> VSYS at 4.2 V: D1 blocks, the cells are never charged")
+    w("VSYS --> FireBeetle TPS62A02 --> +3V3 (always on): ESP32-C6, SGP40, SHT40")
+    w("+3V3 --[SW1 Pololu #2810, ON = GPIO2]--> +3V3_SEN --> SEN62, R3/R4 pull-ups")
+    w("GPIO18 --> CO2_VDDIO --> Sunrise VDDIO, R5/R6 pull-ups  (EN = GPIO14, R7 pull-down)")
     w("```")
     w("")
     w("## Rails")
@@ -625,34 +688,50 @@ def netlist_markdown() -> str:
         w(f"| {g.gpio} | {g.board_pin} | {g.signal} | {g.direction} | "
           f"{'yes' if g.rtc_capable else 'no'} | {g.note} |")
     w("")
-    w("Reserved / not used by the application:")
+    w("Reserved / not used:")
     w("")
     w("| GPIO | reason |")
     w("|---|---|")
     for gpio, why in sorted(RESERVED_GPIO.items()):
         w(f"| {gpio} | {why} |")
     w("")
-    w("## I2C buses")
+    w("## I2C buses (100 kHz)")
     w("")
-    w("One bus per switched rail, each with its pull-ups on the rail it serves, "
-      "100 kHz:")
+    w("| bus | pins | address | device | pull-ups |")
+    w("|---|---|---|---|---|")
+    for name, b in BUSES.items():
+        for a, ref in b["devices"].items():
+            w(f"| {name} | {b['sda']} / {b['scl']} | 0x{a:02X} | "
+              f"{ref} {PARTS_BY_REF[ref].value} | {b['pullups']} |")
     w("")
-    w("| address | device |")
-    w("|---|---|")
-    for a, d in sorted({**I2C_BUS, **SEN_BUS}.items()):
-        w(f"| 0x{a:02X} | {d} |")
+    w("The SEN62 and the Sunrise share the ESP32-C6's single HP I2C controller; the "
+      "firmware routes it to one pin pair at a time and leaves the other pair as "
+      "inputs, so nothing drives a sensor that is switched off.")
     w("")
-    w("The Adafruit SGP40 breakout has its own 10k pull-ups (to its VIN and to its "
-      "LDO output) and BSS138 level shifters. They sit on the same switched rail, "
-      "so they vanish with it; together with R6/R7 the bus sees about 3.2k.")
+    w("## Wiring list")
     w("")
-    w("## Nets")
+    w("Every net is one or more wires. Solder, then heat-shrink every joint.")
     w("")
     w("| net | connections |")
     w("|---|---|")
     for net, conns in NETS.items():
         s = ", ".join(f"{r}.{p}" for r, p in conns)
         w(f"| `{net}` | {s} |")
+    w("")
+    w("## Inline parts: where they are soldered")
+    w("")
+    w("| ref | part | where |")
+    w("|---|---|---|")
+    for ref, where in SOLDER_AT.items():
+        w(f"| {ref} | {PARTS_BY_REF[ref].value} | {where} |")
+    w("")
+    w("## Pins deliberately left open")
+    w("")
+    w("| pin | why |")
+    w("|---|---|")
+    for p in PARTS:
+        for pin in p.nc:
+            w(f"| {p.ref}.{pin} ({p.pins[pin]}) | see {p.ref} in the BOM |")
     w("")
     return "\n".join(o)
 
@@ -675,67 +754,7 @@ def bom_rows(include_optional: bool = True) -> list[dict]:
 
 
 def total_cost(required_only: bool = True) -> float:
-    return sum(p.price_eur * p.qty for p in PARTS
-               if p.required or not required_only)
-
-
-# --------------------------------------------------------------------------
-# Build variants
-# --------------------------------------------------------------------------
-
-@dataclass
-class Variant:
-    key: str
-    title: str
-    blurb: str
-    swaps: dict          # ref -> (value, mpn, price) or None to drop the part
-    extra: list          # list of (description, mpn, price)
-
-VARIANTS = [
-    Variant(
-        "recommended", "RECOMMENDED BUILD",
-        "FireBeetle 2 ESP32-C6, SEN63C and the Adafruit SGP40 breakout on the ACC-1 "
-        "carrier. No fine-pitch soldering: the smallest thing you hand-solder is an "
-        "0603 resistor, and the carrier can be ordered assembled instead. This is the "
-        "build the assembly guide and the CAD are drawn around.",
-        swaps={"X4": None},
-        extra=[],
-    ),
-    Variant(
-        "assembled", "ASSEMBLED CARRIER",
-        "The same parts, with the carrier's SMD components placed by JLCPCB instead "
-        "of by hand. About EUR 45-50 for two assembled boards including shipping, "
-        "VAT and the EUR 3 EU customs duty that applies since July 2026 - choose DDP "
-        "shipping so the carrier does not add a handling fee on delivery. Worth it "
-        "from the second unit on, or if you do not solder SMD at all.",
-        swaps={"X4": None,
-               "PCB1": ("ACC-1 rev C, SMD assembled (JLCPCB, DDP)", "ACC-1 rev C", 23.0),
-               "SW1": ("TPS22918 (placed by JLCPCB)", "TPS22918DBVR", 0.0),
-               "SW2": ("TPS22918 (placed by JLCPCB)", "TPS22918DBVR", 0.0)},
-        extra=[],
-    ),
-]
-
-
-def variant_bom(v: Variant) -> tuple[list[dict], float]:
-    rows, total = [], 0.0
-    for p in PARTS:
-        if p.ref in v.swaps and v.swaps[p.ref] is None:
-            continue
-        value, mpn, price = p.value, p.mpn, p.price_eur
-        if p.ref in v.swaps and v.swaps[p.ref]:
-            value, mpn, price = v.swaps[p.ref]
-        if not p.required and p.ref not in v.swaps:
-            continue
-        rows.append({"ref": p.ref, "qty": p.qty, "value": value, "mpn": mpn,
-                     "mfr": p.mfr, "price": price, "supplier": p.supplier,
-                     "reason": p.why})
-        total += price * p.qty
-    for desc, mpn, price in v.extra:
-        rows.append({"ref": "-", "qty": 1, "value": desc, "mpn": mpn, "mfr": "-",
-                     "price": price, "supplier": "-", "reason": "variant-specific"})
-        total += price
-    return rows, total
+    return sum(p.price_eur * p.qty for p in PARTS if p.required or not required_only)
 
 
 def bom_markdown() -> str:
@@ -743,61 +762,50 @@ def bom_markdown() -> str:
     w = o.append
     w("<!-- GENERATED by electronics/schematic/design.py - do not edit by hand. -->")
     w("")
-    w("# Bill of materials")
+    w("# Bill of materials (v1.3)")
     w("")
     w("Prices are single-unit European retail including VAT, rounded, as of "
-      "September 2026. They will drift; treat them as an order of magnitude, not a "
-      "quotation. Every line names a real manufacturer part number - nothing here "
-      "is a generic placeholder.")
+      "September 2026. Mouser prices are shown there without VAT and are converted "
+      "(x 1.19). They drift; treat them as an order of magnitude, not a quotation.")
     w("")
-    w("## Cost summary")
+    w(f"**Total: EUR {total_cost(True):.2f}** including the first set of L91 cells "
+      f"(EUR {PARTS_BY_REF['CELL'].price_eur:.2f}).")
     w("")
-    w("| build | electronics total | note |")
-    w("|---|---|---|")
-    for v in VARIANTS:
-        _, t = variant_bom(v)
-        note = {"recommended": "hand-solder the carrier (0603 and SOT-23)",
-                "assembled": "carrier arrives soldered"}[v.key]
-        w(f"| {v.title} | **EUR {t:.2f}** | {note} |")
+    w("Nothing on this list is a custom circuit board. Every electronic part is a "
+      "finished module or a through-hole resistor (EDR-19).")
     w("")
-    w("### Where the money goes, and what changed in v1.2")
+    w("## Where the money goes")
     w("")
-    w("v1.1 cost EUR 173: an SPS30 (EUR 38), an SCD41 breakout (EUR 52), a 5 V")
-    w("boost converter and an Adafruit Feather (EUR 22). Two thirds of that was")
-    w("sensors bought one function at a time.")
+    groups = {
+        "sensors (Sunrise, SEN62, SGP40, SHT40, cables)":
+            ("U1", "U2", "U3", "U4", "W1", "W2", "W3"),
+        "controller (FireBeetle)": ("M1",),
+        "power (holder, fuse, regulator, ideal diode, switch)":
+            ("BT1", "F1", "PS1", "D1", "SW1", "J1"),
+        "first set of cells": ("CELL",),
+        "LED, button, resistors": ("LED1", "LH1", "SW2", "C1", "R1", "R2", "R3", "R4",
+                                   "R5", "R6", "R7", "R8", "R9", "R10"),
+        "screws, wire, heat shrink": ("X1", "X2", "X3", "X5"),
+    }
+    w("| group | EUR |")
+    w("|---|---|")
+    for g, refs in groups.items():
+        w(f"| {g} | {sum(PARTS_BY_REF[r].price_eur * PARTS_BY_REF[r].qty for r in refs):.2f} |")
     w("")
-    w("v1.2 buys the particle, CO2, temperature and humidity channels as one")
-    w("Sensirion SEN63C (EUR 34, less than the SPS30 alone), runs it straight from")
-    w("3.3 V so the boost converter goes, and replaces the Feather with a EUR 7.50")
-    w("FireBeetle 2 ESP32-C6 whose deep-sleep current is also lower. The VOC")
-    w("channel stays a separate SGP40, because it has to run every 10 s and the")
-    w("SEN6x family cannot do that on a battery (EDR-15). Nothing was dropped:")
-    w("PM1/2.5/4/10, true CO2, VOC index, temperature and humidity are all still")
-    w("there. The one measured trade-off is CO2 accuracy, +-(100 ppm + 10 %)")
-    w("instead of +-(50 ppm + 5 %).")
+    w("The Sunrise is the single most expensive part and the reason v1.3 costs more "
+      "than v1.2. It is also the reason the CO2 number can be trusted: the SEN63C's "
+      "CO2 channel loses its self-calibration when it is power-cycled (EDR-16).")
     w("")
-    w("Prices were checked on the shops' own pages in September 2026 where")
-    w("possible (Mouser prices are shown there without VAT; they are converted).")
-    w("Mouser ships free above EUR 50 net, so one Mouser parcel for the sensor,")
-    w("the load switches, the connectors and the RGB LED is the cheapest route;")
-    w("the FireBeetle, the cell and the inserts come from shops that stock them")
-    w("(see `supplier`). Avoid SPS30/SCD4x/SEN6x listings on Amazon or AliExpress")
-    w("that are cheaper than the bare part at a distributor: they are not the")
-    w("genuine part at that price.")
+    w("## Parts")
     w("")
-    for v in VARIANTS:
-        rows, t = variant_bom(v)
-        w(f"## {v.title}")
-        w("")
-        w(v.blurb)
-        w("")
-        w("| ref | qty | part | MPN | supplier | EUR | why this part |")
-        w("|---|---|---|---|---|---|---|")
-        for r in rows:
-            w(f"| {r['ref']} | {r['qty']} | {r['value']} | `{r['mpn']}` | "
-              f"{r['supplier']} | {r['price']:.2f} | {r['reason']} |")
-        w(f"| | | | | | **{t:.2f}** | |")
-        w("")
+    w("| ref | qty | part | MPN | supplier | EUR | why this part |")
+    w("|---|---|---|---|---|---|---|")
+    for p in PARTS:
+        if p.required:
+            w(f"| {p.ref} | {p.qty} | {p.value} | `{p.mpn}` | {p.supplier} | "
+              f"{p.price_eur:.2f} | {p.why} |")
+    w(f"| | | | | | **{total_cost(True):.2f}** | |")
+    w("")
     w("## Optional but recommended")
     w("")
     w("| part | MPN | EUR | why |")
@@ -806,10 +814,21 @@ def bom_markdown() -> str:
         if not p.required:
             w(f"| {p.value} | `{p.mpn}` | {p.price_eur:.2f} | {p.why} |")
     w("")
+    w("## Cells")
+    w("")
+    w("| cells | runtime, ECO, with margin | note |")
+    w("|---|---|---|")
+    w("| Energizer Ultimate Lithium L91 | 3.7 months | recommended |")
+    w("| eneloop pro (NiMH) | 2.2 months | recharge in any NiMH charger, outside the device |")
+    w("| alkaline | 2.1 months | cheap; remove when empty, they can leak |")
+    w("| 1.5 V Li-ion with USB-C | 1.8 months | not recommended (docs/BATTERY_LIFE.md) |")
+    w("")
+    w("Figures from `tools/battery_calculator/model.py`.")
+    w("")
     w("## Printed parts and hardware")
     w("")
-    w("See `manufacturing/print-settings.md` for filament quantities. Inserts,")
-    w("screws and foam are in the table above (X1, X2).")
+    w("See `manufacturing/print-settings.md` for filament and `docs/ASSEMBLY.md` "
+      "for the order of work.")
     w("")
     return "\n".join(o)
 

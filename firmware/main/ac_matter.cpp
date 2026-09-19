@@ -258,25 +258,30 @@ esp_err_t ac_matter_init(ac_engine_t *engine)
          * flags have to be set here rather than by calling feature::add()
          * afterwards. RECHG is what carries BatChargeState; Status describes
          * the power source, not the charge, and is the wrong attribute for it. */
+        /* Since v1.3: six AA cells the user replaces; nothing is charged in
+         * the device, so REPLC instead of RECHG (and no BatChargeState). */
         ps.feature_flags = cluster::power_source::feature::battery::get_id() |
-                           cluster::power_source::feature::rechargeable::get_id();
+                           cluster::power_source::feature::replaceable::get_id();
         ps.features.battery.bat_charge_level = 0;        /* OK */
         ps.features.battery.bat_replacement_needed = false;
-        ps.features.battery.bat_replaceability = 2;      /* UserReplaceable,
-                                                          * and it genuinely is */
-        ps.features.rechargeable.bat_charge_state = 0;   /* Unknown */
-        ps.features.rechargeable.bat_functional_while_charging = true;
+        ps.features.battery.bat_replaceability = 2;      /* UserReplaceable */
+        strncpy(ps.features.replaceable.bat_replacement_description,
+                "6 x AA (alkaline, NiMH or lithium)",
+                sizeof(ps.features.replaceable.bat_replacement_description) - 1);
+        ps.features.replaceable.bat_quantity = 6;
 
         cluster_t *psc = cluster::power_source::create(root, &ps, CLUSTER_FLAG_SERVER);
         if (psc) {
             /* Optional attributes the features do not create for us. */
             cluster::power_source::attribute::create_bat_present(psc, true);
+            /* BatCommonDesignationEnum::kAa = 0x02 (PowerSource/Enums.h) */
+            cluster::power_source::attribute::create_bat_common_designation(psc, 0x02, 0, 80);
             cluster::power_source::attribute::create_bat_percent_remaining(
                 psc, nullable<uint8_t>(), nullable<uint8_t>(0),
                 nullable<uint8_t>(200));
             cluster::power_source::attribute::create_bat_voltage(
                 psc, nullable<uint32_t>(), nullable<uint32_t>(0),
-                nullable<uint32_t>(5000));
+                nullable<uint32_t>(12000));
         } else {
             ESP_LOGE(TAG, "power source cluster was not created");
         }
@@ -390,12 +395,11 @@ esp_err_t ac_matter_publish_battery(float percent, float volts,
     attribute::update(0, PowerSource::Id,
                       PowerSource::Attributes::BatChargeLevel::Id, &lvl);
 
-    /* BatChargeState: 0 Unknown, 1 IsCharging, 2 IsAtFullCharge,
-     * 3 IsNotCharging - the same order as ac_charge_state_t. */
-    uint8_t cs = (uint8_t)charge;
-    esp_matter_attr_val_t chg = esp_matter_enum8(cs);
+    /* No BatChargeState: the pack is never charged in the device. */
+    (void)charge;
+    esp_matter_attr_val_t need = esp_matter_bool(low && percent < 5.0f);
     attribute::update(0, PowerSource::Id,
-                      PowerSource::Attributes::BatChargeState::Id, &chg);
+                      PowerSource::Attributes::BatReplacementNeeded::Id, &need);
     return ESP_OK;
 }
 

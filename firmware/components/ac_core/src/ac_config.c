@@ -5,16 +5,21 @@
  * tools/battery_calculator/model.py has the same table; firmware/test/host
  * checks that they still agree. */
 static const ac_profile_t k_profiles[AC_MODE_COUNT] = {
-    /* ECO        */ { .pm_interval_s = 3600,     .pm_window_s = 40,
-                       .voc_interval_s = 10, .icd_slow_poll_s = 15 },
+    /* ECO        */ { .pm_interval_s = 3600,     .pm_window_s = 60,
+                       .voc_interval_s = 10, .co2_interval_s = 300,
+                       .icd_slow_poll_s = 15 },
     /* NORMAL     */ { .pm_interval_s = 15 * 60,  .pm_window_s = 60,
-                       .voc_interval_s = 10, .icd_slow_poll_s = 15 },
+                       .voc_interval_s = 10, .co2_interval_s = 300,
+                       .icd_slow_poll_s = 15 },
     /* ACTIVE     */ { .pm_interval_s = 2 * 60,   .pm_window_s = 60,
-                       .voc_interval_s = 10, .icd_slow_poll_s = 5 },
+                       .voc_interval_s = 10, .co2_interval_s = 120,
+                       .icd_slow_poll_s = 5 },
     /* POST_PRINT */ { .pm_interval_s = 5 * 60,   .pm_window_s = 60,
-                       .voc_interval_s = 10, .icd_slow_poll_s = 5 },
+                       .voc_interval_s = 10, .co2_interval_s = 300,
+                       .icd_slow_poll_s = 5 },
     /* CONTINUOUS */ { .pm_interval_s = 0,        .pm_window_s = 60,
-                       .voc_interval_s = 1,  .icd_slow_poll_s = 5 },
+                       .voc_interval_s = 1,  .co2_interval_s = 60,
+                       .icd_slow_poll_s = 5 },
 };
 
 void ac_config_defaults(ac_config_t *c)
@@ -63,6 +68,9 @@ void ac_config_defaults(ac_config_t *c)
     c->led_show_air_quality  = true;
     c->battery_interval_s    = 300;
 
+    c->cell_type            = 0;        /* alkaline until told otherwise */
+    c->cells                = 6;
+    c->altitude_m           = 0;
     c->low_battery_pct      = 20.0f;
     c->critical_battery_pct = 5.0f;
 
@@ -134,6 +142,8 @@ int ac_config_validate(ac_config_t *c)
             CLAMP(p->pm_interval_s, 60u, 24u * 3600u, n);
         /* A window shorter than this returns no CO2 at all and unsettled PM. */
         CLAMP(p->pm_window_s, AC_PM_MIN_WINDOW_S, 300u, n);
+        if (p->co2_interval_s != 0)
+            CLAMP(p->co2_interval_s, AC_CO2_MIN_INTERVAL_S, 6u * 3600u, n);
         if (p->voc_interval_s != 0)
             /* SGP40 datasheet: SRAW_VOC sampling interval 0.5 .. 10 s.  The
              * Gas Index Algorithm is validated at 1 s and 10 s. */
@@ -173,6 +183,9 @@ int ac_config_validate(ac_config_t *c)
 
     CLAMP(c->battery_interval_s, 60u, 3600u, n);
 
+    if (c->cell_type > 2) { c->cell_type = 0; n++; }
+    CLAMP(c->cells, 1, 8, n);
+    CLAMP(c->altitude_m, -400, 4000, n);
     CLAMP(c->low_battery_pct, 5.0f, 50.0f, n);
     CLAMP(c->critical_battery_pct, 1.0f, 20.0f, n);
     if (c->critical_battery_pct >= c->low_battery_pct) {

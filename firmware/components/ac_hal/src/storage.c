@@ -133,6 +133,16 @@ esp_err_t ac_store_event_get(uint32_t index, ac_event_record_t *r)
     return blob_load(key, r, sizeof(*r));
 }
 
+esp_err_t ac_store_blob_save(const char *key, const void *data, size_t len)
+{
+    return blob_save(key, data, len);
+}
+
+esp_err_t ac_store_blob_load(const char *key, void *data, size_t len)
+{
+    return blob_load(key, data, len);
+}
+
 esp_err_t ac_store_erase_all(void)
 {
     nvs_handle_t h;

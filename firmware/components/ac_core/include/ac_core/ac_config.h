@@ -11,22 +11,28 @@ extern "C" {
 #endif
 
 #define AC_CONFIG_MAGIC    0x41434B31u   /* "ACK1" */
-#define AC_CONFIG_VERSION  3   /* v3: SEN63C, one window for PM + CO2 (v1.2) */
+#define AC_CONFIG_VERSION  4   /* v4: SEN62 + Sunrise + SHT40, AA pack (v1.3) */
 #define AC_NAME_MAX        33
 
-/* Shortest SEN63C window worth having: its CO2 output reads "unknown" for the
- * first 22..24 s of a measurement and its PM output needs 30 s (typ) to
- * settle.  Sensirion SEN6x datasheet v0.5 Table 1, embedded-i2c-sen63c. */
-#define AC_PM_MIN_WINDOW_S  30u
+/* Shortest SEN62 window worth having.  Sensirion give a typical 30 s start-up
+ * until PM is stable (SEN6x datasheet v0.92 Table 1), specify precision on
+ * averages taken after that, and recommend at least 30 s of averaging for
+ * duty-cycled operation (SEN5x "Reduced Power Operation", 2.1-2.2).  So: 30 s
+ * discarded, at least 30 s averaged. */
+#define AC_PM_SETTLE_S      30u
+#define AC_PM_MIN_WINDOW_S  60u
+/* Senseair Sunrise single measurement, 32 samples: up to 32 x 300 ms. */
+#define AC_CO2_MIN_INTERVAL_S 60u
 
 /* One measurement cadence.  Mirrors tools/battery_calculator/model.py - if you
  * change a number here, re-run the model before believing the runtime.
- * Since v1.2 one SEN63C window delivers PM, CO2, temperature and humidity
- * together, so there is no separate CO2 cadence. */
+ * Since v1.3: particles from the SEN62, CO2 from the Senseair Sunrise on its
+ * own clock, temperature and humidity from the SHT40 with every VOC sample. */
 typedef struct {
     uint32_t pm_interval_s;    /* 0 = continuous */
-    uint32_t pm_window_s;      /* time in SEN63C measurement mode */
-    uint32_t voc_interval_s;   /* 0 = VOC off */
+    uint32_t pm_window_s;      /* time in SEN62 measurement mode */
+    uint32_t voc_interval_s;   /* 0 = VOC off; T/RH is read with it */
+    uint32_t co2_interval_s;   /* 0 = CO2 off */
     uint32_t icd_slow_poll_s;
 } ac_profile_t;
 
@@ -64,14 +70,20 @@ typedef struct {
     bool     led_show_air_quality;  /* a button press flashes the air quality colour */
     uint32_t battery_interval_s;    /* how often the battery voltage is read */
 
-    /* battery */
+    /* battery: six AA cells of one chemistry, see ac_battery.h */
+    uint8_t  cell_type;             /* ac_cell_type_t */
+    uint8_t  cells;
     float low_battery_pct;
     float critical_battery_pct;
+
+    /* site: the Sunrise compensates CO2 for air pressure, 1.6 % per kPa;
+     * without a barometer the altitude is the next best thing */
+    int16_t  altitude_m;
 
     /* behaviour */
     bool voc_publish_index_as_ppb; /* see docs/MATTER.md - honest default is on,
                                     * with the caveat documented everywhere */
-    bool co2_self_calibration;     /* the SEN63C's own ASC, docs/CALIBRATION.md */
+    bool co2_self_calibration;     /* the Sunrise's ABC, docs/CALIBRATION.md */
     bool auto_escalate;            /* switch to ACTIVE on a detected event */
 
     uint32_t crc;

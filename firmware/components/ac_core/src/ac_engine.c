@@ -48,8 +48,10 @@ void ac_engine_init(ac_engine_t *e, const ac_config_t *cfg, ac_time_ms_t now)
     e->state_since = now;
     e->next_pm = now;          /* take one measurement of everything at once */
     e->next_voc = now;
+    e->next_co2 = now;
 
     e->health.sen6x_ok = e->health.sgp40_ok = true;
+    e->health.co2_ok = e->health.sht_ok = true;
     e->health.battery_ok = true;
 }
 
@@ -71,6 +73,19 @@ void ac_engine_set_mode(ac_engine_t *e, ac_mode_t m, ac_time_ms_t now)
         e->next_pm = now;
     if (p->voc_interval_s && e->next_voc > now + SEC(p->voc_interval_s))
         e->next_voc = now;
+    if (p->co2_interval_s && e->next_co2 > now + SEC(p->co2_interval_s))
+        e->next_co2 = now;
+}
+
+bool ac_engine_take_voc(ac_engine_t *e, ac_time_ms_t now)
+{
+    const ac_profile_t *p = ac_engine_profile(e);
+    if (!e->health.sgp40_ok || !p->voc_interval_s || now < e->next_voc)
+        return false;
+    /* keep the grid: next = previous + interval, not now + interval */
+    e->next_voc += SEC(p->voc_interval_s);
+    if (e->next_voc <= now) e->next_voc = now + SEC(p->voc_interval_s);
+    return true;
 }
 
 void ac_engine_submit(ac_engine_t *e, const ac_sample_t *s)
@@ -147,6 +162,10 @@ void ac_engine_sensor_failed(ac_engine_t *e, ac_action_t which, const char *why)
     case AC_ACT_SAMPLE_VOC:
         e->health.sgp40_errors++;
         if (e->health.sgp40_errors >= 5) e->health.sgp40_ok = false;
+        break;
+    case AC_ACT_SAMPLE_CO2:
+        e->health.co2_errors++;
+        if (e->health.co2_errors >= 3) e->health.co2_ok = false;
         break;
     default:
         break;
@@ -282,7 +301,7 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
         e->state != AC_STATE_CRITICAL_BATTERY &&
         e->state != AC_STATE_COMMISSIONING &&
         e->state != AC_STATE_FACTORY_RESET) {
-        if (!e->health.sen6x_ok && !e->health.sgp40_ok)
+        if (!e->health.sen6x_ok && !e->health.sgp40_ok && !e->health.co2_ok)
             set_state(e, AC_STATE_ERROR, now);
         else if (e->usb_present)
             set_state(e, AC_STATE_CHARGING, now);
@@ -307,9 +326,8 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
     }
 
     if (e->health.sen6x_ok && p->pm_interval_s == 0) {
-        /* "Continuous" keeps the SEN63C in measurement mode and reports once
-         * per window.  Power-cycling it between windows would throw away the
-         * 22..24 s its CO2 channel needs after every start. */
+        /* "Continuous" keeps the SEN62 in measurement mode and reports once
+         * per window, instead of throwing away a 30 s start-up every time. */
         plan.action = AC_ACT_SAMPLE_PM;
         plan.pm_window_s = p->pm_window_s < AC_PM_MIN_WINDOW_S
                            ? AC_PM_MIN_WINDOW_S : p->pm_window_s;
@@ -328,9 +346,17 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
         plan.publish_dirty = publish_changed(e);
         return plan;
     }
+    if (e->health.co2_ok && p->co2_interval_s && now >= e->next_co2) {
+        plan.action = AC_ACT_SAMPLE_CO2;
+        e->next_co2 = now + SEC(p->co2_interval_s);
+        plan.sleep_ms = 0;
+        plan.publish_dirty = publish_changed(e);
+        return plan;
+    }
     if (e->health.sgp40_ok && p->voc_interval_s && now >= e->next_voc) {
         plan.action = AC_ACT_SAMPLE_VOC;
-        e->next_voc = now + SEC(p->voc_interval_s);
+        e->next_voc += SEC(p->voc_interval_s);          /* keep the 10 s grid */
+        if (e->next_voc <= now) e->next_voc = now + SEC(p->voc_interval_s);
         plan.sleep_ms = 0;
         plan.publish_dirty = publish_changed(e);
         return plan;
@@ -340,6 +366,7 @@ ac_plan_t ac_engine_tick(ac_engine_t *e, ac_time_ms_t now)
     ac_time_ms_t next = now + SEC(3600);
     if (e->health.sen6x_ok && p->pm_interval_s) next = soonest(next, e->next_pm);
     if (e->health.sgp40_ok && p->voc_interval_s) next = soonest(next, e->next_voc);
+    if (e->health.co2_ok && p->co2_interval_s) next = soonest(next, e->next_co2);
     plan.action = AC_ACT_NONE;
     plan.sleep_ms = (next > now) ? (uint32_t)(next - now) : 0u;
     plan.publish_dirty = publish_changed(e);

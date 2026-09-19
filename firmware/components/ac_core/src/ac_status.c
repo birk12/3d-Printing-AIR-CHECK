@@ -28,7 +28,7 @@ ac_led_pattern_t ac_status_pattern(const ac_engine_t *e, ac_led_event_t ev)
     case AC_LED_EVENT_BOOT:
         return pat(AC_RGB_WHITE, 300, 0, 300);
     case AC_LED_EVENT_CALIBRATING:
-        /* slow cyan while the SEN63C breathes outdoor air for 3 min */
+        /* slow cyan while the Sunrise settles in outdoor air for 3 min */
         return pat(AC_RGB_CYAN, 250, 1000, 240000);
     case AC_LED_EVENT_CAL_OK:
         return pat(AC_RGB_GREEN, 2000, 0, 2000);

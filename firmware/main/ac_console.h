@@ -25,7 +25,7 @@ typedef struct {
     void (*lock)(void);
     void (*unlock)(void);
     /* Store the engine's (already validated) configuration and apply side
-     * effects such as the Matter NodeLabel and the SEN63C's ASC flag. */
+     * effects such as the Matter NodeLabel and the Sunrise's ABC setting. */
     void (*config_changed)(void);
     /* Ask the measurement task for a fresh-air CO2 calibration. */
     void (*request_frc)(uint16_t ppm);

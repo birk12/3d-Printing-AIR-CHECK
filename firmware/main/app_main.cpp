@@ -1,5 +1,6 @@
-/* 3D Printing AIR CHECK - application entry point (v1.2: SEN63C + SGP40 on a
- * FireBeetle 2 ESP32-C6, no display).
+/* 3D Printing AIR CHECK - application entry point (v1.3: SEN62, Senseair
+ * Sunrise, SHT40 and SGP40 on a FireBeetle 2 ESP32-C6, six AA cells, no
+ * display, no custom PCB).
  *
  * Two tasks and nothing else:
  *   measure_task  drives the sensors according to whatever ac_engine decides,
@@ -33,11 +34,12 @@
 #endif
 
 #include <cstdio>
+#include <cmath>
 #include <cstring>
 
 static const char *TAG = "aircheck";
 
-#define AC_FW_VERSION "1.2.0"
+#define AC_FW_VERSION "1.3.0"
 #define WDT_TIMEOUT_S 120
 /* Today's outdoor CO2 background, the reference for a fresh-air
  * calibration (NOAA global mean, 2026: about 425 ppm). */
@@ -48,10 +50,30 @@ static SemaphoreHandle_t s_lock;
 static char s_manual_code[32];
 static char s_qr_payload[64];
 static char s_serial[24];
-static ac_batt_track_t s_batt;
+static ac_pack_t s_pack;              /* AA pack: energy counter + voltage */
+static ac_sunrise_state_t s_co2;      /* Sunrise ABC state, held by the host */
 static bool s_sen_running;       /* a continuous-mode window left it on */
 static volatile uint16_t s_frc_ppm;     /* != 0: calibration requested */
-static volatile bool s_asc_pending;     /* write the ASC flag to the SEN63C */
+static volatile bool s_asc_pending;     /* rewrite the Sunrise's ABC setting */
+
+/* Energy booked against the AA pack, in mWh taken from the cells.  The same
+ * figures as tools/battery_calculator/model.py: 3.3 V loads go through the
+ * Pololu regulator (85 %) and the FireBeetle's buck (90 %); the Sunrise and
+ * the LED sit on the regulator's 4.0 V. */
+#define EFF_3V3            (0.85f * 0.90f)
+#define EFF_4V0            0.85f
+#define SEN62_MW           (75.0f * 3.3f)           /* 75 mA typ */
+#define SUNRISE_MWH        (1.60f * 4.0f / 3.6f / 1000.0f)  /* 1.60 mC per shot */
+#define SGP40_SAMPLE_MWH   (0.2f * 10.0f / 3600.0f) /* 0.2 mW at 10 s */
+#define IDLE_3V3_MW        ((121.88f + 29.0f) * 3.3f / 1000.0f) /* ICD + board */
+#define REG_IQ_MA          0.2f                     /* Pololu S9V11: < 0.2 mA */
+
+static float site_pressure_hpa(int altitude_m)
+{
+    /* ISA barometric formula; weather moves it by +-2 kPa, which the Sunrise
+     * turns into +-3 % - honest, and documented in CALIBRATION.md. */
+    return 1013.25f * powf(1.0f - 2.25577e-5f * (float)altitude_m, 5.25588f);
+}
 
 /* LED: the pattern that is running and when it started. */
 static ac_led_pattern_t s_led;
@@ -71,16 +93,18 @@ static void unlock(void) { xSemaphoreGive(s_lock); }
 
 static void do_pm_measurement(uint32_t window_s, bool keep_running)
 {
-    /* One SEN63C window gives PM, CO2, temperature and humidity together. */
     ac_sen6x_values_t v;
     esp_err_t err = ac_sen6x_measure_window(window_s, keep_running, &v);
     s_sen_running = keep_running && err == ESP_OK;
+    lock();
+    ac_pack_spend(&s_pack, SEN62_MW * ((float)window_s + 1.5f) / 3600.0f / EFF_3V3);
+    unlock();
     ac_sample_t s;
     memset(&s, 0, sizeof(s));
     s.t = now_ms();
     s.voc_index = -1;
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "SEN63C: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "SEN62: %s", esp_err_to_name(err));
         if (keep_running) { ac_sen6x_power_off(); s_sen_running = false; }
         lock();
         ac_engine_sensor_failed(&s_engine, AC_ACT_SAMPLE_PM, esp_err_to_name(err));
@@ -90,12 +114,6 @@ static void do_pm_measurement(uint32_t window_s, bool keep_running)
     s.pm1 = v.pm1; s.pm25 = v.pm25; s.pm4 = v.pm4; s.pm10 = v.pm10;
     s.pn05 = v.n05; s.pn10 = v.n10; s.typical_size = AC_INVALID_F;
     s.pm_fresh = true;
-    if (v.co2 > 0.0f) { s.co2 = v.co2; s.co2_fresh = true; }
-    if (v.temperature > -100.0f && v.humidity >= 0.0f) {
-        s.temperature = v.temperature;
-        s.humidity = v.humidity;
-        s.th_fresh = true;
-    }
     lock();
     ac_engine_submit(&s_engine, &s);
     s_engine.health.sen6x_errors = 0;
@@ -103,58 +121,110 @@ static void do_pm_measurement(uint32_t window_s, bool keep_running)
     unlock();
 }
 
+/* SHT40 first, then the SGP40 compensated with that fresh reading. */
 static void do_voc_measurement(void)
 {
-    float t, rh;
-    bool pulse;
-    lock();
-    t = s_engine.last.temperature;
-    rh = s_engine.last.humidity;
-    /* At a 1 s cadence (USB power) the rail just stays up. */
-    pulse = ac_engine_profile(&s_engine)->voc_interval_s > 1;
-    unlock();
-
-    int32_t raw = 0, index = -1;
-    esp_err_t err = ac_sgp40_measure(t, rh, pulse, &raw, &index);
     ac_sample_t s;
     memset(&s, 0, sizeof(s));
     s.t = now_ms();
     s.voc_index = -1;
-    if (err != ESP_OK) {
-        lock();
-        ac_engine_sensor_failed(&s_engine, AC_ACT_SAMPLE_VOC, esp_err_to_name(err));
-        unlock();
-        return;
-    }
-    s.voc_index = index;
-    s.voc_raw = raw;
-    s.voc_fresh = true;
+
+    float t = -273.0f, rh = -1.0f;
+    esp_err_t terr = ac_sht4x_measure(&t, &rh);
     lock();
-    ac_engine_submit(&s_engine, &s);
-    s_engine.health.sgp40_errors = 0;
-    s_engine.health.sgp40_ok = true;
+    if (terr == ESP_OK) {
+        s_engine.health.sht_ok = true;
+        s_engine.health.sht_errors = 0;
+    } else if (++s_engine.health.sht_errors >= 5) {
+        s_engine.health.sht_ok = false;
+    }
+    if (terr != ESP_OK) {       /* compensate with the last good values */
+        t = s_engine.last.temperature;
+        rh = s_engine.last.humidity;
+    }
+    ac_pack_spend(&s_pack, SGP40_SAMPLE_MWH / EFF_3V3);
+    unlock();
+    if (terr == ESP_OK) {
+        s.temperature = t;
+        s.humidity = rh;
+        s.th_fresh = true;
+    }
+
+    int32_t raw = 0, index = -1;
+    esp_err_t err = ac_sgp40_measure(t, rh, &raw, &index);
+    if (err == ESP_OK) {
+        s.voc_index = index;
+        s.voc_raw = raw;
+        s.voc_fresh = true;
+    }
+    lock();
+    if (s.th_fresh || s.voc_fresh) ac_engine_submit(&s_engine, &s);
+    if (err == ESP_OK) {
+        s_engine.health.sgp40_errors = 0;
+        s_engine.health.sgp40_ok = true;
+    } else {
+        ac_engine_sensor_failed(&s_engine, AC_ACT_SAMPLE_VOC, esp_err_to_name(err));
+    }
     unlock();
 }
 
-/* Fresh-air CO2 calibration: three minutes in the reference air with the
- * SEN63C running (in 60 s windows, so the watchdog is fed), then Sensirion's
- * forced recalibration.  The LED blinks cyan meanwhile, then green or red. */
+/* Called between the 1 s slices of a long measurement. */
+static void voc_hook(void)
+{
+    lock();
+    bool due = ac_engine_take_voc(&s_engine, now_ms());
+    unlock();
+    if (due) do_voc_measurement();
+}
+
+static void do_co2_measurement(void)
+{
+    lock();
+    float p = site_pressure_hpa(s_engine.cfg.altitude_m);
+    unlock();
+    ac_sunrise_values_t v;
+    esp_err_t err = ac_sunrise_measure(&s_co2, p, &v);
+    ac_sample_t s;
+    memset(&s, 0, sizeof(s));
+    s.t = now_ms();
+    s.voc_index = -1;
+    lock();
+    ac_pack_spend(&s_pack, SUNRISE_MWH / EFF_4V0);
+    if (err != ESP_OK) {
+        ac_engine_sensor_failed(&s_engine, AC_ACT_SAMPLE_CO2, esp_err_to_name(err));
+    } else {
+        s.co2 = v.co2;
+        s.co2_fresh = true;
+        ac_engine_submit(&s_engine, &s);
+        s_engine.health.co2_errors = 0;
+        s_engine.health.co2_ok = true;
+    }
+    unlock();
+    if (err != ESP_OK) ESP_LOGW(TAG, "Sunrise: %s", esp_err_to_name(err));
+}
+
+/* Fresh-air CO2 calibration: three ordinary measurements a minute apart so
+ * the sensor sits in the reference air for a few minutes, then a Senseair
+ * target calibration on the next one.  The LED blinks cyan meanwhile, then
+ * green or red. */
 static void do_co2_calibration(uint16_t ppm)
 {
-    ESP_LOGW(TAG, "fresh-air CO2 calibration to %u ppm: 3 min run first", ppm);
-    ac_sen6x_values_t v;
+    ESP_LOGW(TAG, "fresh-air CO2 calibration to %u ppm: 3 min settling first", ppm);
+    lock();
+    float p = site_pressure_hpa(s_engine.cfg.altitude_m);
+    unlock();
+    ac_sunrise_values_t v = {};
     esp_err_t err = ESP_OK;
     for (int i = 0; i < 3 && err == ESP_OK; i++) {
         esp_task_wdt_reset();
-        err = ac_sen6x_measure_window(60, true, &v);
+        err = ac_sunrise_measure(&s_co2, p, &v);
+        ESP_LOGI(TAG, "settling: %.0f ppm", (double)v.co2);
+        ac_hal_wait_ms(50000);
     }
-    int16_t corr = 0;
-    if (err == ESP_OK) err = ac_sen6x_forced_recalibration(ppm, &corr);
-    else ac_sen6x_power_off();
-    s_sen_running = false;
+    esp_task_wdt_reset();
+    if (err == ESP_OK) err = ac_sunrise_calibrate(&s_co2, p, ppm);
     if (err == ESP_OK)
-        ESP_LOGW(TAG, "CO2 recalibrated: correction %d ppm (read %.0f before)",
-                 corr, (double)v.co2);
+        ESP_LOGW(TAG, "CO2 calibrated to %u ppm (it read %.0f)", ppm, (double)v.co2);
     else
         ESP_LOGE(TAG, "CO2 calibration failed: %s", esp_err_to_name(err));
     s_led_event = err == ESP_OK ? AC_LED_EVENT_CAL_OK : AC_LED_EVENT_CAL_FAIL;
@@ -162,25 +232,24 @@ static void do_co2_calibration(uint16_t ppm)
 
 static void read_battery(void)
 {
-    float v = 0;
+    float pack = 0, reg = 0;
     bool usb = false;
-    if (ac_battery_read(&v, &usb) != ESP_OK) {
-        lock();
+    esp_err_t err = ac_battery_read(&pack, &reg, &usb);
+    lock();
+    if (err != ESP_OK) {
         s_engine.health.battery_ok = false;
         /* still worth knowing about USB: it switches to continuous mode */
-        ac_engine_set_power(&s_engine, usb, usb, -1.0f, 0.0f, now_ms());
+        ac_engine_set_power(&s_engine, usb, false, -1.0f, 0.0f, now_ms());
         unlock();
         return;
     }
-    float pct = ac_batt_track_update(&s_batt, v, usb);
-    ac_charge_state_t cs = ac_battery_charge_state(v, usb);
-    lock();
+    float pct = ac_pack_update(&s_pack, pack);
     s_engine.health.battery_ok = true;
-    ac_engine_set_power(&s_engine, usb, cs == AC_CHG_CHARGING, pct, v, now_ms());
+    ac_engine_set_power(&s_engine, usb, false, pct, pack, now_ms());
     bool low = s_engine.state == AC_STATE_LOW_BATTERY ||
                s_engine.state == AC_STATE_CRITICAL_BATTERY;
     unlock();
-    ac_matter_publish_battery(pct, v, cs, low);
+    ac_matter_publish_battery(pct, pack, AC_CHG_DISCHARGING, low);
 }
 
 static void persist(void)
@@ -191,6 +260,12 @@ static void persist(void)
     unlock();
     ac_store_baseline_save(&b);
     ac_store_history_save(&h);
+    lock();
+    ac_pack_t pk = s_pack;
+    ac_sunrise_state_t co2 = s_co2;
+    unlock();
+    ac_store_blob_save("pack", &pk, sizeof(pk));
+    ac_store_blob_save("sunrise", &co2, sizeof(co2));
 }
 
 /* ------------------------------------------------------------------ */
@@ -202,7 +277,11 @@ static void on_config_changed(void)
     unlock();
     ac_store_config_save(&c);
     ac_matter_set_label(c.name);
-    s_asc_pending = true;          /* cheap to re-write; only if it differs */
+    s_asc_pending = true;          /* rewritten only if it differs */
+    lock();
+    if (c.cell_type != s_pack.type || c.cells != s_pack.cells)
+        ac_pack_init(&s_pack, (ac_cell_type_t)c.cell_type, c.cells);
+    unlock();
 }
 
 static void on_request_frc(uint16_t ppm) { s_frc_ppm = ppm; s_led_event = AC_LED_EVENT_CALIBRATING; }
@@ -258,8 +337,8 @@ static void measure_task(void *arg)
             last_aq = aq;
         }
 
-        /* Leaving continuous mode (USB unplugged) must not leave the SEN63C
-         * running at 80 mA until the next hourly window. */
+        /* Leaving continuous mode (USB unplugged) must not leave the SEN62
+         * running at 75 mA until the next hourly window. */
         if (s_sen_running && !continuous) {
             ac_sen6x_power_off();
             s_sen_running = false;
@@ -269,13 +348,13 @@ static void measure_task(void *arg)
             do_co2_calibration(ppm);
             s_frc_ppm = 0;
         }
-        if (s_asc_pending && !s_sen_running) {
+        if (s_asc_pending) {
             lock();
-            bool asc = s_engine.cfg.co2_self_calibration;
+            bool abc = s_engine.cfg.co2_self_calibration;
             unlock();
             s_asc_pending = false;
-            if (ac_sen6x_set_asc(asc) != ESP_OK)
-                ESP_LOGW(TAG, "could not write the SEN63C's ASC flag");
+            if (ac_sunrise_setup(abc) != ESP_OK)
+                ESP_LOGW(TAG, "could not update the Sunrise's configuration");
         }
 
         switch (plan.action) {
@@ -283,13 +362,26 @@ static void measure_task(void *arg)
             do_pm_measurement(plan.pm_window_s, plan.pm_keep_running);
             break;
         case AC_ACT_SAMPLE_VOC:  do_voc_measurement(); break;
+        case AC_ACT_SAMPLE_CO2:  do_co2_measurement(); break;
         default:
             break;
         }
 
+        /* Book the idle drain and the ABC clock for the time that passed. */
+        int64_t t = esp_timer_get_time();
+        {
+            static int64_t last_t = 0;
+            float dt_h = (float)(t - last_t) / 3.6e9f;
+            lock();
+            float pack_v = s_engine.last.battery_v > 1.0f ? s_engine.last.battery_v : 8.0f;
+            ac_pack_spend(&s_pack, dt_h * (IDLE_3V3_MW / EFF_3V3 + REG_IQ_MA * pack_v));
+            s_co2.abc_ms += (uint32_t)((t - last_t) / 1000);
+            unlock();
+            last_t = t;
+        }
+
         /* The battery is read between sensor windows, never during one, so
          * the voltage is close to the resting voltage the curve assumes. */
-        int64_t t = esp_timer_get_time();
         if (last_battery < 0 || t - last_battery > (int64_t)battery_s * 1000000LL) {
             read_battery();
             last_battery = t;
@@ -462,18 +554,37 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "SGP40 init failed");
         s_engine.health.sgp40_ok = false;
     }
-    /* Doubles as the SEN63C presence check: it powers the module, talks to it
-     * and powers it down again. */
+    float t0, rh0;
+    if (ac_sht4x_measure(&t0, &rh0) != ESP_OK) {
+        ESP_LOGE(TAG, "SHT40 not responding");
+        s_engine.health.sht_ok = false;
+    }
     char sen_serial[33] = { 0 };
-    if (ac_sen6x_serial(sen_serial, sizeof(sen_serial)) != ESP_OK ||
-        ac_sen6x_set_asc(cfg.co2_self_calibration) != ESP_OK) {
-        ESP_LOGE(TAG, "SEN63C not responding");
+    if (ac_sen6x_serial(sen_serial, sizeof(sen_serial)) != ESP_OK) {
+        ESP_LOGE(TAG, "SEN62 not responding");
         s_engine.health.sen6x_ok = false;
     } else {
-        ESP_LOGI(TAG, "SEN63C %s, CO2 self calibration %s", sen_serial,
-                 cfg.co2_self_calibration ? "on" : "off");
+        ESP_LOGI(TAG, "SEN62 %s", sen_serial);
     }
-    ac_batt_track_init(&s_batt);
+    if (ac_sunrise_setup(cfg.co2_self_calibration) != ESP_OK) {
+        ESP_LOGE(TAG, "Sunrise not responding");
+        s_engine.health.co2_ok = false;
+    }
+    /* The pack's energy counter and the Sunrise's ABC state survive a
+     * reboot, and a battery change is a reboot: ac_pack_update() notices the
+     * fresh cells by their voltage and restarts the counter. */
+    ac_hal_set_wait_hook(voc_hook);
+    ac_pack_init(&s_pack, (ac_cell_type_t)cfg.cell_type, cfg.cells);
+    ac_pack_t saved_pack;
+    if (ac_store_blob_load("pack", &saved_pack, sizeof(saved_pack)) == ESP_OK &&
+        saved_pack.type == s_pack.type && saved_pack.cells == s_pack.cells)
+        s_pack = saved_pack;
+    if (ac_store_blob_load("sunrise", &s_co2, sizeof(s_co2)) != ESP_OK)
+        memset(&s_co2, 0, sizeof(s_co2));
+    ESP_LOGI(TAG, "power: %u x AA %s, %.0f mWh used; site %d m = %.0f hPa",
+             cfg.cells, ac_cell_type_name((ac_cell_type_t)cfg.cell_type),
+             (double)s_pack.used_mwh, cfg.altitude_m,
+             (double)site_pressure_hpa(cfg.altitude_m));
 
     ESP_ERROR_CHECK(ac_matter_init(&s_engine));
     ac_matter_set_identify_cb(on_identify);
