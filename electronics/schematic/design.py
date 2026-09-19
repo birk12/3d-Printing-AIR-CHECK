@@ -44,8 +44,9 @@ class Rail:
     source: str
 
 RAILS = {
-    "VCELL":     Rail("VCELL", 3.00, 3.25, 3.65,
-                      "1S4P LiFePO4 behind the HY2112 BMS: BUVLO 3.0 V, VBATREG 3.65 V"),
+    "VCELL":     Rail("VCELL", 3.00, 3.25, 3.75,
+                      "1S4P LiFePO4 behind the HY2112 BMS: BUVLO 3.0 V, VBATREG 3.65 V; "
+                      "3.75 V (the BMS cut-off) as the worst case with a charger fault"),
     "VBUS_EXT":  Rail("VBUS_EXT", 4.75, 5.00, 5.25,
                       "USB-C power socket J2: 5 V from any USB-C charger (5.1k on CC)"),
     "LOAD":      Rail("LOAD", 3.00, 3.25, 4.59,

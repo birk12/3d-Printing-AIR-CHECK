@@ -28,7 +28,7 @@ GPIO18 --> CO2_VDDIO --> Sunrise VDDIO, R5/R6 pull-ups  (EN = GPIO14, R7 pull-do
 
 | rail | min | nom | max | source |
 |---|---|---|---|---|
-| VCELL | 3.00 V | 3.25 V | 3.65 V | 1S4P LiFePO4 behind the HY2112 BMS: BUVLO 3.0 V, VBATREG 3.65 V |
+| VCELL | 3.00 V | 3.25 V | 3.75 V | 1S4P LiFePO4 behind the HY2112 BMS: BUVLO 3.0 V, VBATREG 3.65 V; 3.75 V (the BMS cut-off) as the worst case with a charger fault |
 | VBUS_EXT | 4.75 V | 5.00 V | 5.25 V | USB-C power socket J2: 5 V from any USB-C charger (5.1k on CC) |
 | LOAD | 3.00 V | 3.25 V | 4.59 V | #6091 LOAD: the cells, or 4.5 V +-2 % from USB-C (power path) |
 | +VREG | 3.82 V | 3.90 V | 3.98 V | PS1 Pololu S9V11E2A from LOAD, trimmed to 3.90 V +-2 % |

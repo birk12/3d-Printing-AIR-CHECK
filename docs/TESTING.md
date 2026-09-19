@@ -1,5 +1,14 @@
 # Testing
 
+
+**Release (2026-09-19):** the cross-project battery session reviewed v1.4 at
+commit `5e51a8d` against the Power-Standard's review checklist and released
+it for ordering, printing and flashing. Conditions for *use*, all on the
+first unit: PS-2.13 / O3 (IC < 70 °C, holder 2's outer cell measured), T-L7
+(T/RH offset while charging, documented), T-L8 (NTC seated), T-L9 (critical
+sleep, no restart loop), PS-1.6a (CE < 0.4 V in reset), T-P3 (SEN62 switch-on
+step), O1/O2 (quiescent current). The full protocol PS-1.1 to PS-4.7 comes
+before the first charge.
 ## Status, honestly
 
 Three levels, and it matters which is which:
