@@ -13,7 +13,7 @@ off and polls its parent router for anything waiting.
 ```
 
 It never routes for anyone else, never becomes a leader, and does not extend
-the mesh. That is the correct role for something running off a LiPo.
+the mesh. That is the correct role for something running off six AA cells.
 
 ## Border router
 
@@ -31,7 +31,7 @@ pick one.
 The ESP32-C6 has a Wi-Fi 6 radio. It is disabled at compile time
 (`CONFIG_ENABLE_WIFI_STATION=n`, `CONFIG_ENABLE_WIFI_AP=n`,
 `CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n`) for three reasons: a Wi-Fi Matter device
-cannot be a sleepy device and would not survive a week on this battery; the
+cannot be a sleepy device, and the whole battery budget rests on that; the
 Wi-Fi stack costs flash that the 4 MB part needs for two OTA slots; and
 leaving a radio in a build that must not be used is an invitation.
 
@@ -52,15 +52,18 @@ firmware uses would be roughly 95 uA. An independent one-hour PPK2 measurement
 at exactly 15 s came out higher, **121.9 uA average, 39.3 uA floor**, and that
 is the number in `docs/BATTERY_LIFE.md` (EDR-13).
 
-The 344 mA peak is why the battery must be a real cell with a low internal
-resistance - a tired pack will brown out the radio before it runs out of
-charge - and why both sensor rails switch on slowly (CT capacitors): the radio
-and a sensor rail must never pull a spike out of the 3.3 V buck together.
+The 344 mA peak comes out of the FireBeetle's 3.3 V buck, which is fed from
+the Pololu regulator's 4.0 V, not from the cells directly; `design.py` checks
+the worst-case load on that 4.0 V rail against the regulator's rating. The
+SEN62's switch (Pololu #2810) has no soft start, so its switch-on step also
+lands on the 3.3 V buck - verify that on the bench (TESTING T-P3).
 
 ## Reducing TX power
 
 20 dBm is the default and is more than a device in the same room as its border
-router needs. Dropping to 14 dBm saves roughly 0.6 mAh a day:
+router needs. Dropping to 14 dBm saves some radio energy - but the whole
+ESP32-C6 + Thread line is only about 6 % of the ECO budget
+(`docs/BATTERY_LIFE.md`), so expect a small gain:
 
 ```
 idf.py menuconfig

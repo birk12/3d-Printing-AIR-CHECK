@@ -6,10 +6,10 @@ ESP-IDF v5.5.x + esp-matter release/v1.6, target **esp32c6**.
 
 ```
 components/ac_core/    platform-independent measurement core - no esp_* headers
-components/ac_hal/     ESP-IDF drivers
+components/ac_hal/     ESP-IDF drivers: SEN62, Sunrise, SGP40, SHT40, AA pack ADC, LED, button, NVS
 components/sensirion_gas_index/   vendored VOC Index algorithm (BSD-3)
 main/                  app_main.cpp and the Matter data model
-test/host/             509 checks that run on a workstation
+test/host/             529 checks that run on a workstation
 ```
 
 The split is the point: `ac_core` decides what happens and when, `ac_hal`
@@ -33,11 +33,11 @@ not. Note that `esp-matter/examples/common` is deliberately **not** on
 handling.
 
 The first build takes a while: it compiles the whole Matter SDK. The result
-(v1.2):
+(v1.3.0):
 
 ```
-aircheck.bin   1 676 384 bytes, 15 % free in the 1.9 MB OTA partition
-DIRAM          210 084 bytes, 46.5 % of 452 112
+aircheck.bin   1 686 320 bytes, 14 % free in the 1.9 MB OTA partition
+DIRAM          210 208 bytes, 46.5 % of 452 112
 ```
 
 Almost half the RAM is gone before anything is allocated at runtime. That is
@@ -49,12 +49,12 @@ the measured reason this is an ESP32-C6 and not an ESP32-H2 (EDR-1 in
 No ESP-IDF needed:
 
 ```bash
-cc -std=c99 -Wall -Wextra -Werror -O1 -Ifirmware/components/ac_core/include \
+cc -std=c99 -Wall -Wextra -Werror -O1 -Icomponents/ac_core/include \
    components/ac_core/src/*.c test/host/test_ac_core.c -lm -o /tmp/ac_test
 /tmp/ac_test
 ```
 
-About 20 ms. See `docs/TESTING.md` for what they cover.
+529 checks, about 20 ms. See `docs/TESTING.md` for what they cover.
 
 ## Configuration
 
@@ -63,8 +63,8 @@ compiled out, SIT ICD at a 15 s poll, light sleep on, no CLI.
 `sdkconfig.defaults.lit` switches to a Long Idle Time ICD and is experimental;
 see `docs/MATTER.md` for why.
 
-Runtime settings - names, thresholds, intervals, sensitivity - are in NVS and
-never need a rebuild. `ac_config_validate()` clamps everything into the range
+Runtime settings - names, thresholds, sensitivity, cell type, altitude - are
+in NVS and never need a rebuild (`docs/CONFIGURATION.md`). `ac_config_validate()` clamps everything into the range
 the sensor datasheets allow, so a bad value cannot produce a schedule that the
 energy model did not account for.
 

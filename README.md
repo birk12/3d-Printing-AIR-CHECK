@@ -9,7 +9,7 @@ mini you already have.
 
 <p align="center">
   <img src="cad/drawings/front_iso.png" alt="The finished case, seen from the front" width="48%">
-  <img src="cad/drawings/open_view.png" alt="Inside: SEN63C, VOC bay, carrier with FireBeetle" width="48%">
+  <img src="cad/drawings/open_view.png" alt="Inside: battery compartment, gas bay, FireBeetle, SEN62" width="48%">
 </p>
 
 ---
@@ -18,11 +18,15 @@ mini you already have.
 
 | | |
 |---|---|
-| **Particles** | PM1.0, PM2.5, PM4, PM10 and number concentration: Sensirion SEN63C |
-| **CO₂** | true CO₂ measurement, ±(100 ppm + 10 %): SEN63C |
-| **Climate** | temperature and relative humidity: SEN63C |
-| **VOC** | Sensirion VOC Index, 1–500: SGP40 |
-| **Itself** | battery level, charging state, Thread and Matter status |
+| **Particles** | PM1.0, PM2.5, PM4, PM10 and number concentration: Sensirion SEN62, hourly |
+| **CO₂** | NDIR, ±(30 ppm + 3 %): Senseair Sunrise, every 5 min, self-calibrating across power cycles |
+| **Climate** | temperature ±0.2 °C and humidity ±1.8 %RH: Sensirion SHT40, every 10 s |
+| **VOC** | Sensirion VOC Index, 1–500: SGP40, every 10 s |
+| **Itself** | battery level, Thread and Matter status |
+
+Each quantity comes from the sensor that is best at it in a battery device -
+v1.3 replaced the SEN63C's CO₂ and T/RH because they are only specified in
+continuous operation (EDR-16, EDR-17).
 
 It classifies the air as **GOOD / ELEVATED / HIGH / VERY HIGH** and keeps a
 reason for it ("PM2.5 + VOC"). It never says the air is unsafe, because it
@@ -43,11 +47,12 @@ sensors directly over Matter. That route is standard, local, and needs no
 extra hub; [docs/DASHBOARD_INTERFACE.md](docs/DASHBOARD_INTERFACE.md) is the
 complete contract for building one.
 
-The power budget is built around one idea. The particle/CO₂ module costs
-about a hundred times more to run than everything else, so it runs **40 s
-once an hour**.
-**VOC is watched every ten seconds** for almost nothing, and when the VOC index
-climbs the sensor escalates itself to a particle reading every two minutes.
+The power budget is built around one idea. The particle sensor costs about
+a hundred times more to run than everything else, so it runs **60 s once an
+hour** (the first 30 s are discarded while it settles). CO₂ costs almost
+nothing with the Sunrise and is measured every 5 minutes. **VOC, temperature
+and humidity are watched every ten seconds**, and when the VOC index climbs
+the sensor escalates itself to a particle reading every two minutes.
 Printing raises VOC long before an hourly sample would notice.
 
 ```
@@ -56,33 +61,38 @@ ECO  --VOC rises-->  ACTIVE  --air clears-->  POST-PRINT  -->  ECO
 
 ## Battery life
 
-4000 mAh cell, with a **25 % engineering margin**:
+**6 × AA**, swapped like a remote's - nothing is charged inside the device
+(EDR-18). ECO mode, with a **25 % engineering margin**:
 
-| mode | particles every | runtime |
+| cells | runtime |
+|---|---|
+| **Energizer Ultimate Lithium L91** (recommended) | **3.7 months** (3.1 in the worst case) |
+| eneloop pro (NiMH, charged outside) | 2.2 months |
+| alkaline | 2.1 months |
+
+| mode | particles every | runtime on L91 |
 |---|---|---|
-| **ECO** (default) | 1 h | **3.2 months** (2.7 at the sensor's worst-case current) |
-| ECO_LONG | 4 h | 7.0 months |
-| NORMAL | 15 min | 3 weeks |
-| ACTIVE | 2 min | 3 days (automatic, time-limited) |
+| **ECO** (default) | 1 h | **3.7 months** |
+| NORMAL | 15 min | 5 weeks |
+| ACTIVE | 2 min | 6 days (automatic, time-limited) |
 
-These figures include a dashboard reading the sensor every 15 minutes. Every
-input is traced to a datasheet or a measurement in
+A particle window every 2 h gives 5.6 months on L91 and over three months on
+NiMH or alkaline. These figures include a dashboard reading the sensor every
+15 minutes. Every input is traced to a datasheet or a measurement in
 [docs/BATTERY_LIFE.md](docs/BATTERY_LIFE.md), which is generated from a model
-you can re-run. (v1.1 claimed 3.0 months here and was wrong - two sensor
-breakouts carried an LDO and an LED the model did not count. EDR-14.)
+you can re-run.
 
 ## Hardware
 
 | | |
 |---|---|
-| MCU | DFRobot FireBeetle 2 ESP32-C6 (charger on board, 36 µA deep sleep) |
-| Sensors | SEN63C and SGP40, each on its own switched rail and its own I²C bus |
-| Status | one button, one diffused RGB LED behind a 0.6 mm skin of the front face |
-| Battery | 1S LiPo 4000 mAh with protection, user replaceable, 8 h to charge |
-| Case | **112 × 102 × 32 mm**, PETG front shell + lid, no supports |
-| Cost | **about EUR 95** in parts (v1.1: EUR 173), EUR 110 with the carrier assembled by JLCPCB |
-
-Full parts list with manufacturer part numbers: [docs/BOM.md](docs/BOM.md).
+| MCU | DFRobot FireBeetle 2 ESP32-C6 |
+| Sensors | SEN62 (switched off between windows), Sunrise (EN-pin shutdown, ABC state kept by the host), SGP40 + SHT40 (always on) |
+| Power | 6 × AA → PTC fuse → Pololu 4.0 V buck-boost → LM66200 ideal diode → FireBeetle; nothing can charge the cells |
+| Boards | **no custom PCB**: finished modules and ten through-hole resistors (EDR-19) |
+| Status | one panel button, one RGB LED in a panel holder |
+| Case | **130 × 146 × 34 mm**, PETG, three zones: battery compartment with a screwed door, a walled gas bay, electronics |
+| Cost | **about EUR 160** in parts including the first set of cells ([docs/BOM.md](docs/BOM.md)) |
 
 ## The LED and the button
 
@@ -90,7 +100,7 @@ Full parts list with manufacturer part numbers: [docs/BOM.md](docs/BOM.md).
 |---|---|
 | short | the LED shows the air quality for 3 s: 🟢 good, 🟡 elevated, 🔴 high, 🟣 very high |
 | 3–8 s | pairing mode, the LED blinks blue for 5 minutes |
-| 8–12 s | fresh-air CO₂ calibration - **outdoors only**; cyan for 3 min, then green |
+| 8–12 s | fresh-air CO₂ calibration - **outdoors only**; cyan for 4 min, then green |
 | 12–20 s | factory reset, the LED blinks red fast |
 | over 20 s | ignored, so a jammed button cannot wipe the device |
 
@@ -109,11 +119,12 @@ dashboard compare them; [docs/SHORTCUTS.md](docs/SHORTCUTS.md) has recipes.
 ## Build it
 
 ```
-PARTS -> PRINT -> ASSEMBLE -> FLASH -> CHARGE -> PAIR -> SHARE WITH THE DASHBOARD
+PARTS -> PRINT + BAKE -> WIRE -> FLASH -> CELLS IN -> PAIR -> SHARE WITH THE DASHBOARD
 ```
 
 1. **Parts:** [docs/BOM.md](docs/BOM.md)
-2. **Print:** five parts, no supports, about 8 h and 160 g of PETG:
+2. **Print:** four parts, no supports, about 9 h and 200 g of PETG, then
+   24 h at 50–60 °C to bake out volatiles:
    [manufacturing/print-settings.md](manufacturing/print-settings.md)
 3. **Assemble:** [docs/ASSEMBLY.md](docs/ASSEMBLY.md)
 4. **Flash:**
@@ -123,7 +134,8 @@ PARTS -> PRINT -> ASSEMBLE -> FLASH -> CHARGE -> PAIR -> SHARE WITH THE DASHBOAR
    idf.py set-target esp32c6
    idf.py -p /dev/tty.usbmodem* flash monitor
    ```
-5. **Charge:** about 8 h from flat at the FireBeetle's 540 mA
+5. **Cells:** six AA, all the same type and age; tell the device which
+   (`config set cell_type lithium`) and your altitude (`config set altitude_m 520`)
 6. **Pair** with Apple Home: [docs/APPLE_HOME.md](docs/APPLE_HOME.md)
 7. **Share** with the dashboard: [docs/DASHBOARD_INTERFACE.md](docs/DASHBOARD_INTERFACE.md)
 
@@ -134,10 +146,10 @@ AIR CHECK has been built. What *has* been done:
 
 | | |
 |---|---|
-| measurement core | 509 host checks, run on every build, validated against injected bugs |
-| electrical design | 460 automated rule checks over the netlist, validated against injected faults |
-| enclosure | OpenSCAD asserts, every part intersected with every other, manifold check, fits a 250 × 210 bed |
-| firmware | full ESP-IDF + esp-matter build for esp32c6: 1.68 MB, 15 % OTA headroom, 46.5 % of RAM |
+| measurement core | 529 host checks, run on every build |
+| electrical design | 510 automated rule checks over the wiring list, incl. "the cells can never be charged" and firmware pin table = wiring |
+| enclosure | OpenSCAD asserts: every module against every other, every post, every zone; manifold check; fits a 250 × 210 bed |
+| firmware | full ESP-IDF + esp-matter build for esp32c6: 1.69 MB, 14 % OTA headroom |
 | Matter attribute IDs | checked against the Matter SDK's generated headers |
 | **sensor drivers** | **untested**: every register and timing read from a datasheet |
 | **Thread, Matter, Apple Home, dashboard** | **untested**: no controller has seen this device |
@@ -152,14 +164,14 @@ contribute.
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | how the whole thing fits together |
 | [DASHBOARD_INTERFACE.md](docs/DASHBOARD_INTERFACE.md) | **everything a dashboard needs**: pairing, attribute IDs, timing, power |
-| [ENGINEERING_DECISIONS.md](docs/ENGINEERING_DECISIONS.md) | fifteen decisions and what they cost |
+| [ENGINEERING_DECISIONS.md](docs/ENGINEERING_DECISIONS.md) | nineteen decisions and what they cost |
 | [BATTERY_LIFE.md](docs/BATTERY_LIFE.md) | the energy model, with sources |
 | [BOM.md](docs/BOM.md) | parts, prices, where to buy |
 | [ASSEMBLY.md](docs/ASSEMBLY.md) | step by step |
 | [APPLE_HOME.md](docs/APPLE_HOME.md) | what works, what does not |
 | [MATTER.md](docs/MATTER.md) | endpoints, clusters, ICD |
 | [THREAD.md](docs/THREAD.md) | sleepy end device, border routers |
-| [CALIBRATION.md](docs/CALIBRATION.md) | baseline reset vs sensor calibration |
+| [CALIBRATION.md](docs/CALIBRATION.md) | altitude, CO₂ self-calibration, baseline reset |
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | every setting and what changing it costs |
 | [SHORTCUTS.md](docs/SHORTCUTS.md) | two-device automations |
 | [TESTING.md](docs/TESTING.md) | what is verified and what is not |
@@ -169,7 +181,7 @@ contribute.
 ## What this is not
 
 Not a medical device. Not a safety detector. Not a certified instrument. The
-SEN63C cannot see the ultrafine particles that dominate 3D-printing emissions,
+SEN62 cannot see the ultrafine particles that dominate 3D-printing emissions,
 and the VOC Index cannot name a chemical. This device is good at telling you
 that the air **changed**, by how much, and how long it took to recover. That is
 useful, and it is not the same thing as a health assessment.

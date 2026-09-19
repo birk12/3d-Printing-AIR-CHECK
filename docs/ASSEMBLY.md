@@ -1,109 +1,160 @@
 # Assembly
 
-Start to finish this is an evening's work if the parts are on the desk and the
-prints are done. Nothing needs a microscope; the finest thing you solder by
-hand is an 0603 resistor or a SOT-23, and even those are optional if you order
-the carrier board assembled.
+v1.3 has no circuit board to make or order. Everything is a finished module;
+you solder wires to module pins and ten through-hole resistors in line, under
+heat shrink. An evening's work once the parts and prints are on the desk.
 
 ```
-PARTS -> PRINT -> ASSEMBLE -> FLASH -> CHARGE -> PAIR -> SHARE -> USE
+PARTS -> PRINT + BAKE -> SET THE REGULATOR -> WIRE -> FLASH -> INTO THE CASE -> CELLS -> PAIR -> SHARE
 ```
 
-![Inside, lid and battery removed](../cad/drawings/open_view.png)
+![Inside, lid and door removed](../cad/drawings/open_view.png)
+
+The wiring list, the pin map and where each inline resistor goes are in
+[`electronics/schematic/NETLIST.md`](../electronics/schematic/NETLIST.md).
+That file is generated from `design.py` and checked by 510 rules; if this
+guide and the netlist ever disagree, the netlist wins.
 
 ## 1. Parts
 
-Order everything in `docs/BOM.md`. One Mouser parcel covers the SEN63C, the
-load switches, the connectors and the RGB LED. Check off before you start:
+Order everything in [`docs/BOM.md`](BOM.md). One Mouser parcel covers the
+SEN62, the Sunrise and the battery holder; Berrybase/Eckstein/Reichelt the
+rest. Check off:
 
-- [ ] DFRobot FireBeetle 2 ESP32-C6 (DFR1075), with its male headers
-- [ ] Sensirion SEN63C-SIN-T **and** a 6-pin JST GH cable, pin 1 to pin 1 (the
-      sensor does not come with one)
-- [ ] Adafruit SGP40 breakout (4829) and a STEMMA QT cable
-- [ ] Adafruit 159 RGB LED (5 mm, diffused, **common anode**)
-- [ ] 1S LiPo, 4000 mAh, **with a protection circuit**, 6.0 x 60 x 90 mm, JST PH 2.0
-- [ ] ACC-1 rev C carrier board (bare or assembled) and its parts
-- [ ] a 2-pin JST PH cable, 100 mm, for carrier to FireBeetle
-- [ ] 4 x M2.5 brass heat-set inserts, 4 x M2.5 x 10 mm screws, 6 x M2.5 x 6
-      self-tapping screws for the carrier and the breakout
-- [ ] 1.5-2 mm EPDM or PU foam strip, self-adhesive
+- [ ] FireBeetle 2 ESP32-C6 (DFR1075)
+- [ ] Sensirion SEN62-SIN-T and a 6-way JST GH cable
+- [ ] Senseair Sunrise 006-0-0008
+- [ ] SparkFun Qwiic SGP40 (SEN-18345) and a Qwiic cable with open leads
+- [ ] Seeed Grove SHT40 (101021032) and a Grove-to-jumper cable
+- [ ] Pololu #2810 Mini MOSFET Switch LV
+- [ ] Pololu #5719 S9V11E2A regulator
+- [ ] Adafruit #5830 LM66200 ideal diode
+- [ ] MPD BH36AAW 6 × AA holder, Bourns MF-R050 PTC fuse
+- [ ] JST PH 2-way pigtail
+- [ ] RGB LED 5 mm common anode, SMR1089 panel holder, T 250A push button
+- [ ] resistors 1 M, 220 k, 100 k, 2 × 10 k, 2 × 4.7 k, 1 k, 2 × 330 Ω; one 100 nF
+- [ ] 6 × M2.5 heat-set inserts; M2.5 × 8 screws (6), M2.5 self-tappers (8),
+      M2 self-tappers (6); 26 AWG silicone wire; heat shrink
+- [ ] 6 × Energizer Ultimate Lithium L91 (or eneloop pro, or alkaline - one type, one age)
 
-> **Battery safety.** Use a cell with a protection circuit. Not a bare pouch,
-> not a salvaged one, not one whose leads you have to strip and re-terminate.
-> A 1S LiPo in a sealed plastic box near a machine that runs unattended for
-> hours is exactly the situation where the protection circuit earns its keep.
+## 2. Print and bake
 
-## 2. Print
+[`manufacturing/print-settings.md`](../manufacturing/print-settings.md) has
+the profile: four parts, no supports. Then **bake all printed parts for 24 h
+at 50–60 °C** (oven with a thermometer, door ajar, or a filament dryer). Fresh
+PETG gives off volatiles for weeks; the SGP40 would learn that as its
+baseline. Let the parts air for a day afterwards.
 
-`manufacturing/print-settings.md` has the profile. Five parts, no supports,
-about 8 hours and 160 g of PETG in total. **Print the front shell in white or
-natural PETG**: the status LED shines through a 0.6 mm skin of it. With a dark
-filament, drill that skin out with a 5 mm bit afterwards.
+Check the prints:
 
-Before you go further, check the print:
-
-- [ ] the lid drops into the front shell with an even gap all the way round
-- [ ] the button cap moves freely in its counterbore and springs back
-- [ ] the SEN63C slides into its cradle, port face against the left wall
-      (left as seen from the front; in the model it is the X = max wall)
-- [ ] the port slots in that wall are open all the way through - the inlet
-      window (one column) near the bottom, the outlet window (two columns)
-      above it
-- [ ] the battery cover slides over the lid's battery bay walls and stays
+- [ ] the lid and the door each drop into the front shell with an even gap
+- [ ] the SEN62 slides into its cradle, port face against the left wall (left
+      seen from the front)
+- [ ] every slot in that wall is open, with a clean bridge roof
+- [ ] the gas bay's side-wall and front slots are open (right side, seen from the front)
+- [ ] the SHT40 board drops into its fence snugly, the Sunrise between its four guides
 
 ## 3. Heat-set inserts
 
-Four inserts go into the front shell's corner posts, from the seam side. Iron at
-220 C, press straight down until flush, let it cool before you move it. If one
-goes in crooked, heat it again and push it the rest of the way with the flat
-of the iron.
+Six M2.5 inserts: four into the lid posts, two into the door posts in the
+side walls of the battery compartment. Iron at 220 °C, straight down until
+flush, let them cool.
 
-## 4. Carrier board
+## 4. Set the regulator - before anything is connected to it
 
-Skip steps 1-3 if you ordered it assembled.
-
-1. Solder the SMD parts: both TPS22918 (SW1, SW2), their CT capacitors C2
-   (4.7 nF) and C5 (1 nF), C1 22 µF, C4 and C7 1 µF, C6 100 nF, and the
-   resistors. **Check the CT capacitors are there**: without them, switching a
-   sensor rail on pulls an amp-level spike out of the FireBeetle's 3.3 V and
-   can reset the chip.
-2. Solder the JST GH header J1 (SEN63C) and the JST PH header J2 (battery in).
-3. Solder the 6 x 6 x 5 mm tactile switch to the front side.
-4. Solder the RGB LED so its dome stands **8.6 mm proud of the board face**.
-   The front shell's LED guide tube is a good jig: push the loose LED into the
-   tube, lay the carrier on its standoffs, solder from the back. The long lead
-   is the common anode and goes to VBAT.
-5. **Measure the FireBeetle's JST PH socket** before soldering the board down:
-   it must be no taller than 6.0 mm above the FireBeetle, or it will touch the
-   battery cover (bench test B2).
-6. Solder the FireBeetle **straight onto the carrier** with its own male
-   headers, component side away from the carrier, USB-C flush with the
-   carrier's notched end. No female sockets: they would add 5 mm the case does
-   not have.
+1. Solder three wires to the S9V11E2A: VIN, GND, VOUT (leave EN open: it has
+   its own pull-up to VIN).
+2. Put the holder with six cells on VIN/GND through the PTC fuse (step 5.1).
+3. Turn the trimpot until VOUT reads **4.00 V ± 0.03 V** on a multimeter.
+   Clockwise raises it. **Above 4.2 V the FireBeetle is out of its rating.**
+4. Take the cells out again.
 
 ## 5. Wiring
 
-| from | to | notes |
+Solder and heat-shrink as you go. Wire colours: red = supply, black = GND,
+blue = SDA, yellow = SCL, anything else for control lines.
+
+### 5.1 Power path
+
+| from | to | note |
 |---|---|---|
-| SEN63C connector | J1, 6-pin GH cable | pin 1 to pin 1. Keep it under 15 cm |
-| SGP40 breakout | carrier +3V3_SENS, GND, SENS_SDA, SENS_SCL | cut one end of a STEMMA QT cable and solder it to the carrier pads. SDA goes to GPIO6, SCL to GPIO7 - those are the only pads the C6's low-power I2C can use |
-| J3, 2-pin JST PH pigtail | carrier J3 pads -> FireBeetle battery socket | **check the polarity** against the "+" mark on the FireBeetle. JST PH leads are not standardised, and the wrong way round the FireBeetle's reverse-polarity FET is the only thing between you and a dead board |
+| holder red lead | **F1** PTC fuse | 2 cm from the holder, in line, heat shrink over it |
+| F1 | S9V11E2A VIN | through the partition notch |
+| holder black lead | S9V11E2A GND | |
+| S9V11E2A VOUT | LM66200 **VIN1** | |
+| LM66200 **VIN2**, **ON**, GND | GND | all three to ground - this makes VIN1 the only input, always enabled |
+| LM66200 VOUT | JST PH pigtail **+** | |
+| pigtail **−** | GND | |
+| pigtail **+** | Sunrise pin 2 (VBB) and the LED's common anode | spliced onto the + lead |
+| pack divider: **R1 1 M** | from S9V11E2A VIN to FireBeetle **IO3** | |
+| **R2 220 k** and **C1 100 nF** | IO3 to GND | at the FireBeetle |
 
-Everything else - VIN for the USB sense, the SEN63C bus on the FireBeetle's
-SDA/SCL pins, the LED and button GPIOs - runs through the header pins the
-FireBeetle is soldered on with.
+**Check the pigtail polarity against the "+" on the FireBeetle** before you
+plug it in. JST PH leads are not standardised. Then plug it into the
+FireBeetle's battery socket.
 
-Check before you go on:
+### 5.2 SEN62 and its switch
 
-- [ ] R6/R7 go to **+3V3_SENS** and R11/R12 to **+3V3_SEN6X**, not to 3V3
-- [ ] nothing on the carrier connects to the FireBeetle's GPIO15 (its own LED)
-      or GPIO9 (BOOT)
+| from | to |
+|---|---|
+| FireBeetle 3V3 | Pololu #2810 VIN |
+| FireBeetle IO2 | #2810 ON |
+| #2810 VOUT | SEN62 pins 1 and 6 (VDD) |
+| GND | #2810 GND, SEN62 pins 2 and 5 |
+| FireBeetle SDA (GPIO19) | SEN62 pin 3; **R3 4.7 k** to #2810 VOUT |
+| FireBeetle SCL (GPIO20) | SEN62 pin 4; **R4 4.7 k** to #2810 VOUT |
 
-> **Do not connect the battery yet.**
+**Leave the #2810's slide switch in OFF.** Only then does its ON pin have
+control. The pull-ups go to the *switched* supply, so nothing feeds the SEN62
+while it is off.
 
-## 6. Flash and smoke test
+### 5.3 Sunrise
 
-With the boards still outside the case, plug in USB-C and flash:
+Handle it by its PCB tabs, never by the housing or the filter. Solder at
+380 °C for at most 2 s per pin, from below (ANO4947).
+
+| Sunrise pin | to |
+|---|---|
+| 1 GND | GND |
+| 2 VBB | pigtail + (5.1) |
+| 3 VDDIO | FireBeetle **IO18** |
+| 4 SDA | FireBeetle **IO17**; **R5 10 k** across pins 3–4 |
+| 5 SCL | FireBeetle **IO21**; **R6 10 k** across pins 3–5 |
+| 6 COMSEL | GND (selects I2C) |
+| 7 nRDY | nothing |
+| 8 DVCC | nothing |
+| 9 EN | FireBeetle **IO14**; **R7 100 k** from IO14 to GND at the FireBeetle |
+
+VDDIO and the pull-ups come from GPIO18, which the firmware drives high only
+while the sensor is enabled - Senseair forbid any signal on the bus while EN
+is low.
+
+### 5.4 SGP40 and SHT40 (always on)
+
+| | SGP40 (Qwiic cable) | SHT40 (Grove cable) | FireBeetle |
+|---|---|---|---|
+| supply | red 3V3 | red VCC | 3V3 |
+| ground | black | black | GND |
+| SDA | blue | white | **IO6** |
+| SCL | yellow | yellow | **IO7** |
+
+On the SparkFun board **cut the PWR jumper** (its LED would draw more than
+the sensor). Leave the I2C jumper closed: its 4.7 k pull-ups are the bus's.
+GPIO6/7 are the only pins of the ESP32-C6's low-power I2C.
+
+### 5.5 LED and button
+
+| from | to |
+|---|---|
+| LED red cathode | **R8 1 k** → IO16 |
+| LED green cathode | **R9 330 Ω** → IO22 |
+| LED blue cathode | **R10 330 Ω** → IO23 |
+| LED common anode (longest lead) | pigtail + (5.1) |
+| button | IO1 and GND |
+
+## 6. Flash and smoke test, on the bench
+
+Cells in the holder, the boards on the desk. Plug in USB-C and flash:
 
 ```bash
 cd firmware
@@ -113,133 +164,97 @@ idf.py set-target esp32c6
 idf.py -p /dev/tty.usbmodem* flash monitor
 ```
 
-You should see, within a few seconds:
+Within a few seconds:
 
 ```
-I (xxx) aircheck: 3D Printing AIR CHECK 1.2.0
+I (xxx) aircheck: 3D Printing AIR CHECK 1.3.0
 I (xxx) aircheck: serial AC-XXXX-XXXX
 I (xxx) sgp40: VOC index algorithm at a 10 s sampling interval
-I (xxx) aircheck: SEN63C <serial>, CO2 self calibration on
-I (xxx) ac_matter: endpoints: air=1 temperature=2 humidity=3
+I (xxx) aircheck: SEN62 <serial>
+I (xxx) sunrise: configuration OK: single mode, 32 samples, ABC on (180 h, 425 ppm)
+I (xxx) aircheck: power: 6 x AA alkaline, 0 mWh used; site 0 m = 1013 hPa
+I (xxx) ac_matter: endpoints: ...
 I (xxx) aircheck: not commissioned; manual code ..., QR MT:...
 ```
 
-and, a few seconds later, the SEN63C's fan for about 40 s and then:
+then a CO2 reading (`sunrise: CO2 ... ppm`) and, with USB plugged in, the
+SEN62's fan running (continuous mode). If an error line appears instead,
+stop here: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md). It is far easier to
+debug on the bench.
 
+Tell the device what it runs on and where it stands:
+
+```bash
+python3 tools/configuration/aircheck_config.py --port /dev/tty.usbmodem* set cell_type lithium
+python3 tools/configuration/aircheck_config.py --port /dev/tty.usbmodem* set altitude_m 520
 ```
-I (xxx) sen6x: window 40s: PM2.5 3.1 ug/m3 (10 samples), CO2 512 ppm, 22.8 C, 45 %RH
-```
 
-The LED flashes white at boot and then blinks blue: not paired yet. If it does
-not, stop here and work through `docs/TROUBLESHOOTING.md`. It is far easier
-to debug on the bench than through a screwed-together case.
-
-Wait a minute, then press the button once: the LED shows the air-quality
-colour for 3 s (white while it is still warming up). Hold it for 3 seconds and
-it blinks blue: pairing mode. Also check each colour channel works. A missing
-green or blue usually means the LED was fitted the wrong way round.
+Press the button once: the air-quality colour for 3 s. Hold it 3 s: blue,
+pairing mode. Check red, green and blue each light.
 
 ## 7. Into the case
 
-1. Cut the foam into a frame for each of the two windows on the SEN63C's port
-   face - one around both inlets, one around the outlet - and stick them on the
-   sensor. The printed ribs on the inside of the wall press into this foam.
-   **This seal is not optional**: Sensirion require inlets and outlet to be
-   sealed from each other and from the inside of the device, or the sensor
-   draws air from inside the case and the readings are meaningless.
-2. Slide the SEN63C into its cradle: port face against the left wall, cable
-   side towards the middle of the case, the end with the two small inlets at
-   the bottom and the **square inlet towards the front** of the case. It
-   should need light thumb pressure.
-3. Plug in its cable - the connector sits in a pocket in the face towards the
-   middle of the case, near the lid - and lay a strip of foam on the module's
-   back edge; the lid presses on it. Lead the cable towards the carrier's J1,
-   not over the battery bay.
-4. Screw the carrier board down with four M2.5 self-tappers into the printed
-   posts. The LED drops into its guide tube, and the FireBeetle's USB-C lines
-   up with the opening in the right-hand wall.
-   Snug, not tight - they are cutting their own thread in plastic.
-5. Screw the SGP40 breakout into the gas bay: seen from the front it is the
-   bottom-right bay, behind the vent slots.
-6. Route the SGP40 cable through the pass-through in the gas bay's top rib and
-   close the gap round it with a piece of foam.
-7. Lay a strip of foam along the top edges of the gas bay's two ribs. The
-   battery cover presses on it and seals the bay from behind.
-8. Press the button cap into the front face from the outside.
+1. **SEN62.** Stick an EPDM frame around each of the two windows on its port
+   face (one round both inlets, one round the outlet). This is the one
+   gasket in the device, and it is outside the gas bay. Slide the SEN62 into
+   its cradle, port face against the left wall, square inlet towards the
+   front, and plug in its cable.
+2. **Gas bay** (right side seen from the front, walled off): SHT40 into its
+   fence, low and next to the vents; SGP40 onto its four posts with M2.5
+   self-tappers; Sunrise onto its pedestal, filter towards the lid, pins
+   hanging free at both ends. **No tape, glue, foam or hot glue in here.**
+   Lead the three cables out over the bay's top wall, where the lid's rib
+   closes over them.
+3. **FireBeetle** onto its four posts, M2 self-tappers, USB-C in the opening
+   in the right-hand wall.
+4. **Power modules** into their pockets beside the FireBeetle: #2810 and
+   S9V11E2A (trimpot facing the lid), the LM66200 on two M2 self-tappers.
+5. **LED holder and button** through the front, nuts from the inside.
+6. **Battery holder** into the compartment on its four bosses (M2.5
+   self-tappers through the holder's floor), leads at the right-hand end
+   seen from the back, out through the partition notch.
 
-## 8. Battery
+Keep every wire out of the SEN62's plug keep-out and away from the lid's
+screw posts.
 
-1. Put a thin foam pad on the floor of the lid's battery bay, or a strip of
-   double-sided foam tape.
-2. Lay the cell in **upright**, leads at the top, and bring them out through
-   the notch in the bay wall.
-3. Slide the printed battery cover over the bay. Its skirt grips the two long
-   walls; nothing is screwed. It keeps the cell in place and puts plastic
-   between the pouch and the FireBeetle.
-4. **Now** plug the cell into J2 on the carrier.
-5. Route the lead so it cannot be pinched when the lid closes. A pinched LiPo
-   lead is the single most likely way to start a fire in this build.
+## 8. Close it
 
-## 9. Close it
+Lid: four M2.5 × 8 screws into the inserts, cross pattern, snug - the
+inserts spin out of plastic long before a screw strips. Put the cells in
+(match the + marks in the holder), then the door with its two screws.
 
-Lower the lid onto the front shell and drive four M2.5 x 10 screws from the
-back into the heat-set inserts. Even pressure, work in a cross pattern, do not
-over-torque - the inserts will spin out of hot plastic long before the screw
-strips.
+## 9. Pair and share
 
-## 10. Charge
+[`APPLE_HOME.md`](APPLE_HOME.md): scan the QR code, name it, put it in a
+room. Print the label with `tools/commissioning/make_label.py` and stick it
+on the door. For the dashboard: Home app → the sensor → Accessory Settings →
+**Turn On Pairing Mode** → give the code to the dashboard
+([`DASHBOARD_INTERFACE.md`](DASHBOARD_INTERFACE.md)).
 
-Plug in USB-C: seen from the front, the port is on the right-hand side. The
-FireBeetle's charge LED lights inside the case. The device switches to
-CONTINUOUS mode while it has USB power (the SEN63C then runs non-stop), which
-makes it a good reference instrument on the bench.
-
-At 540 mA a flat 4000 mAh cell takes about **8 hours**. You charge this
-device every three months.
-
-## 11. Pair
-
-`docs/APPLE_HOME.md`. Scan the QR code, name it, put it in a room.
-
-Print the label from `tools/commissioning/make_label.py` and stick it on the
-back before you forget. The sensor has no screen to show the code on.
-
-## 11b. Share with the dashboard
-
-Home app → long-press the sensor → Accessory Settings → **Turn On Pairing
-Mode** → copy the code → hand it to the dashboard. Details and everything the
-dashboard reads: `docs/DASHBOARD_INTERFACE.md`.
-
-## 12. Configure
-
-Defaults are sensible. The ones worth changing:
+## 10. Configure
 
 | setting | when |
 |---|---|
-| `default_mode` | NORMAL if this unit sits next to a printer and you will charge it every few weeks |
-| `name` | published as Matter NodeLabel, so the dashboard can tell "3D Printer" from "Room" |
-| `ev_sensitivity` | 1 to 5; lower it if your workshop triggers events all day |
+| `cell_type` | always: `lithium`, `nimh` or `alkaline` - the battery % depends on it |
+| `altitude_m` | always: the CO2 pressure correction (1.6 % per 10 hPa) |
+| `default_mode` | NORMAL next to a busy printer, if you accept changing cells every 5 weeks |
+| `name` | published as Matter NodeLabel so the dashboard can tell units apart |
 
-## 13. Two units
+## Placement
 
-Build the second one exactly the same way. Commission it separately. Name one
-"3D Printer" and one "Room". There is nothing else to do - they are
-independent accessories and no pairing step exists.
+Beside the printer, not inside its enclosure and not in its fan draught
+(the SEN62 must not sit in airflow above 1 m/s). Keep the left side (particle
+ports) and the right side (gas bay vents) free, out of direct sun and away
+from radiators. The CO2 self-calibration needs fresh air about once a week -
+a room that is aired now and then is enough (`CALIBRATION.md`).
 
-Put the printer unit **beside** the printer, not inside its enclosure, and
-not in the printer's own fan draught: the SEN63C must not sit in a forced
-airflow above 1 m/s, and the case is not rated for chamber temperatures. Keep
-the left side (the ports) free and out of direct sunlight.
+Two keyholes in the lid, 70 mm apart horizontally, for two pan-head screws
+standing about 3 mm proud of the wall.
 
-## Wall mounting
+## Changing cells
 
-Two keyholes one above the other, 40 mm apart, near the right-hand edge as
-seen from the front. Two pan-head screws, heads about 3 mm proud of the wall.
-
-## Servicing
-
-* **Battery replacement:** four screws, lift the lid, unplug from J2, slide
-  the cover off, replace.
-* **Sensor replacement:** both sensors are on connectors.
-* **Fan cleaning:** none needed. The SEN6x keeps its optics clean with a
-  sheath flow, and Sensirion removed automatic cleaning from the family.
+Two screws, door off, six new cells of one type and age, door on. The device
+notices the higher voltage and resets its energy counter by itself. Never mix
+old and new cells, never mix chemistries. If you switch chemistry, set
+`cell_type`. Rechargeable cells go into their own charger, outside the
+device - nothing charges them in here.

@@ -50,10 +50,10 @@ device's own 5-minute history, so a dashboard that sleeps can still show
 
 | cluster | unit attribute | range advertised | source |
 |---|---|---|---|
-| PM2.5 `0x042A` | 4 = UGM3 | 0 .. 1000 | SEN63C |
-| PM10 `0x042D` | 4 = UGM3 | 0 .. 1000 | SEN63C |
-| PM1 `0x042C` | 4 = UGM3 | 0 .. 1000 | SEN63C |
-| CO2 `0x040D` | 0 = PPM | 400 .. 5000 | SEN63C |
+| PM2.5 `0x042A` | 4 = UGM3 | 0 .. 1000 | SEN62 |
+| PM10 `0x042D` | 4 = UGM3 | 0 .. 1000 | SEN62 |
+| PM1 `0x042C` | 4 = UGM3 | 0 .. 1000 | SEN62 |
+| CO2 `0x040D` | 0 = PPM | 400 .. 5000 | Senseair Sunrise |
 | TVOC `0x042E` | 1 = PPB | 0 .. 500 | SGP40 **VOC Index** |
 
 **The TVOC row is not what it appears to be.** The SGP40 reports an index from
@@ -71,15 +71,30 @@ the full argument.
 derived from a measured ug/m3 adds nothing the Air Quality cluster on the same
 endpoint does not already carry.
 
+### Temperature and humidity, endpoints 2 and 3
+
+From the SHT40, read every 10 s together with the SGP40 (EDR-17). The SEN62's
+own T/RH is not used.
+
 ### Power Source, endpoint 0
+
+Features `BAT` (Battery) and `REPLC` (Replaceable). Not `RECHG`: six AA cells
+the user replaces, and nothing is charged inside the device (EDR-18), so there
+is no `BatChargeState`.
 
 | attribute | what it carries |
 |---|---|
-| `Status` | 1 Active, or the charging state |
-| `BatPercentRemaining` | state of charge from the cell voltage (no fuel gauge since v1.2, about ±10 % mid-range), in half-percent units |
-| `BatVoltage` | cell voltage in mV |
-| `BatChargeLevel` | 0 OK, 1 Warning (<= 20 %), 2 Critical (<= 5 %) |
-| `BatReplaceability` | 2 UserReplaceable - and it genuinely is, see `docs/ASSEMBLY.md` |
+| `Status` | 1 Active |
+| `Description` | "Battery" |
+| `BatPercentRemaining` | half-percent units. The lower of two estimates: the resting-voltage curve for the configured `cell_type`, and an energy counter of what the firmware has spent since the pack was fitted. It only goes up when a fresh pack is detected (a jump of +0.08 V per cell) |
+| `BatVoltage` | pack voltage in mV (all cells in series) |
+| `BatChargeLevel` | 0 OK, 1 Warning (at or below `low_battery_pct`, 20 %), 2 Critical (below 5 %) |
+| `BatReplacementNeeded` | true at Critical |
+| `BatReplaceability` | 2 UserReplaceable - two screws on the battery door, see `docs/ASSEMBLY.md` |
+| `BatPresent` | true |
+| `BatReplacementDescription` | "6 x AA (alkaline, NiMH or lithium)" |
+| `BatCommonDesignation` | 2 AA |
+| `BatQuantity` | 6 |
 
 ## ICD - this is a battery device
 
@@ -106,9 +121,11 @@ registers is not something this project can promise.
 ## Reporting policy
 
 Writing a Matter attribute wakes the radio and sends to every subscriber, so
-the firmware compares before it writes:
+the firmware only publishes when at least one value has moved past its
+threshold since the last publish; a float that has not changed is not
+rewritten:
 
-| attribute | reported when it moves by |
+| attribute | publish when it moves by |
 |---|---|
 | PM2.5, PM1 | 0.5 ug/m3 |
 | PM10 | 1.0 ug/m3 |
@@ -116,8 +133,11 @@ the firmware compares before it writes:
 | VOC index | 5 points |
 | temperature | 0.2 degC |
 | humidity | 1 % |
-| battery | 1 % |
+| battery percentage | 1 % |
 | air quality | any change of state |
+
+The Power Source attributes are written separately, on every battery read
+(`battery_interval_s`, 5 min by default).
 
 ## Multi-admin (the dashboard)
 
@@ -172,7 +192,8 @@ the device.
 * no cloud service, no account, no telemetry, no external server
 * commissioning uses Matter's standard PASE/CASE handshake
 * the Matter console and the OpenThread CLI are compiled out
-  (`CONFIG_OPENTHREAD_CLI=n`); the USB serial console is a log output only and
-  accepts no commands
+  (`CONFIG_OPENTHREAD_CLI=n`); the service console (`config`, `baseline`,
+  `co2`, `events`, `diag`) only starts while a USB host is connected, so it
+  needs physical access
 * the device is read-only over Matter: every attribute it exposes is a
   measurement, and nothing a controller writes changes what it measures

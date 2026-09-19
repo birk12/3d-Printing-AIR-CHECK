@@ -59,7 +59,9 @@ static volatile bool s_asc_pending;     /* rewrite the Sunrise's ABC setting */
 /* Energy booked against the AA pack, in mWh taken from the cells.  The same
  * figures as tools/battery_calculator/model.py: 3.3 V loads go through the
  * Pololu regulator (85 %) and the FireBeetle's buck (90 %); the Sunrise and
- * the LED sit on the regulator's 4.0 V. */
+ * the LED sit on VSYS, the regulator's 4.0 V behind the ideal diode.  With USB
+ * plugged in the FireBeetle's charger holds VSYS at 4.2 V and carries all of
+ * it; only the regulator's own quiescent current is still booked. */
 #define EFF_3V3            (0.85f * 0.90f)
 #define EFF_4V0            0.85f
 #define SEN62_MW           (75.0f * 3.3f)           /* 75 mA typ */
@@ -97,7 +99,8 @@ static void do_pm_measurement(uint32_t window_s, bool keep_running)
     esp_err_t err = ac_sen6x_measure_window(window_s, keep_running, &v);
     s_sen_running = keep_running && err == ESP_OK;
     lock();
-    ac_pack_spend(&s_pack, SEN62_MW * ((float)window_s + 1.5f) / 3600.0f / EFF_3V3);
+    /* on USB the FireBeetle feeds these loads, not the cells */
+    if (!s_engine.usb_present) ac_pack_spend(&s_pack, SEN62_MW * ((float)window_s + 1.5f) / 3600.0f / EFF_3V3);
     unlock();
     ac_sample_t s;
     memset(&s, 0, sizeof(s));
@@ -142,7 +145,8 @@ static void do_voc_measurement(void)
         t = s_engine.last.temperature;
         rh = s_engine.last.humidity;
     }
-    ac_pack_spend(&s_pack, SGP40_SAMPLE_MWH / EFF_3V3);
+    /* on USB the FireBeetle feeds these loads, not the cells */
+    if (!s_engine.usb_present) ac_pack_spend(&s_pack, SGP40_SAMPLE_MWH / EFF_3V3);
     unlock();
     if (terr == ESP_OK) {
         s.temperature = t;
@@ -189,7 +193,8 @@ static void do_co2_measurement(void)
     s.t = now_ms();
     s.voc_index = -1;
     lock();
-    ac_pack_spend(&s_pack, SUNRISE_MWH / EFF_4V0);
+    /* on USB the FireBeetle feeds these loads, not the cells */
+    if (!s_engine.usb_present) ac_pack_spend(&s_pack, SUNRISE_MWH / EFF_4V0);
     if (err != ESP_OK) {
         ac_engine_sensor_failed(&s_engine, AC_ACT_SAMPLE_CO2, esp_err_to_name(err));
     } else {
@@ -374,7 +379,8 @@ static void measure_task(void *arg)
             float dt_h = (float)(t - last_t) / 3.6e9f;
             lock();
             float pack_v = s_engine.last.battery_v > 1.0f ? s_engine.last.battery_v : 8.0f;
-            ac_pack_spend(&s_pack, dt_h * (IDLE_3V3_MW / EFF_3V3 + REG_IQ_MA * pack_v));
+            ac_pack_spend(&s_pack, dt_h * ((s_engine.usb_present ? 0.0f : IDLE_3V3_MW / EFF_3V3)
+                                         + REG_IQ_MA * pack_v));
             s_co2.abc_ms += (uint32_t)((t - last_t) / 1000);
             unlock();
             last_t = t;

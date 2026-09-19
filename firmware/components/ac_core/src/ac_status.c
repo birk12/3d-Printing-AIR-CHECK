@@ -39,7 +39,7 @@ ac_led_pattern_t ac_status_pattern(const ac_engine_t *e, ac_led_event_t ev)
             return pat(AC_RGB_RED, 100, 400, 3000);      /* red blink = fault */
         if (e->state == AC_STATE_LOW_BATTERY ||
             e->state == AC_STATE_CRITICAL_BATTERY)
-            return pat(AC_RGB_YELLOW, 100, 400, 3000);   /* yellow blink = charge me */
+            return pat(AC_RGB_YELLOW, 100, 400, 3000);   /* yellow blink = change the cells */
         if (!e->warm)
             return pat(AC_RGB_WHITE, 500, 1000, 3000);   /* white pulse = warming up */
         if (!e->cfg.led_show_air_quality)

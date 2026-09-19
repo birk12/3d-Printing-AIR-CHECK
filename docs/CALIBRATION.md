@@ -17,29 +17,54 @@ sensor. It is a one-line rule in the code and it is worth keeping.
 
 | sensor | calibration |
 |---|---|
-| **SEN63C, particles** | factory calibrated; Sensirion calibrate the SEN6x's PM2.5 output to a TSI DustTrak DRX 8533 in ambient mode. No field calibration exists or is needed. Long-term drift is specified at up to 1.25 ug/m3 per year. |
-| **SEN63C, CO2** | factory calibrated, ±(100 ppm + 10 %) after 12 h of operation followed by fresh air. CO2 sensors drift, which is why the module has automatic self calibration (ASC). See below - this is the one that needs attention. |
-| **SEN63C, temperature and humidity** | factory calibrated, and compensated for the module's own self-heating by Sensirion's firmware ("STAR engine"). |
+| **SEN62, particles** | factory calibrated; Sensirion calibrate the SEN6x's PM2.5 output to a TSI DustTrak DRX 8533 in ambient mode. No field calibration exists or is needed. Long-term drift is specified at up to 1.25 ug/m3 per year. |
+| **Senseair Sunrise, CO2** | NDIR, ±(30 ppm + 3 %). CO2 sensors drift, which is why it runs automatic baseline correction (ABC). See below - this is the one that needs attention. |
+| **SHT40, temperature and humidity** | ±0.2 °C, ±1.8 %RH. Nothing to calibrate. |
 | **SGP40** | produces a *raw* signal; the VOC Index is computed on our side by Sensirion's algorithm, which self-calibrates continuously against the last 24 hours. There is nothing to calibrate. |
+
+## Altitude - set it once
+
+NDIR reads molecules per volume, so CO2 depends on air pressure: 1.6 % per
+kPa. The Sunrise takes a pressure value with every measurement. There is no
+barometer in the device, so the firmware computes the station pressure from
+the configured altitude (ISA formula):
+
+```bash
+python3 tools/configuration/aircheck_config.py --port ... set altitude_m 520
+```
+
+Range -400 to 4000 m, default 0. The boot log shows the result
+(`site 520 m = ... hPa`). Weather still moves the real pressure by about
+±2 kPa, which is about ±3 % of reading. That is the one known residual, and
+it is inside the sensor's own ±3 % term (EDR-16).
 
 ## CO2: self calibration, and the fallback
 
-The SEN63C's own **automatic self calibration (ASC)** is on by default, and
-the setting is stored inside the sensor. The firmware writes it at boot from
-`co2_self_calibration`, so the configuration is the single source of truth.
+The Sunrise's **ABC** is on by default: a 180 h period and a 425 ppm target,
+today's outdoor background. The sensor is switched off between measurements,
+so it cannot keep its own ABC state; the firmware does. After every
+measurement it reads the ABC and filter state, writes it back before the next
+one, and adds the hours that have passed to the ABC clock, as Senseair's
+integration guide requires. The state is stored in NVS (blob `sunrise`), so
+it survives a reboot and a battery change.
 
-ASC assumes what all CO2 self calibration assumes: **the room reaches
+`co2_self_calibration` switches ABC on or off. It lives in the sensor's
+EEPROM; the firmware writes it at boot and whenever the configuration
+changes, and only if it differs, so the configuration is the single source of
+truth.
+
+ABC assumes what all CO2 self calibration assumes: **the room reaches
 something close to outdoor air at least once a week**, and the sensor sees it.
-The open question for this device is the second half. In ECO the SEN63C runs
-40 s an hour, and Sensirion do not document whether ASC converges on so little
-running time. Until bench test B16 has answered that, treat the absolute CO2
-number with some suspicion and the relative one - "up 400 ppm while the
-printer ran" - with confidence.
+The Sunrise is built for this single-measurement duty cycle, unlike the
+SEN63C that v1.2 used (EDR-16). The host-held state has not yet been checked (TESTING T-S3, T-S7)
+on an assembled unit, so until it has, treat the absolute CO2 number with some
+suspicion and the relative one - "up 400 ppm while the printer ran" - with
+confidence.
 
 **v1.0 and v1.1 said the firmware implemented its own ASC. It did not**: the
 flag existed, no code used it. That text is gone.
 
-### Fresh-air calibration (forced recalibration)
+### Fresh-air calibration (target calibration)
 
 If the CO2 reading has drifted - a well-aired room that never reads below
 500 ppm, or two units that disagree by more than their spec - calibrate it
@@ -49,37 +74,38 @@ against outdoor air:
    people, cars and chimneys.
 2. Hold the button **8 to 12 seconds**. While you hold it the LED turns blue at
    3 s (pairing) and **cyan at 8 s: let go while it is cyan.**
-3. The LED blinks cyan slowly for three minutes while the SEN63C runs in the
-   fresh air, then shows **green** (done) or **fast red** (failed - usually the
-   sensor did not answer; try again).
+3. The LED blinks cyan slowly for up to four minutes: three ordinary
+   measurements a minute apart, so the sensor sits in the fresh air, then a
+   Senseair target calibration. Then it shows **green** (done) or **fast
+   red** (failed - the sensor did not answer or did not confirm the
+   calibration; try again).
 4. Bring it back in.
 
-The reference is 425 ppm, today's outdoor background. With a cable, the same
-thing is `aircheck_config.py frc 425`, or `co2 frc 425` on the console.
+The reference is 425 ppm. With a cable, the same thing is
+`aircheck_config.py frc 425`, or `co2 frc 425` on the console (400 to
+2000 ppm accepted).
 
 **Do not do this indoors.** You would calibrate the sensor to whatever the
 room happens to be, and every reading afterwards would be wrong by that much.
 
-### When to turn ASC off
+### When to turn ABC off
 
 Set `co2_self_calibration = false` if:
 
 * the room is genuinely never ventilated (a sealed basement, a grow tent)
 * the device lives somewhere with a permanently raised CO2 background
-* you calibrate with fresh air now and then and would rather ASC left it alone
+* you calibrate with fresh air now and then and would rather ABC left it alone
 
 ## Temperature and humidity
 
-The SEN63C compensates for its own heating, and in this case it sits against
-the outer wall, below everything else that could get warm, with its own air
-path. It runs 40 s an hour, so there is little self-heating to begin with.
-What it cannot know about is the case; if the reading is off against a
-thermometer you trust, note the offset. There is no offset setting yet - the
-SEN6x has one (`Set Temperature Offset Parameters`), and wiring it to the
-configuration is an open item, not a feature.
+The SHT40 sits low in the gas bay, next to the vents, furthest from the
+ESP32 and the Sunrise's lamp (EDR-17), and is read every 10 s (one
+measurement takes at most 8.3 ms). What it cannot know about is the case;
+if the reading is off against a thermometer you trust, note the offset.
+There is no offset setting.
 
-The SGP40's humidity compensation uses these values, so they matter beyond
-the temperature tile in Apple Home.
+The SGP40's humidity compensation uses these values with every sample, so
+they matter beyond the temperature tile in Apple Home.
 
 ## Baseline reset - "set room air as baseline"
 
@@ -104,7 +130,7 @@ the detector refuses to fire without a valid baseline, on purpose.
 
 ## What this device is not
 
-It is not a reference instrument and it is not a safety device. The SEN63C
+It is not a reference instrument and it is not a safety device. The SEN62
 is calibrated against a specific optical reference under specific conditions; the
 VOC Index is a relative indicator that cannot name a single chemical; the
 thresholds in this firmware are reporting thresholds chosen to be useful, not

@@ -9,8 +9,9 @@
    VPACK_F --> PS1 Pololu S9V11E2A (buck-boost) --> +4V0
    VPACK_F --R1 1M--+--R2 220k-- GND        PACK_ADC on GPIO3 (C1 100 nF)
 +4V0 --> D1 LM66200 (ideal diode, blocks reverse) --> VSYS --> FireBeetle BAT (J1)
-+4V0 --> Sunrise VBB, LED common anode
-USB-C --> FireBeetle CN3165 --> VSYS at 4.2 V: D1 blocks, the cells are never charged
+VSYS --> Sunrise VBB, LED common anode (spliced onto the J1 + lead)
+USB-C --> FireBeetle CN3165 --> VSYS at 4.2 V: D1 blocks, the cells are never charged;
+          the Sunrise and the LED then run from USB too
 VSYS --> FireBeetle TPS62A02 --> +3V3 (always on): ESP32-C6, SGP40, SHT40
 +3V3 --[SW1 Pololu #2810, ON = GPIO2]--> +3V3_SEN --> SEN62, R3/R4 pull-ups
 GPIO18 --> CO2_VDDIO --> Sunrise VDDIO, R5/R6 pull-ups  (EN = GPIO14, R7 pull-down)
@@ -80,8 +81,8 @@ Every net is one or more wires. Solder, then heat-shrink every joint.
 |---|---|
 | `VPACK` | BT1.+, F1.1 |
 | `VPACK_F` | F1.2, PS1.VIN, R1.1 |
-| `+4V0` | PS1.VOUT, D1.VIN1, U4.2, LED1.A |
-| `VSYS` | D1.VOUT, J1.+, M1.BAT+ |
+| `+4V0` | PS1.VOUT, D1.VIN1 |
+| `VSYS` | D1.VOUT, J1.+, M1.BAT+, U4.2, LED1.A |
 | `+3V3` | M1.3V3, SW1.VIN, U2.3V3, U3.VCC |
 | `+3V3_SEN` | SW1.VOUT, U1.1, U1.6, R3.1, R4.1 |
 | `GND` | BT1.-, PS1.GND, D1.GND, D1.VIN2, D1.ON, J1.-, M1.BAT-, M1.GND, SW1.GND, U1.2, U1.5, U2.GND, U3.GND, U4.1, U4.6, R2.2, C1.2, R7.2, SW2.2 |

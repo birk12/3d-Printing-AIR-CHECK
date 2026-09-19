@@ -61,8 +61,8 @@ discover from their electricity bill.
 
 ## 3. VOC rising, before particles do
 
-In ECO mode the device only samples particles once an hour, but VOC every
-ten seconds. VOC is the early warning.
+In ECO mode the device only samples particles once an hour (CO2 every five
+minutes), but VOC every ten seconds. VOC is the early warning.
 
 ```
 Automation: Home > "When VOC of 3D Printer rises above 160"
@@ -97,17 +97,19 @@ Apple Home can do this on its own, no Shortcut needed:
 
 ```
 When   Battery Level of [3D Printer] drops below 20 %
-Then   Send notification "AIR CHECK printer unit: 20 % left, about a month."
+Then   Send notification "AIR CHECK printer unit: 20 % left, buy six AA cells."
 ```
 
 ```
 When   Battery Level of [3D Printer] drops below 10 %
-Then   Send notification "AIR CHECK printer unit needs charging."
+Then   Send notification "AIR CHECK printer unit needs new cells."
        Turn on [a light]           (something you cannot ignore)
 ```
 
-At 20 % in ECO mode there really is about a month left, which is why the first
-notification can be calm.
+At 20 % in ECO mode there is still time left, which is why the first
+notification can be calm. Below 5 % the device stops measuring and
+reports over Matter that the cells need replacing. Nothing charges inside the device;
+the cells are swapped (EDR-18).
 
 ---
 

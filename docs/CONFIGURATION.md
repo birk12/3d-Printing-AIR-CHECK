@@ -3,7 +3,7 @@
 Nothing a user needs to change requires a firmware rebuild. Everything lives
 in one NVS blob with a CRC, and everything is range-checked on the device by
 `ac_config_validate()` before it is applied. The tool talks to a service
-console on the USB-C port, which only runs while the cable is in.
+console on the USB-C port, which only runs while a computer is connected.
 
 ```bash
 python3 tools/configuration/aircheck_config.py list
@@ -22,7 +22,7 @@ python3 tools/configuration/aircheck_config.py --port ... set name "3D Printer"
 
 | setting | default | |
 |---|---|---|
-| `default_mode` | `ECO` | what the device falls back to. `NORMAL` if it stands next to a printer and you will charge it every few weeks |
+| `default_mode` | `ECO` | what the device falls back to. `NORMAL` if it stands next to a printer and you will change the cells about every 5 weeks (L91) |
 
 The per-mode profiles are compiled defaults in
 `firmware/components/ac_core/src/ac_config.c`, not console settings - they
@@ -30,10 +30,14 @@ are the numbers the energy model is built on:
 
 | profile field | default | |
 |---|---|---|
-| `pm_interval_s` | ECO 1 h, NORMAL 15 min | how often the SEN63C runs; since v1.2 that is also the CO2, temperature and humidity cadence. ECO at 4 h (14400) is the seven-month setting |
-| `pm_window_s` | 40 s / 60 s | how long it runs. **Never below 30 s**: the SEN63C's CO2 output is "unknown" for the first 22-24 s, and the validator enforces the floor |
-| `voc_interval_s` | 10 s | clamped to 1-10 s, the range the Gas Index Algorithm is validated at |
-| `icd_slow_poll_s` | 15 s | clamped to 15 s, the Matter SIT ICD limit |
+| `pm_interval_s` | ECO 1 h, NORMAL 15 min, ACTIVE 2 min, POST_PRINT 5 min, CONTINUOUS 0 (always on) | how often the SEN62 runs. ECO at 2 h (7200) gives 5.6 months on L91 cells |
+| `pm_window_s` | 60 s | how long it runs. **Never below 60 s**: the first 30 s are discarded while the SEN62 settles, the rest is averaged; the validator enforces the floor |
+| `co2_interval_s` | 5 min; ACTIVE 2 min, CONTINUOUS 1 min | one Sunrise single measurement. Floor 60 s. Costs almost nothing: every 10 min instead of 5 makes no visible difference to the runtime |
+| `voc_interval_s` | 10 s; CONTINUOUS 1 s | SGP40, with the SHT40's temperature and humidity read just before it. Clamped to 1-10 s, the range the Gas Index Algorithm is validated at |
+| `icd_slow_poll_s` | 15 s; ACTIVE, POST_PRINT, CONTINUOUS 5 s | clamped to 15 s, the Matter SIT ICD limit. The energy model uses it; the firmware does not apply it at runtime - the radio polls at the 15 s set in `sdkconfig.defaults` |
+
+CONTINUOUS is used automatically while a computer is connected over USB; the
+cells are not charged meanwhile (EDR-18).
 
 Change any of these and re-run the energy model before believing the runtime:
 
@@ -85,21 +89,34 @@ configurable, on purpose.
 | setting | default | |
 |---|---|---|
 | `led_show_air_quality` | true | a short button press shows the air-quality colour for 3 s. Off: it only blinks green once, as a sign of life |
-| `battery_interval_s` | 300 s | how often the cell voltage is read (ADC, microseconds of work). Also how quickly a plugged-in USB cable is noticed |
+| `battery_interval_s` | 300 s | how often the pack voltage is read (60-3600 s). Also how quickly a connected computer is noticed |
 
 ## Battery
 
 | setting | default | |
 |---|---|---|
-| `low_battery_pct` | 20 % | reported to Apple Home as a warning. In ECO that really is about a month of life left |
-| `critical_battery_pct` | 5 % | measurement stops; only battery is still reported |
+| `cell_type` | `alkaline` | `alkaline`, `nimh` or `lithium` (Energizer L91 class): selects the voltage curve and the usable energy for the battery percentage. Set it to what is in the compartment |
+| `cells` | 6 | AA cells in series, 1-8. The holder takes 6 |
+| `low_battery_pct` | 20 % | 5-50 %. Reported to Apple Home as a warning |
+| `critical_battery_pct` | 5 % | 1-20 %. Measurement stops; only battery is still reported |
+
+The percentage is the lower of two estimates: the chemistry's voltage curve
+and an energy counter of what the firmware has spent. Fresh cells are
+recognised by their voltage jump and restart the counter; changing
+`cell_type` or `cells` restarts it too.
+
+## Site
+
+| setting | default | |
+|---|---|---|
+| `altitude_m` | 0 | -400 to 4000 m. The CO2 reading is compensated for air pressure computed from it (no barometer on board). See `docs/CALIBRATION.md` |
 
 ## Behaviour
 
 | setting | default | |
 |---|---|---|
 | `voc_publish_index_as_ppb` | true | publish the VOC Index as a Matter number. The unit is wrong and is documented as such - see `docs/MATTER.md`. Set false for no number rather than a mislabelled one |
-| `co2_self_calibration` | true | the SEN63C's own CO2 self calibration. Stored in the sensor; the firmware writes it at boot and whenever this changes. See `docs/CALIBRATION.md` |
+| `co2_self_calibration` | true | the Sunrise's ABC (180 h period, 425 ppm target). Stored in the sensor; the firmware writes it at boot and whenever the configuration changes, if it differs. See `docs/CALIBRATION.md` |
 
 ## Two units
 

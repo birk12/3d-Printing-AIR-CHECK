@@ -3,6 +3,54 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-09-19
+
+Measurements you can trust, a battery you cannot overcharge, and no circuit
+board to make. About EUR 160 in parts including the first set of cells.
+
+### Changed
+
+- **CO2 from a Senseair Sunrise** (NDIR, ±(30 ppm + 3 %)) every 5 minutes
+  instead of the SEN63C's hourly reading. The SEN63C's CO2 is only specified
+  in continuous operation, and its self-calibration never saves its state when
+  the module is power-cycled hourly (EDR-16). The Sunrise runs in
+  single-measurement mode with EN shutdown; the firmware keeps its ABC and
+  filter state across power cycles and adds the ABC hours itself. Pressure
+  compensation from the configured altitude.
+- **SEN62** replaces the SEN63C: particles only, 60 s windows with the first
+  30 s discarded (Sensirion's settling time), switched off by a Pololu #2810.
+- **Temperature and humidity from an SHT40** every 10 s (EDR-17), which also
+  compensates the SGP40 with a fresh value every sample.
+- **SGP40 always on** (SparkFun board, no regulator, LED jumper cut). VOC
+  keeps its exact 10 s grid while the SEN62 or the Sunrise are measuring.
+- **6 × AA instead of a LiPo** (EDR-18): Pololu S9V11E2A at 4.0 V, LM66200
+  ideal diode, PTC fuse. Nothing charges inside the device - the FireBeetle's
+  charger is blocked by the ideal diode. Energizer L91 recommended; NiMH and
+  alkaline work. Battery % per chemistry, fresh cells detected automatically.
+- **No custom PCB** (EDR-19): modules and ten inline resistors.
+- **Case 130 × 146 × 34 mm** with three zones: a battery compartment with its
+  own screwed door and pressure-relief slots, a walled gas bay (Sunrise,
+  SGP40, SHT40) with side and front vents and **no foam, tape or glue**, and
+  the electronics. Printed parts are baked out before assembly.
+- Sunrise bus on GPIO17/21, red LED on GPIO16 (the ROM boot log toggles
+  U0TXD).
+- ECO: **3.7 months** with margin on L91 (3.1 worst case), 2.2 on eneloop
+  pro, 2.1 on alkaline. The model now works in mWh per chemistry and counts
+  the regulator's quiescent current.
+- Matter Power Source: Battery + Replaceable, 6 × AA, BatReplacementNeeded.
+
+### Added
+
+- Settings `cell_type`, `cells`, `altitude_m`.
+- ERC checks that the cells can never be charged, that every inline part is
+  where the netlist says, and that the firmware's pin table matches the wiring.
+- OpenSCAD collision checks over every module, post and zone.
+
+### Removed
+
+- The ACC-1 carrier board, the LiPo, the battery cover, the button cap,
+  `ECO_LONG`.
+
 ## [1.2.0] - 2026-09-18
 
 Cost-down: about EUR 95 in parts instead of EUR 173, with every measurement

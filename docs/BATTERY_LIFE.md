@@ -221,11 +221,14 @@ ECO on L91 cells, with margin (baseline 3.7 months):
 | dashboard reads | **assumption**: 96 a day at 10 poll-equivalents each |
 
 Nothing here has been measured on an assembled AIR CHECK. Measure first
-(TESTING.md, T-E1..T-E3), with a PPK2 in the pack lead:
+(TESTING.md, T-E0..T-E3) - the regulator's quiescent current with a µA meter
+in the pack lead, everything else with a PPK2 in the 4.0 V line (its
+ammeter mode stops at 5 V, below the pack voltage):
 
+0. **Regulator quiescent**, output unloaded: < 0.2 mA per Pololu.
 1. **Idle floor**, SEN62 off, Thread attached. The model says about
-   2.8 mW at 8.7 V (≈ 0.33 mA from the pack), of which the regulator is the
-   biggest part.
+   2.8 mW at the cells (≈ 0.33 mA at 8.7 V), of which the regulator's
+   quiescent current is the biggest part.
 2. **One full ECO hour**, SEN62 window included: model 8.4 mWh.
 3. **One SEN62 window** on its own: model 5.5 mWh at the cells.
 

@@ -216,9 +216,8 @@ PARTS: list[Part] = [
         pins={"VIN": "input 2-16 V (3 V to start)", "GND": "ground",
               "VOUT": "output 2.5-9 V (trimpot)", "EN": "enable, 100k pull-up to VIN"},
         why="Turns 5.4-10.8 V from the pack into a steady 4.0 V - what the "
-            "FireBeetle expects on its battery input, and a supply for the Sunrise "
-            "and the LED. Buck-boost, so the whole pack is usable. EN stays open "
-            "(on). Set the trimpot before connecting anything (ASSEMBLY step 2).",
+            "FireBeetle expects on its battery input. Buck-boost, so the whole pack is usable. EN stays open "
+            "(on). Set the trimpot before connecting anything (ASSEMBLY step 4).",
         price_eur=6.50, supplier="Eckstein / Pololu",
         nc=("EN",),
         vsupply_min=3.0, vsupply_max=16.0, i_max_ma=1700.0,
@@ -271,7 +270,7 @@ PARTS: list[Part] = [
     _r("R6", "10 k", "Sunrise SCL pull-up, across pins 3 and 5."),
     _r("R7", "100 k", "Sunrise EN pull-down: EN must never float (PSP12440), also not "
                      "while the ESP32 is in reset."),
-    _r("R8", "1 k", "Red: (4.0 V - 2.0 V) / 1k = 2.0 mA."),
+    _r("R8", "1 k", "Red: (4.0 V - 2.0 V) / 1k = 2.0 mA (2.2 mA on USB, 4.2 V)."),
     _r("R9", "330", "Green: (4.0 V - 3.1 V) / 330 = 2.7 mA."),
     _r("R10", "330", "Blue: as green."),
     # ---- user interface ----------------------------------------------------
@@ -280,7 +279,7 @@ PARTS: list[Part] = [
          pins={"A": "common anode", "R": "red cathode", "G": "green cathode",
                "B": "blue cathode"},
          why="The only output: air quality at a glance, pairing, calibration, low "
-             "battery. Anode on +4V0 for green/blue headroom; cathodes sunk by GPIOs.",
+             "battery. Anode on VSYS for green/blue headroom; cathodes sunk by GPIOs.",
          price_eur=1.20, supplier="Mouser / Adafruit"),
     Part(ref="LH1", value="LED panel holder 5 mm, M8 x 0.75", mfr="Signal Construct",
          mpn="SMR1089", footprint="8.2 mm hole", pins={},
@@ -320,8 +319,8 @@ NETS: dict[str, list[tuple[str, str]]] = {
     # ---- power path ---------------------------------------------------------
     "VPACK":     [("BT1", "+"), ("F1", "1")],
     "VPACK_F":   [("F1", "2"), ("PS1", "VIN"), ("R1", "1")],
-    "+4V0":      [("PS1", "VOUT"), ("D1", "VIN1"), ("U4", "2"), ("LED1", "A")],
-    "VSYS":      [("D1", "VOUT"), ("J1", "+"), ("M1", "BAT+")],
+    "+4V0":      [("PS1", "VOUT"), ("D1", "VIN1")],
+    "VSYS":      [("D1", "VOUT"), ("J1", "+"), ("M1", "BAT+"), ("U4", "2"), ("LED1", "A")],
     "+3V3":      [("M1", "3V3"), ("SW1", "VIN"), ("U2", "3V3"), ("U3", "VCC")],
     "+3V3_SEN":  [("SW1", "VOUT"), ("U1", "1"), ("U1", "6"), ("R3", "1"), ("R4", "1")],
     "GND":       [("BT1", "-"), ("PS1", "GND"), ("D1", "GND"), ("D1", "VIN2"),
@@ -499,7 +498,7 @@ def run_erc() -> Erc:
 
     # 4. supply-voltage compatibility
     supply_of = {"U1": ("1", "+3V3_SEN"), "U2": ("3V3", "+3V3"), "U3": ("VCC", "+3V3"),
-                 "U4": ("2", "+4V0"), "PS1": ("VIN", "VPACK_F"), "D1": ("VIN1", "+4V0"),
+                 "U4": ("2", "VSYS"), "PS1": ("VIN", "VPACK_F"), "D1": ("VIN1", "+4V0"),
                  "SW1": ("VIN", "+3V3"), "M1": ("BAT+", "VSYS")}
     for ref, (pin, railname) in supply_of.items():
         p = PARTS_BY_REF[ref]
@@ -530,6 +529,8 @@ def run_erc() -> Erc:
             "D1: ON low (enabled) and VIN2 at GND so VIN1 always feeds VOUT")
 
     # 7. current: regulator, switch, fuse
+    # everything hangs off +4V0 through D1: the 3.3 V loads via the FireBeetle's
+    # buck, the Sunrise and the LED directly on VSYS
     load_4v0_ma = ((PARTS_BY_REF["U1"].i_max_ma + ESP_TX_PEAK_MA
                     + PARTS_BY_REF["U2"].i_max_ma) * 3.3 / (0.9 * 4.0)
                    + PARTS_BY_REF["U4"].i_max_ma + 3 * 3.0)
@@ -619,7 +620,7 @@ def run_erc() -> Erc:
 
     # 11. LED: on when sunk, off when the GPIO is high
     for c in "RGB":
-        e.check(RAILS["+4V0"].vmax - RAILS["+3V3"].vmin < LED_VF[c],
+        e.check(RAILS["VSYS"].vmax - RAILS["+3V3"].vmin < LED_VF[c],
                 f"LED {c} would glow with its GPIO high")
 
     return e
@@ -666,8 +667,9 @@ def netlist_markdown() -> str:
     w("   VPACK_F --> PS1 Pololu S9V11E2A (buck-boost) --> +4V0")
     w("   VPACK_F --R1 1M--+--R2 220k-- GND        PACK_ADC on GPIO3 (C1 100 nF)")
     w("+4V0 --> D1 LM66200 (ideal diode, blocks reverse) --> VSYS --> FireBeetle BAT (J1)")
-    w("+4V0 --> Sunrise VBB, LED common anode")
-    w("USB-C --> FireBeetle CN3165 --> VSYS at 4.2 V: D1 blocks, the cells are never charged")
+    w("VSYS --> Sunrise VBB, LED common anode (spliced onto the J1 + lead)")
+    w("USB-C --> FireBeetle CN3165 --> VSYS at 4.2 V: D1 blocks, the cells are never charged;")
+    w("          the Sunrise and the LED then run from USB too")
     w("VSYS --> FireBeetle TPS62A02 --> +3V3 (always on): ESP32-C6, SGP40, SHT40")
     w("+3V3 --[SW1 Pololu #2810, ON = GPIO2]--> +3V3_SEN --> SEN62, R3/R4 pull-ups")
     w("GPIO18 --> CO2_VDDIO --> Sunrise VDDIO, R5/R6 pull-ups  (EN = GPIO14, R7 pull-down)")

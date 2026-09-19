@@ -17,13 +17,13 @@ believed.
 
 | area | status | evidence |
 |---|---|---|
-| measurement core logic | SIMULATED, 509 checks | `firmware/test/host/test_ac_core.c` |
-| status LED logic | SIMULATED | part of the 509; every pattern and its timing |
-| battery percentage from voltage | SIMULATED | part of the 509; curve, charge state, no-climb tracking |
+| measurement core logic | SIMULATED, 529 checks | `firmware/test/host/test_ac_core.c` |
+| status LED logic | SIMULATED | part of the 529; every pattern and its timing |
+| battery percentage from the AA pack | SIMULATED | part of the 529; per-chemistry curves, energy counter, fresh cells detected |
 | energy model | BUILD-VERIFIED | `tools/battery_calculator/model.py`, inputs traced to datasheets |
-| electrical design | BUILD-VERIFIED | 460 rule checks in `electronics/schematic/design.py`, and the checker was shown to catch injected faults |
-| enclosure | BUILD-VERIFIED | OpenSCAD asserts, an intersection check of every part against every other, and `tools/diagnostics/stl_check.py`: all parts manifold, 2.0 % overhang on the front shell |
-| firmware build | BUILD-VERIFIED | full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6: 1.68 MB image (15 % free in the OTA slot), 210 kB DIRAM (46.5 %) |
+| electrical design | BUILD-VERIFIED | 510 rule checks in `electronics/schematic/design.py`, one standing warning (T-P3) |
+| enclosure | BUILD-VERIFIED | OpenSCAD asserts over every module, post and zone, and `tools/diagnostics/stl_check.py`: all four parts manifold, 1.1 % overhang on the front shell |
+| firmware build | BUILD-VERIFIED | full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6: 1.69 MB image (14 % free in the OTA slot), 210 kB DIRAM (46.5 %) |
 | sensor drivers | **untested** | register addresses and timings read from datasheets |
 | Matter attribute IDs in DASHBOARD_INTERFACE.md | BUILD-VERIFIED | checked against the Matter SDK's generated `AttributeIds.h` / `ClusterId.h` |
 | Thread / Matter / Apple Home | **untested** | no controller has ever seen this device |
@@ -38,20 +38,20 @@ cc -std=c99 -Wall -Wextra -O1 -Ifirmware/components/ac_core/include \
    -lm -o /tmp/ac_test && /tmp/ac_test
 ```
 
-509 checks in about 20 ms. What they cover:
+529 checks in about 10 ms. What they cover:
 
 | area | examples |
 |---|---|
-| config | defaults are self-consistent; every profile gives the SEN63C at least the 30 s its CO2 output needs; a corrupted blob is rejected rather than half-applied; out-of-range values are clamped and counted |
+| config | defaults are self-consistent; every profile gives the SEN62 its 30 s start-up plus at least 30 s averaged; the CO2 interval leaves room for a 32-sample Sunrise measurement; the SIT ICD slow poll stays at or under 15 s; a corrupted blob is rejected rather than half-applied; out-of-range values (window, cell type, altitude) are clamped and counted |
 | filters | the EMA reaches 63 % of a step after one time constant and gives the same answer at 6 x 10 s as at 1 x 60 s; least-squares slope recovers a known ramp; spike detection refuses to fire without enough samples |
 | baseline | converges on a steady room; a frozen baseline does not learn the event; a reset adopts the current air; an implausible stored baseline is rejected on restore; no baseline means no delta rather than a fake one |
 | air quality | the worst channel decides; two channels at the same level are both named; a steep rise escalates GOOD but never further; nothing measured is UNKNOWN, not GOOD |
 | events | ordinary room noise never triggers; a single spike arms but does not confirm; a short dip does not end an event; the completed record carries the right peaks and durations; nothing can trigger without a baseline |
 | history | a spike survives aggregation in the max field; the ring wraps without corrupting; trends are right for a ramp and for a flat room |
-| engine | a cold engine measures immediately but publishes nothing; warm-up ends after the SGP40's documented 60 s; ECO schedules the SEN63C one hour out and nothing else asks for CO2; an event escalates to ACTIVE; USB switches to continuous, which keeps the SEN63C running between windows; critical battery stops measuring; a dead SEN63C does not stop the VOC channel; both dead is an ERROR; no weekly fan cleaning; publishing is driven by change, not by the clock; factory reset restores every default |
-| status LED | dark in normal operation; a press shows the air-quality colour for exactly 3 s; pairing blinks blue and times out with the commissioning window; warm-up, low battery, critical battery and fault each have their own pattern; the unprompted critical-battery blip stays under 50 ms per 10 s; holding the button shows blue / cyan / red at 3 / 8 / 12 s and nothing past 20 s; calibration blinks cyan for longer than its 3 min run, then green or red |
+| engine | a cold engine measures immediately but publishes nothing; warm-up ends after the SGP40's documented 60 s; ECO over two hours gives exactly 2 SEN62 windows, 24 CO2 shots and 720 VOC samples; VOC keeps its 10 s grid through a 60 s particle window; an event escalates to ACTIVE; USB switches to continuous, which keeps the SEN62 running between windows; critical battery stops measuring; a dead SEN62 does not stop the other channels; SEN62, Sunrise and SGP40 all dead is an ERROR; publishing is driven by change, not by the clock; factory reset restores every default |
+| status LED | dark in normal operation; a press shows the air-quality colour for exactly 3 s; pairing blinks blue and times out with the commissioning window; warm-up, low battery, critical battery and fault each have their own pattern; the unprompted critical-battery blip stays under 50 ms per 10 s; holding the button shows blue / cyan / red at 3 / 8 / 12 s and nothing past 20 s; calibration blinks cyan for longer than its 3 min settling, then green or red |
 | 24 h statistics | no history means no value, not zero; a one-minute spike survives into the 24 h peak; a 1 h window ending before the spike does not see it; the bucket in progress is included |
-| battery | the voltage curve is monotonic and clamped, a NaN from a dead ADC reads 0 %; the low (20 %) and critical (5 %) points sit on the steep part; the reported value never climbs back on battery, but a freshly charged cell and charging are followed |
+| AA pack | every cell curve (alkaline, NiMH, L91) is monotonic and clamped, a NaN from a dead ADC reads 0 %; flat L91 cells are carried by the energy counter; a voltage near the end wins over an optimistic counter; the value never climbs on noise, but fresh cells reset it |
 
 The suite was checked against a deliberately injected bug (inverting one
 air-quality comparison) to confirm it fails when it should.
@@ -62,48 +62,69 @@ air-quality comparison) to confirm it fails when it should.
 python3 electronics/schematic/design.py
 ```
 
-460 checks: every pin exists on its part and every pin of every part is
-connected, no net has one connection, no pin is on two nets, every supply is
-within its part's range and the part really sits on that rail, logic levels
-cross correctly, I2C addresses are unique per bus, each bus has exactly one
-pull-up pair **on the switched rail that powers its devices**, the SGP40 bus
-sits on the only pads the C6's LP_I2C can use, the net list and the GPIO map
-agree on every MCU pin, no strapping pin is used, every load switch is on an
-LP GPIO, has a CT capacitor that keeps its inrush under 100 mA and has QOD
-tied to VOUT, the USB sense divider gives a valid high without exceeding the
-pad, the LED anode is on VBAT, the charge current is a sane C-rate.
+```
+ERC: 510 checks, 0 error(s), 1 warning(s)
+  WARN  SW1 has no soft start: the SEN62's switch-on step lands on the FireBeetle's 3.3 V buck - verify on the bench (TESTING T-P3)
+```
 
-Checked against injected faults (a pull-up moved to the always-on rail, QOD
-left floating, the SEN63C bus moved to another GPIO, the LED anode moved to
-3.3 V, a CT capacitor removed): each one is caught.
+What the 510 cover: every pin exists on its part and every pin of every part
+is connected or declared open, no net has one connection, no pin is on two
+nets, every supply is within its part's range and the part really sits on
+that rail, the pack reaches nothing except through the PTC fuse, **nothing
+can charge the cells** (the LM66200 is the only link between +4V0 and VSYS,
+its ON and VIN2 are grounded, and the charger's 4.2 V is far enough above
++4V0 for it to block), the regulator, the #2810 and the fuse carry their
+loads with margin, the pack divider stays inside the ADC range, I2C
+addresses are unique, each switched bus has exactly one pull-up pair on the
+rail that powers its devices and the LP bus uses the modules' own, the
+Sunrise's VDDIO shares GPIO18 with its pull-ups, COMSEL is grounded and EN
+has its pull-down, the LP bus is on GPIO6/7, no strapping pin is used, only
+an LED sits on GPIO16, the net list, the GPIO map and the firmware's
+`AC_PIN_` table agree, and no LED glows with its GPIO high.
 
-What the ERC could **not** catch are the bugs in EDR-11 and EDR-14: the
-Feather's pull-ups on a switched regulator, and the LDO and LED on the sensor
-breakouts. In both cases a board was modelled as a black box from its product
-page, and only its actual schematic showed otherwise. The rule check is only
-as good as the facts fed into it - which is why the FireBeetle and the SGP40
-breakout in v1.2 were modelled from their vendors' schematics.
+The one warning stands on purpose: the Pololu #2810 has no soft start, and
+whether the SEN62's switch-on step upsets the FireBeetle's 3.3 V is a bench
+measurement, not a rule (T-P3).
+
+What the ERC cannot catch is a module that differs from what was fed into it
+(EDR-11, EDR-14: in both cases a board was modelled from its product page and
+only its schematic showed otherwise). In v1.3 every module was modelled from
+its vendor's drawings and board files; the Grove SHT40 and the Sunrise's pin
+rows are not published and are measured before printing (T-M1, T-M2).
 
 ### Enclosure
 
 ```bash
-openscad -o /tmp/f.stl cad/openscad/aircheck_case.scad -D 'part="front"'
-python3 tools/diagnostics/stl_check.py cad/stl/aircheck_front.stl
+for p in front back door stand; do
+  openscad -o /tmp/$p.stl cad/openscad/aircheck_case.scad -D "part=\"$p\""
+  python3 tools/diagnostics/stl_check.py /tmp/$p.stl --build 250x210x220
+done
 ```
 
-The OpenSCAD model asserts on every render: the FireBeetle stack clears the
-battery cover, the SEN63C fits the depth with its gasket, its ports give at
-least Sensirion's minimum open area (108 and 227 mm² against 56 and 148) and
-every port slot lands on its port face below the lap joint, nothing - battery
-bay, cover skirt, carrier - enters the space behind the SEN63C's connector,
-the carrier and its notch clear the screw posts, no screw post or keyhole hits
-anything, the gas bay does not reach the SEN63C, and the LED and button sit
-over the carrier clear of the FireBeetle. On top of that, every part was
-intersected with every other in the assembly (front shell, lid, battery
-cover, carrier, FireBeetle, SEN63C and its plug keep-out, SGP40, cell): the
-only contacts are the designed zero-volume ones, and the one real collision
-this found (the cover skirt against two screw posts) is fixed. The STL
-checker reports mesh closure, bounding box, mass and overhang area.
+The OpenSCAD model asserts on every render. Each module is a box in the
+model (holder with cells, SEN62 and its plug keep-out, SHT40, SGP40, Sunrise
+and its filter clearance, FireBeetle and its solder side, the #2810, the
+S9V11E2A, the LM66200, LED holder, button, USB-C plug), and:
+
+* no two of them overlap, every one is inside the case, and each sits in its
+  zone - Sunrise, SGP40 and SHT40 in the gas bay, the holder in the battery
+  compartment, everything else in the electronics zone;
+* no lid post or door post hits any of them;
+* the SEN62 cradle clears the posts, its ports get at least Sensirion's
+  minimum open area (108 and 226.8 mm² against 56 and 148), every port row
+  lands on the port face below the lap joint;
+* the Sunrise keeps 1.0 mm to the walls and 1.5 mm from its filter to the lid
+  (ANO4947), the SHT40 is clear of its neighbours, every gas-bay vent is
+  inside the bay and the bay has at least 200 mm² open;
+* there is room over the cells for the door lip, the partition core is at
+  least 1.6 mm, the lead notch opens into neither the gas bay nor the SEN62,
+  and the lid / door split sits over the partition;
+* LED, button, USB-C opening and keyholes stay clear of the gas bay; walls are
+  at least four extrusions; no insert pocket breaks through the front face;
+  no bridge is longer than 12-13 mm.
+
+The STL checker reports mesh closure, bounding box, mass and overhang area
+(front shell 1.1 %, lid 1.0 %, door and stand 0.8 %).
 
 ### Firmware build
 
@@ -116,6 +137,8 @@ idf.py set-target esp32c6 build
 Result:
 
 ```
+v1.3  aircheck.bin 0x19bb30 bytes, 0x444d0 (14 %) free in the 0x1e0000 app slot
+      DIRAM 210 208 bytes used (46.5 %)
 v1.2  aircheck.bin 0x199770 bytes, 0x46890 (15 %) free in the 0x1e0000 app slot
       DIRAM 210 084 bytes used (46.47 %)
 v1.1  aircheck.bin 0x192160 bytes, 0x4dea0 (16 %) free in the 0x1e0000 app slot
@@ -136,42 +159,99 @@ Cross-compiling found five bugs the host compiler and the host tests did not:
 None of these were findable without an actual cross-compile, which is the
 argument for doing one even when no hardware exists to run it on.
 
-## Bench tests, before the case is closed
+## Before printing
 
-These need hardware and are the first thing to do once you have it.
+Two parts have no published drawing. Measure them before the case is
+printed; if a number differs, change it in `cad/openscad/aircheck_params.scad`
+and re-render - the asserts re-check the gas bay.
 
 | # | test | pass |
 |---|---|---|
-| B1 | flash and boot | the banner appears, no panic, no reset loop |
-| B2 | FireBeetle parts | before soldering: the JST PH socket is no taller than 6.0 mm (`FB_TOP_PARTS`), the underside is flat enough for a 2.5 mm header spacer, the board is hardware v1.2 (36 µA) |
-| B3 | SEN63C present | the boot log prints its serial number and "CO2 self calibration on" |
-| B4 | SEN63C window | fan audible for ~40 s an hour; PM plausible, a puff of smoke moves it; CO2 400-600 ppm in a ventilated room and over 1500 after breathing at the inlet; the log shows CO2 as a number, not -1 (window long enough) |
-| B5 | SGP40 self test | the boot log does not say "SGP40 init failed" (the init runs the 0xD400 self test) |
-| B6 | SGP40 with a pulsed rail | breathing on it moves the raw signal and the index follows within a minute; compare an hour against the same breakout on a permanently powered rail (`CONTINUOUS` on USB): the index must track |
-| B7 | status LED | white at boot, all three colours on a press, blue when pairing, readable through the 0.6 mm skin in daylight |
-| B8 | button | short, long (3-8 s), calibrate (8-12 s) and very long all do the right thing, and the hold colour matches; over 20 s does nothing |
-| B18 | service console | with USB in, `aircheck_config.py get` lists the settings, `set name ...` changes the Matter NodeLabel, `diag` shows live values; on battery, the console is not running |
-| B9 | battery voltage | the logged voltage agrees with a multimeter at the cell within 30 mV; the percentage falls across a day and never climbs back on battery |
-| B10 | charging | the FireBeetle's charge LED comes on, USB_SENSE reads high, the log shows CHARGING, it switches to CONTINUOUS and keeps measuring; unplugged, the SEN63C stops within one loop |
-| B11 | rails | both switched rails really are 0 V between measurements (QOD), and +3V3 does not dip below 3.2 V when either switch turns on (CT capacitors) |
-| B12 | **quiescent current** | with a PPK II: the idle floor, both rails off, Thread attached. This is the number the whole battery claim rests on. The model says about 70 µA (39 µA C6 floor + 29 µA board + switches). Anything near 150 µA or more: look for a powered LED or a pin back-feeding a rail |
-| B13 | sleep/wake | the device survives a night; uptime and history are continuous |
-| B14 | watchdog | hold a sensor line low; the device recovers rather than hanging |
-| B15 | NVS | reboot; baseline and history come back |
-| B16 | **CO2 self calibration** | a week in ECO beside a reference CO2 meter, with the room aired daily: the SEN63C's ASC must hold within its ±(100 ppm + 10 %). If it drifts, run a forced recalibration outdoors (`docs/CALIBRATION.md`) and repeat |
-| B17 | SEN63C window current | a PPK II on one 40 s window: replaces the datasheet's "after 60 s" figure in the model |
+| T-M1 | Grove SHT40 board | outline 40 × 20 mm and parts no taller than 2.5 mm (`SHT_L`, `SHT_W`, `SHT_PARTS`); the fence is built on these |
+| T-M2 | Sunrise | body 33.5 × 19.7 × 11.5 mm and the two pin rows 30.48 mm apart (`SR_L`, `SR_W`, `SR_H`, `SR_PIN_PITCH_ROWS`); the rows come from a third-party footprint, not from Senseair's drawing 740-00993 |
+| T-M3 | FireBeetle | the JST PH socket is no taller than 4.8 mm (`FB_TOP_PARTS`), the joints and wires underneath fit the 5 mm standoff, the board is hardware v1.2 (36 µA) |
+| T-M4 | first print | the checks in `manufacturing/print-settings.md`: lid and door drop in, the SEN62 slides into its cradle, every port and vent slot is open with a clean roof, the SHT40 sits snug in its fence and the Sunrise between its guides, LED holder and button fit their holes |
+
+## Bench tests, before the case is closed
+
+These need hardware and are the first thing to do once you have it. Unless a
+test says otherwise, run it on cells with USB unplugged: with a computer on
+USB the device switches to CONTINUOUS and the FireBeetle feeds VSYS itself.
+
+### Power
+
+| # | test | pass |
+|---|---|---|
+| T-P1 | regulator set | the S9V11E2A reads **4.00 V ± 0.03 V** on its own, from the cells through the fuse, **before anything is connected to it** (ASSEMBLY step 4). Above 4.2 V the FireBeetle is out of its rating |
+| T-P2 | **cells never charged** | cells in, a computer on USB, an ammeter (or the PPK2) in the pack lead: current only ever flows out of the pack, never into it - also while the SEN62 switches and the Sunrise measures. VSYS (FireBeetle BAT) reads about 4.2 V on USB and about 4.0 V without. Repeat with NiMH cells if you use them |
+| T-P3 | **SEN62 switch-on dip** | a scope on the FireBeetle's 3.3 V while the #2810 switches the SEN62 on: the rail stays at or above 3.20 V (NETLIST.md), the ESP32-C6 does not reset, and the SGP40/SHT40 reading taken during the window succeeds. This is the ERC's standing warning; the #2810 has no soft start |
+| T-P4 | rails | +3V3_SEN is off between windows and 3.2-3.4 V during one; the #2810's slide switch is in OFF; GPIO18 (Sunrise VDDIO) and GPIO14 (EN) are high only during a Sunrise measurement, and GPIO17/21 are quiet while EN is low; the red LED only flickers during boot (GPIO16 is U0TXD) |
+| T-P5 | battery voltage | `diag` shows the AA pack voltage; it agrees with a multimeter across the pack (note the difference - the 1M/220k divider multiplies any ADC error by 5.5); with `cell_type` set, the percentage falls across a day and never climbs back on battery; fresh cells bring it back near 100 |
+| T-P6 | USB | a computer on USB: the log shows `state CHARGING, mode CONTINUOUS` (the state name is historical - nothing charges) and the SEN62 runs continuously; unplugged, it stops within one loop. A USB charger or power bank does **not** switch the mode: only an enumerated USB host counts, on purpose |
+
+### Firmware and controls
+
+| # | test | pass |
+|---|---|---|
+| T-B1 | flash and boot | the banner `3D Printing AIR CHECK 1.3.0` appears, no panic, no reset loop |
+| T-B2 | status LED | white at boot, all three colours on a press, blue when pairing, readable in daylight in its panel holder |
+| T-B3 | button | short, long (3-8 s), calibrate (8-12 s) and very long all do the right thing, and the hold colour matches; over 20 s does nothing |
+| T-B4 | service console | with USB in, `aircheck_config.py get` lists the settings, `set name ...` changes the Matter NodeLabel, `diag` shows live values and the health of all four sensors; on battery, the console is not running |
+| T-B5 | sleep/wake | the device survives a night; uptime and history are continuous |
+| T-B6 | watchdog | hold a sensor line low; the device recovers rather than hanging |
+| T-B7 | NVS | reboot; baseline, history, the pack's energy counter and the Sunrise state come back |
+
+### Sensors
+
+| # | test | pass |
+|---|---|---|
+| T-S1 | SEN62 | the boot log prints `SEN62 <serial>`; the fan runs 60 s an hour in ECO; each window logs `window 60s: PM2.5 ... averaged over ... s`, about 30 s averaged after 30 s discarded; a puff of smoke at the left-wall ports moves PM |
+| T-S2 | Sunrise, single measurement | the boot log shows `configuration OK: single mode, 32 samples, ABC on (180 h, 425 ppm)` (on the very first boot `EEPROM configuration updated ... sensor reset` instead, once); `sunrise: CO2 ... ppm (... hPa)` every 5 min in ECO; plausible in a well-aired room (400-600 ppm), clearly up after breathing at the gas-bay vents |
+| T-S3 | Sunrise ABC state across power cycles | run for more than 30 min (the state goes to flash every 30 min), then take a cell out and put it back: no EEPROM update at boot, and the readings carry on where they left off. The log does not show the restored state itself - this path is the least verified in the driver |
+| T-S4 | altitude / pressure | the boot line reads `site 0 m = 1013 hPa`; after `set altitude_m 520` the CO2 lines show about 952 hPa. Compared with a barometer's station pressure, the difference is weather (about ±2 kPa, ±3 % of the CO2 reading) |
+| T-S5 | fresh-air calibration | outdoors, hold the button 8-12 s and let go on cyan: the LED blinks cyan, the log shows `fresh-air CO2 calibration to 425 ppm: 3 min settling first`, three `settling:` lines, `target calibration to 425 ppm: done` and `CO2 calibrated to 425 ppm (it read ...)`, then green for 2 s. A failure is fast red and `NOT confirmed`. `co2 frc 425` on the console does the same |
+| T-S6 | SGP40 and SHT40 in the gas bay | no `SGP40 init failed` (the init runs the 0xD400 self test) and no `SHT40 not responding`; the SparkFun PWR LED is dark (jumper cut); `diag` shows temperature and humidity every 10 s; against a reference thermometer beside the closed device, note the offset - there is no offset setting |
+| T-S7 | **CO2 over a week** | a week in ECO beside a reference CO2 meter, the room aired daily: agreement within the Sunrise's ±(30 ppm + 3 %) plus the weather term. If it drifts, run a fresh-air calibration (T-S5) and repeat |
+
+### Gas bay, with the lid on
+
+| # | test | pass |
+|---|---|---|
+| T-G1 | **pen test** | open a felt-tip or whiteboard marker near the gas-bay vents (right side seen from the front, and the front face): the VOC index rises within about a minute. If it does not, the bay is not seeing room air |
+| T-G2 | bake-out | after assembly, in a room that does not change, the VOC index settles and stays near 100 instead of drifting over days. A slow drift after closing the case points at unbaked parts or something in the bay that emits (`manufacturing/print-settings.md`) |
+| T-G3 | leak check | the bay's walls meet the lid ribs over their full length; the three cables pass over the bay wall where a rib closes over them without lifting it; nothing in the bay is taped, glued or foamed |
+
+### Energy
+
+The battery claim rests on a model (`docs/BATTERY_LIFE.md`). These replace
+its least certain lines with measurements. Cells in, USB unplugged, Thread
+attached. The PPK2's ammeter mode only works up to 5 V, so it cannot sit in
+the 5.4-10.8 V pack lead: put it in the **4.0 V line between the regulator's
+VOUT and the LM66200's VIN1** (everything the device draws, at 4.0 V), and
+measure the regulator's own share separately (T-E0).
+
+| # | test | model | pass |
+|---|---|---|---|
+| T-E0 | **regulator quiescent**: 4.0 V output disconnected, a multimeter on its µA range in the pack lead (it then sees the regulator plus the 1.22 MΩ pack divider) | < 0.2 mA + 7 µA (Pololu, divider) | recorded; above 0.2 mA the ECO runtime drops as in BATTERY_LIFE.md "What would change these numbers" |
+
+| T-E1 | **idle floor**: SEN62 off, averaged between two windows (VOC samples, Sunrise shots and Thread polls included) | about 1.1 mW at 4.0 V, i.e. the 2.8 mW at the cells minus the regulator's quiescent share (T-E0) | recorded, and fed back into `model.py`. Well above the model: look for the #2810's slide switch in ON, the SparkFun LED jumper not cut, the FireBeetle's green LED (GPIO15), or a pin back-feeding an unpowered sensor |
+| T-E2 | **one full ECO hour**, SEN62 window included | 8.4 mWh at the cells = about 5.5 mWh at 4.0 V plus the regulator's losses and T-E0 | recorded; this is the number the 3.7 months rests on |
+| T-E3 | **one SEN62 window** on its own | 5.5 mWh at the cells, about 4.7 mWh at 4.0 V | recorded; replaces the datasheet figure |
+
+If the regulator's quiescent current comes in worse than Pololu's "< 0.2 mA",
+a particle window every 2 h recovers it without any hardware change.
 
 ## Network tests
 
 | # | test | pass |
 |---|---|---|
-| N1 | commissioning | the QR code scans, the device joins Thread, it appears in Apple Home |
-| N2 | attributes | PM2.5, PM10, CO2, VOC, temperature, humidity and battery all appear |
-| N3 | reporting | a change at the sensor reaches the Home app within about 15 s |
-| N4 | reconnect | power-cycle the HomePod; the device re-attaches on its own |
-| N5 | offline | unplug the border router; the device keeps measuring and its history keeps filling |
-| N6 | automation | an Apple Home threshold automation fires |
-| N7 | factory reset | 12 s press; the device leaves the fabric and re-advertises |
+| T-N1 | commissioning | the QR code scans, the device joins Thread, it appears in Apple Home |
+| T-N2 | attributes | PM2.5, PM10, CO2, VOC, temperature, humidity and battery all appear; the battery shows as replaceable, 6 × AA |
+| T-N3 | reporting | a change at the sensor reaches the Home app within about 15 s |
+| T-N4 | reconnect | power-cycle the HomePod; the device re-attaches on its own |
+| T-N5 | offline | unplug the border router; the device keeps measuring and its history keeps filling |
+| T-N6 | automation | an Apple Home threshold automation fires |
+| T-N7 | factory reset | 12 s press; the device leaves the fabric and re-advertises |
 
 ## Physical validation protocol
 
@@ -216,11 +296,11 @@ the same thing.
 
 | # | test | pass |
 |---|---|---|
-| T1 | both commission independently | no pairing step exists between them |
-| T2 | both appear in Apple Home | as two separate accessories |
-| T3 | independent names and rooms | renaming one does not touch the other |
-| T4 | both report | values differ when the air differs |
-| T5 | no interference | putting them 10 cm apart changes nothing |
-| T6 | both usable in one automation | the Shortcuts recipes in `docs/SHORTCUTS.md` |
-| T7 | one offline | removing one does not affect the other |
-| T8 | identical firmware | the same binary on both, no per-unit build |
+| T-D1 | both commission independently | no pairing step exists between them |
+| T-D2 | both appear in Apple Home | as two separate accessories |
+| T-D3 | independent names and rooms | renaming one does not touch the other |
+| T-D4 | both report | values differ when the air differs |
+| T-D5 | no interference | putting them 10 cm apart changes nothing |
+| T-D6 | both usable in one automation | the Shortcuts recipes in `docs/SHORTCUTS.md` |
+| T-D7 | one offline | removing one does not affect the other |
+| T-D8 | identical firmware | the same binary on both, no per-unit build |

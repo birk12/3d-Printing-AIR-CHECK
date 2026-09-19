@@ -433,7 +433,7 @@ three configurations TI allow, so the v1.1 wiring was legal but misnamed.
 
 ---
 
-## EDR-15: one SEN63C and a FireBeetle, instead of SPS30 + SCD41 + Feather
+## EDR-15: one SEN63C and a FireBeetle, instead of SPS30 + SCD41 + Feather — *sensor and power parts superseded by EDR-16..18 in v1.3*
 
 **Decision (2026-09-18).** Replace the SPS30, the SCD41 breakout, the 5 V
 boost converter and the Adafruit Feather with a **Sensirion SEN63C** (PM1 to
@@ -495,4 +495,192 @@ windows. The SEN66 is also EUR 63, more than SEN63C + SGP40.
 **Energy.** ECO comes out at 29.6 mAh/day, **3.2 months with margin** at the
 SEN63C's typical current and 2.7 months if every window drew the datasheet
 maximum (`docs/BATTERY_LIFE.md`).
+
+---
+
+## EDR-16: CO2 from a Senseair Sunrise, not from the SEN63C
+
+**Decision (2026-09-19).** Measure CO2 with a **Senseair Sunrise
+006-0-0008** (NDIR, ±(30 ppm + 3 %)) in single-measurement mode every 5
+minutes. Replace the SEN63C by the **SEN62**, which is the same particle
+sensor without the CO2 and T/RH parts.
+
+**Why.** "Shit in, shit out": the SEN63C's CO2 number cannot be trusted in a
+battery device that power-cycles it.
+
+* The SEN6x datasheet (v0.92, section 1.5) makes the CO2 specification
+  conditional on **continuous operation** with ASC on and fresh air once a
+  week. v1.2 ran the module 40 s an hour.
+* The STCC4 inside it (STCC4 datasheet, 1.1.2-1.1.4) stores its ASC state at
+  most every **2 hours of continuous operation**, needs up to **1 hour** of
+  operation after a longer power-off to reach its accuracy, and restarts its
+  first-save timer when it is power-cycled within the first hour. With a
+  1-minute window per hour the ASC state is never saved; the self-calibration
+  never converges.
+* The alternative - keeping the SEN63C running - costs 80 mA continuously and
+  empties any battery in days.
+
+The Sunrise is built for exactly this duty cycle. In single-measurement mode
+it is switched off with its EN pin between measurements, and the host reads
+its ABC (automatic baseline correction) state and filter state after each
+measurement and writes them back before the next one (TDE5531 registers
+0xC4-0xDB; `ac_hal/src/sunrise.c`). The ABC keeps working across power
+cycles because the state lives in the ESP32's flash, not in the sensor. The
+host adds one to the ABC time register for every hour that passes, as
+Senseair's integration guide requires. A measurement costs 1.60 mC
+(TDE7318): at 5 minutes that is 0.6 mWh a day, invisible in the budget.
+
+**Pressure.** NDIR reads molecules per volume: 1.6 % per kPa (PSP12440). The
+Sunrise accepts a pressure value with every measurement. There is no
+barometer on board, so the firmware computes the station pressure from the
+configured altitude (`altitude_m`, ISA formula). Weather moves the real
+pressure by about ±2 kPa - ±3 % of reading. That is the one known residual,
+and it is inside the sensor's own ±3 % term. A barometer can be added later
+on the same always-on bus without changing anything else.
+
+**Calibration.** ABC with a 180 h period and a 425 ppm target (register
+0x9A, 0x9E; 425 is the 2026 outdoor background), on by default. A target
+calibration at fresh air is available from the button (hold 8-12 s) and
+from the service console (`co2 frc 425`). CALIBRATION.md has both.
+
+**What it costs.** EUR 49 (Mouser, EUR 41.18 net) - the most expensive part.
+The SEN62 is EUR 13 cheaper than the SEN63C, so the change costs about
+EUR 36.
+
+**Rejected.** SCD41/SCD43 in idle single-shot (about 11 mAh/day at 5 min per
+Sensirion's low-power note, and the same ASC duty-cycle caveat), Senseair
+Sunlight (lower power, but no EU distributor price could be confirmed),
+Cubic CM1106SL-NS (±(50 ppm + 5 %)).
+
+---
+
+## EDR-17: temperature and humidity from an SHT40, the gas bay without adhesives
+
+**Decision (2026-09-19).** Temperature and humidity come from a **Sensirion
+SHT40** (Seeed Grove board), read every 10 s together with the SGP40, on the
+always-on LP I2C bus. The SEN62's own T/RH is not used. Nothing inside the
+gas bay is glued, taped or foamed.
+
+**Why.** The SEN6x T/RH are compensated for a module that runs continuously;
+power-gated for 60 s an hour, the reading comes from a module that has just
+warmed its own fan and laser. The SHT40 (±0.2 °C, ±1.8 %RH) draws 1.2 µA idle
+and feeds the SGP40's humidity compensation with a fresh value every sample,
+which the VOC algorithm needs.
+
+**The gas bay.** Sunrise, SGP40 and SHT40 share a walled bay in the lower
+right corner (seen from the front), vented through the side wall and the
+front face (1094 mm² open area). Rules, from Sensirion's handling
+instructions for its gas sensors and Senseair's ANO4947:
+
+* no foam, tape, glue, potting or silicone anywhere in the bay - all emit
+  VOCs for months and poison the SGP40's baseline; the boards sit in printed
+  fences and on screws;
+* the SHT40 sits low, next to the vents, furthest from the ESP32 and the
+  Sunrise's lamp;
+* the Sunrise keeps ≥1.5 mm from its filter and ≥1.0 mm from its housing to
+  anything; its pins hang free beside a printed pedestal;
+* the bay is closed from the rest of the device by printed walls that meet
+  ribs on the lid (0.2 mm gap, no gasket);
+* the printed parts are baked at 50-60 °C for 24 h before assembly, so PETG
+  residual volatiles are gone before the SGP40 learns its baseline
+  (`manufacturing/print-settings.md`);
+* a pen test (TESTING.md) checks that the bay sees room air within a minute.
+
+The SEN62's gasket (EPDM) stays: it is outside the gas bay, and it seals the
+particle sensor's own flow path, not the gas bay.
+
+---
+
+## EDR-18: six AA cells, nothing is charged inside the device
+
+**Decision (2026-09-19).** Run from **6 × AA** in a screwed compartment
+(MPD BH36AAW holder), through a **PTC fuse**, a **Pololu S9V11E2A**
+buck-boost set to 4.0 V and an **LM66200 ideal diode** into the FireBeetle's
+battery input. Recommended cells: **Energizer Ultimate Lithium L91**. NiMH
+(eneloop pro) and alkaline also work. Nothing charges inside the device.
+
+**Why.** The requirement: the highest German/EU fire and safety standards.
+The v1.2 pouch LiPo was charged inside a 3D-printed case, by a charger
+(CN3165) whose temperature input is tied to ground on the FireBeetle -
+there is no cell temperature monitoring. That is legal for a hobby build but
+it is the one part of the device that can start a fire.
+
+* **No in-device charging** removes the charge-fault scenarios entirely.
+  With USB plugged in the FireBeetle's charger holds its battery input at
+  4.2 V; the LM66200 blocks any current back towards the regulator as soon as
+  the output is more than 70 mV above its input (TI SLVSG04), and 4.2 V is
+  0.1-0.3 V above the 4.0 V rail. The cells can never be charged, not even
+  the rechargeable ones. ERC check 6 in `design.py` guards this.
+* **Primary lithium-iron-disulfide cells** (L91) are the most benign
+  chemistry in the list: 1.5 V, no charging, UN 38.3 tested, no leaking.
+  NiMH cells are charged outside, in a charger made for them.
+* **Energy limit.** The PTC (Bourns MF-R050) limits a short circuit
+  downstream of the holder to 1 A (trip), and the pack itself cannot deliver
+  much more than 9 V × a few amps. The whole device stays within IEC 62368-1
+  power-source class **PS1** territory (≤ 15 W) for any fault after the
+  fuse, which needs no fire enclosure. For a clear margin under PS1 at a
+  fresh 10.8 V pack, the MF-R030 (0.3 A hold, 0.6 A trip) is the stricter
+  choice; the load (70 mA sustained, 0.5 A peaks for milliseconds) fits
+  either - verify its trip time before swapping.
+* **Separation.** The compartment is walled off from the electronics and
+  the gas bay by a 4 mm partition to the lid, with one 6 × 6 mm lead notch,
+  and it has its own pressure-relief slots in the bottom wall so a venting
+  cell cannot pressurise the case.
+* **Tool-secured door**, two M2.5 screws: coin cells are not involved, but
+  a child should not get at six AA cells either.
+
+**Standards this touches (for a private build):** IEC 62133-2 and UN 38.3
+apply to the cells, and are the manufacturers' job - buy branded cells from
+a regular shop. EU Battery Regulation 2023/1542 applies to whoever places a
+battery-powered product on the market; a private build is not placed on the
+market. Should the device ever be sold, a CE/EMC/RED assessment would be
+needed anyway (the ESP32-C6 module is RED-certified, the device is not).
+
+**Rejected.** LiFePO4 32700 (3.2 V, safe chemistry, but needs a charger and a
+self-printed holder; ~3 months), power banks (they switch off at low load -
+most below 50-100 mA - and are Li-ion again), 1.5 V Li-ion AA with USB-C
+(regulated 1.5 V hides the state of charge; ~2.3 Wh measured; not
+recommended, still works).
+
+**Cost in runtime.** L91: 3.7 months ECO with 25 % margin; NiMH 2.2; alkaline
+2.1 (`docs/BATTERY_LIFE.md`). The regulator's < 0.2 mA quiescent current is
+about a fifth of the ECO budget - the price of an off-the-shelf module.
+
+---
+
+## EDR-19: no custom circuit board
+
+**Decision (2026-09-19).** v1.3 has no custom PCB. Every electronic part is a
+finished module; the ten resistors and one capacitor that remain are
+through-hole parts soldered at a module's pins under heat shrink
+(`electronics/schematic/NETLIST.md`, "Inline parts").
+
+**Why.** A first-spin board has errors, and each respin is weeks of waiting.
+The v1.2 carrier existed for two load switches, pull-ups and a connector; all
+of that now comes on modules:
+
+| function | module | size (mm) | mounting |
+|---|---|---|---|
+| controller | DFRobot FireBeetle 2 ESP32-C6 (DFR1075) | 60 × 25.4 | 4 × M2 on posts |
+| PM | Sensirion SEN62 | 55.2 × 25.6 × 21.3 | cradle + side-wall gasket |
+| CO2 | Senseair Sunrise 006-0-0008 | 33.5 × 19.7 × 11.5 | pedestal + guides |
+| VOC | SparkFun SGP40 (SEN-18345) | 25.4 × 25.4 | 4 × M2.5 on posts |
+| T/RH | Seeed Grove SHT40 (101021032) | 40 × 20 | fence |
+| SEN62 switch | Pololu #2810 | 15.24 × 15.24 | pocket |
+| regulator | Pololu S9V11E2A (#5719) | 10.9 × 16.5 | pocket |
+| ideal diode | Adafruit LM66200 (#5830) | 16.51 × 10.16 | 2 × M2 on posts |
+| cells | MPD BH36AAW, 6 × AA | 110 × 49.5 × 17.8 | 4 × M2.5 on bosses |
+| LED | 5 mm RGB in a Signal Construct SMR1089 holder | Ø8 hole | panel nut |
+| button | Reichelt T 250A | Ø7 hole | panel nut |
+
+Positions and pin rows are from the manufacturers' drawings and board files
+(FireBeetle dimension PDF, Pololu drawing, Adafruit and SparkFun `.brd`,
+PSP12440). Two are not published and are marked for measurement before
+printing: the Grove SHT40's hole pattern (hence the fence), and the
+Sunrise's drawing 740-00993 (the pin rows come from a third-party footprint).
+
+**Pin choice that fell out of it.** GPIO16 is the ESP32-C6's U0TXD, and the
+ROM boot log toggles it after every reset. The Sunrise must see no signal on
+its bus while EN is low (TDE7318), so the Sunrise bus moved to GPIO17/21 and
+the red LED went to GPIO16, where the boot log only makes it flicker.
 

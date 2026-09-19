@@ -24,12 +24,14 @@ gh auth refresh -h github.com -s workflow
 
 | job | what it checks |
 |---|---|
-| core-tests | the 466 host checks over the measurement core, with `-Werror` |
-| electrical | the 344 rule checks, and that the generated files are in step with `design.py` |
+| core-tests | the 529 host checks over the measurement core, with `-Werror` |
+| electrical | the 510 rule checks - including that nothing can charge the AA cells and that the firmware's pin table matches the wiring - and that the generated files (`NETLIST.md`, `docs/BOM.md`) are in step with `design.py` |
 | energy-model | re-runs the model and **fails if ECO stops clearing three months with margin** |
-| enclosure | renders every part (which runs the OpenSCAD asserts) and checks each STL is manifold, fits the bed and stays under the overhang limit |
+| enclosure | renders all four parts (front, back, door, stand), which runs the OpenSCAD asserts over every module, post and zone, and checks each STL is manifold and fits a 250 × 210 bed (more than 8 % overhang is a warning, not a failure) |
 | firmware | placeholder - building esp-matter in CI needs a prepared image |
 
 The energy-model job is the interesting one: it makes the headline battery
 claim a build-breaking assertion rather than a sentence in a README that
-quietly goes stale.
+quietly goes stale. The ERC's one standing warning (no soft start on the
+SEN62's switch, bench test T-P3) is a warning, not an error, so it does not
+fail the job.

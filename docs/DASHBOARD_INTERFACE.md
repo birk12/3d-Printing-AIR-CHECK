@@ -74,7 +74,7 @@ subscription.
 - **Keep the subscription the server sets up.** Apple Home already holds one;
   a second subscriber means one extra report per attribute change. Changes
   are already rate-limited by the deadbands below. That is roughly the same
-  traffic as the 15-minute reads the energy model budgets (0.33 mAh/day), and
+  traffic as the 15-minute reads the energy model budgets (1.4 mWh/day), and
   well inside the margin.
 
 ## What to read
@@ -87,9 +87,13 @@ All values are standard clusters on four endpoints. No vendor extensions.
 |---|---|---|---|---|
 | Basic Information `0x0028` | NodeLabel | `0x0005` | string ≤ 32 | **the device name** ("3D Printer", "Room"). Use this to label tiles. Apple Home's own names are not visible to a second fabric. |
 | Power Source `0x002F` | BatPercentRemaining | `0x000C` | uint8, **half-percent** (0–200) | divide by 2 |
-| Power Source | BatVoltage | `0x000B` | uint32, mV | |
-| Power Source | BatChargeLevel | `0x000E` | enum8 | 0 OK, 1 Warning (≤ 20 %), 2 Critical (≤ 5 %) |
-| Power Source | BatChargeState | `0x001A` | enum8 | 1 charging, 2 full, 3 not charging |
+| Power Source | BatVoltage | `0x000B` | uint32, mV | pack voltage, six cells in series |
+| Power Source | BatChargeLevel | `0x000E` | enum8 | 0 OK, 1 Warning (≤ 20 %), 2 Critical (< 5 %) |
+| Power Source | BatReplacementNeeded | `0x000F` | bool | true at Critical: change the cells |
+| Power Source | BatReplacementDescription | `0x0013` | string | "6 x AA (alkaline, NiMH or lithium)" |
+| Power Source | BatQuantity | `0x0019` | uint8 | 6 |
+
+There is no BatChargeState: nothing is charged inside the device (EDR-18).
 
 ### Endpoint 1: air quality
 
@@ -128,13 +132,18 @@ not zero. Show "—". A null means "not measured yet", never "clean air".
 |---|---|---|
 | PM1 / PM2.5 / PM10 | **every 60 min** | every 2 min |
 | VOC index | every 10 s | every 10 s |
-| CO₂, temperature, humidity | every 60 min | every 2 min |
+| CO₂ | every 5 min | every 2 min |
+| temperature, humidity | every 10 s | every 10 s |
 | battery | every 5 min | every 5 min |
 
-Since v1.2 CO₂, temperature and humidity come from the same SEN63C window as
-the particles, so they update together. The battery percentage is derived
-from the cell voltage (no fuel gauge): trust it to about ±10 % in the middle
-of the range, better near full and empty.
+Since v1.3 each quantity has its own sensor and its own clock: particles from
+the SEN62, CO₂ from the Senseair Sunrise, temperature and humidity from the
+SHT40 together with the VOC sample. In NORMAL, particles come every 15 min;
+CO₂ stays at 5 min. With a computer on the USB-C port the device runs
+CONTINUOUS (particles continuously, CO₂ every minute). The battery percentage is the lower of a voltage-curve
+estimate for the configured cell type and an energy counter; with lithium
+cells, whose voltage curve is flat, the counter carries most of it. It is a
+model, not a fuel gauge.
 
 The sensor switches to ACTIVE by itself when VOC or PM rises above its
 baseline, and back afterwards via POST_PRINT (45 min). So a stale PM value in
@@ -159,7 +168,8 @@ poll**. Its parent router holds any message for it until it next wakes up.
 - **Reading is better than subscribing** for a dashboard that sleeps.
   Holding a subscription means staying on Wi-Fi. If the dashboard is on mains
   power, subscribe with a max interval of a few minutes instead.
-- **Every 15 min is plenty.** PM only changes hourly in ECO anyway.
+- **Every 15 min is plenty.** PM only changes hourly in ECO and CO₂ every
+  5 min; temperature and humidity move slowly.
 - If a mains-powered controller sits in between (the Raspberry Pi case above),
   let *it* talk Matter and let the battery display fetch rendered pages. The
   display then never has to wait out the sensor's 15 s poll.
@@ -167,10 +177,10 @@ poll**. Its parent router holds any message for it until it next wakes up.
 ### What it costs the sensor
 
 The sensor's energy model already includes a dashboard reading **every 15
-minutes**, costing about 10 fast polls per read: **0.33 mAh/day, about 1 % of
-the budget**. At every 5 minutes it would be about 1 mAh/day, which is still
-acceptable. Continuous polling every few seconds is not: it would keep the
-sensor's radio in active mode.
+minutes**, costing about 10 fast polls per read: **1.4 mWh/day, under 1 % of
+the ECO budget**. At every 5 minutes the runtime drops by about 2 %, which is
+still acceptable. Continuous polling every few seconds is not: it would keep
+the sensor's radio in active mode.
 
 ## What is *not* available over Matter
 
