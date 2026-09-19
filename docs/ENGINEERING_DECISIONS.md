@@ -779,7 +779,8 @@ below. EDR-18 and EDR-20 no longer apply; the AA power block is gone.
 ```
 USB-C socket (Adafruit #6050) -> Adafruit #6091 (TI BQ25185) DC input
 4 x AER18650m2A2 in 2 x Keystone 1049 -> PICO II 2 A per cell -> HY2112 BMS
-   -> #6091 BAT (P- = system GND; NTC 103AT-2 in the middle of the pack -> TH)
+   -> #6091 BAT (P- = system GND; NTC 103AT-2 on the cell next to the
+   charger chamber -> TH)
 #6091 LOAD (3.0-3.65 V on the cells, 4.5 V on USB) -> Pololu S9V11E2A 3.90 V
    -> LM66200 (VIN2 and ON to GND) -> FireBeetle battery input (VSYS)
 ```
@@ -787,7 +788,8 @@ USB-C socket (Adafruit #6050) -> Adafruit #6091 (TI BQ25185) DC input
 * **#6091 settings:** VS jumper to **3.65 V** (LFP; the factory setting is
   4.2 V - measure before the first cell goes in), IS **1 A**, TH jumper
   opened and the NTC fitted.
-* **Why the S9V11E2A stays:** LOAD is 3.0-3.35 V on the cells. The
+* **Why the S9V11E2A stays:** LOAD is 3.0-3.65 V on the cells (4.5 V on
+  USB-C); on the plateau 3.0-3.35 V. The
   FireBeetle's buck would then leave its 3.3 V rail below the SEN62's
   3.15 V minimum. At a fixed 3.90 V everything behind the FireBeetle's
   battery input is unchanged, including the LM66200 that blocks the
@@ -818,6 +820,22 @@ time with CHG_N "charging" in the current USB session counts towards the
 output, then back to input (`ac_battery_ce`). If the fault was really the
 NTC (hot/cold), the pulse does no harm: the BQ25185 keeps blocking through
 TS and its timer stands still.
+
+**Battery review P1-P4 (2026-09-19).** The charger chamber has 345.6 mm²
+of vents in the bottom wall and 345.6 mm² high in the side wall (≥ 300 mm²
+each, asserted in the CAD) for about 1.5-1.8 W at 1 A; the device has to
+stand upright while charging (chimney), and O3 measures the IC and the cell
+next to the chamber (< 70 °C at the IC). The NTC moved to that cell, the
+warmest one. The first, planned timer restart is not published as a fault;
+only a second timer run in the same session is (`BatReplacementNeeded`).
+Charge faults go out as the Power Source `BatChargeFaultChange` event
+(SafetyTimeout; for a recoverable fault AmbientTooCold/Hot where the SHT40's
+room temperature says so, else Unspecified) - not as `ActiveBatChargeFaults`:
+the SDK's Power Source server only serves `EndpointList` itself and
+esp-matter marks the list as managed internally, so nothing would answer it.
+The ERC declares both holders and all four fuses as parts and checks every
+cell path, `PACK_B+`, `CELL_B-` and `VCELL` against their complete expected
+sets.
 
 **Critical cells.** On the cells at the critical level (3.10 V) the device
 sends a last report, switches everything off and goes into deep sleep with a

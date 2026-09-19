@@ -149,7 +149,7 @@ AIR CHECK has been built. What *has* been done:
 | | |
 |---|---|
 | measurement core | 528 host checks plus the Power-Standard's `pwr_std` tests, run on every build |
-| electrical design | 710 automated rule checks over the wiring list, incl. fuse per cell → BMS → charger, P− = GND, the FireBeetle's charger blocked from the cells, SEN62 rail ≥ 3.15 V over the whole battery range, GPIO levels, firmware pin table = wiring |
+| electrical design | 748 automated rule checks over the wiring list, incl. fuse per cell → BMS → charger, P− = GND, the FireBeetle's charger blocked from the cells, SEN62 rail ≥ 3.15 V over the whole battery range, GPIO levels, firmware pin table = wiring |
 | enclosure | OpenSCAD asserts: every module against every other, every post, every zone; manifold check; fits a 250 × 210 bed |
 | firmware | full ESP-IDF + esp-matter build for esp32c6: 1.69 MB, 14 % OTA headroom |
 | Matter attribute IDs | checked against the Matter SDK's generated headers |

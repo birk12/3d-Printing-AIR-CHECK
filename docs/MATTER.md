@@ -114,7 +114,7 @@ external power the device enters no low or critical battery state, but
 | `BatChargeLevel` | 0 OK, 1 Warning (below 3.20 V, about 10 %), 2 Critical (below 3.10 V, about 6 %; measuring stops), with 0.05 V hysteresis |
 | `BatChargeState` | 0 Unknown, 1 IsCharging, 2 IsAtFullCharge (also during the charge pause), 3 IsNotCharging. **IsCharging marks the window in which temperature and humidity may read a little high** (charger heat, 0.85–1.7 W); nothing is compensated |
 | `BatFunctionalWhileCharging` | true |
-| `BatReplacementNeeded` | true on a latched charger fault: the safety timer ran out twice in one USB session, or an ISET / over-current fault. Unplug and replug USB-C; if it recurs, see `docs/TROUBLESHOOTING.md` |
+| `BatReplacementNeeded` | true on a latched charger fault: the safety timer ran out twice in one USB session (the first, planned restart is not reported), or an ISET / over-current fault. Unplug and replug USB-C; if it recurs, see `docs/TROUBLESHOOTING.md` |
 | `BatReplaceability` | 2 UserReplaceable - two screws on the battery door, see `docs/ASSEMBLY.md` |
 | `BatReplacementDescription` | "4 x AER18650m2A2 LiFePO4, all at once" |
 | `BatQuantity` | 4 |
@@ -226,3 +226,17 @@ the device.
   reachable through the FireBeetle's USB-C, so it needs physical access
 * the device is read-only over Matter: every attribute it exposes is a
   measurement, and nothing a controller writes changes what it measures
+
+### Charge faults (event)
+
+The battery's Power Source cluster on endpoint 0 sends the
+`BatChargeFaultChange` event (Power Source event 0x02) whenever the charger's
+fault state changes: `current` holds SafetyTimeout (0x0A) after a second
+timer run in one USB session, AmbientTooCold (0x02) / AmbientTooHot (0x01) for
+a recoverable fault when the SHT40 reads ≤ 5 °C / ≥ 40 °C, otherwise
+Unspecified (0x00) - the PWR-K interface cannot tell an NTC too-cold from a
+too-hot fault or from input over-voltage. An empty `current` list means the
+fault has cleared. `ActiveBatChargeFaults` is not provided: the SDK's Power
+Source server only serves `EndpointList`, and esp-matter marks the list
+attribute as managed internally, so nothing would answer a read.
+

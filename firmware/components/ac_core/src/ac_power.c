@@ -49,6 +49,9 @@ ac_power_out_t ac_power_update(ac_power_t *p, float vbat, const float ladder_v[2
     if (pwr_timer_retry(&p->pwr, &o.st, vbat)) {
         o.ce = AC_CE_PULSE;
         p->chg_accum_s = 0;                      /* a new 6 h window */
+        /* The first, expected timer run is not a fault: nothing is broken.
+         * Only a timer run after the retry is published as LATCHED. */
+        o.st.fault = PWR_FLT_NONE;
     } else if (pwr_hold_update(&p->pwr, &o.st, vbat, now_s)) {
         o.ce = AC_CE_HOLD;
     }

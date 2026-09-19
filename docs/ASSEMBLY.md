@@ -14,7 +14,7 @@ PARTS -> PRINT + BAKE -> SET UP THE POWER MODULE -> WIRE -> FLASH -> INTO THE CA
 
 The wiring list, the pin map and where each inline part goes are in
 [`electronics/schematic/NETLIST.md`](../electronics/schematic/NETLIST.md).
-That file is generated from `design.py` and checked by 710 rules; if this
+That file is generated from `design.py` and checked by 748 rules; if this
 guide and the netlist ever disagree, the netlist wins.
 
 The power system is the Power-Standard's **module C** (EDR-21): LiFePO4
@@ -292,8 +292,9 @@ depending on the cells); unplug the computer, then the charger -
    (bottom left seen from the front, bottom right seen from the back) on its
    four posts with M2.5 self-tappers, the **BMS** strip into its fence above
    it. The cell leads pass through the notch in the chamber wall. **NTC:**
-   the bead with a layer of Kapton onto holder 1's inner cell (the one next
-   to holder 2) - the door's finger will hold it there, not the wire.
+   the bead with a layer of Kapton onto holder 2's outer cell (the one next
+   to the charger chamber, the warmest) - the door's finger will hold it
+   there, not the wire.
 2. **SEN62.** Stick an EPDM frame around each of the two windows on its port
    face (one round both inlets, one round the outlet). This is the one
    gasket in the device, and it is outside the gas bay. Slide the SEN62 into

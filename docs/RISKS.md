@@ -160,8 +160,9 @@ exception: a damaged or hot device or a deformed cell is not charged
   PS-1.2/1.3) and labelled "LFP 3,65 V".
 * **Safety timer.** The BQ25185 stops charging after 6 h. 1S4P needs 8–9 h
   from flat, so the firmware restarts the timer once per USB session (one CE
-  pulse, at most 12 h of charging); a second timer fault stays and is
-  reported (`BatReplacementNeeded`). PWR-K cannot tell the timer from a
+  pulse, at most 12 h of charging) without reporting a fault; a second timer
+  fault stays and is reported (`BatReplacementNeeded`, `BatChargeFaultChange`
+  event). PWR-K cannot tell the timer from a
   recoverable fault; a fault after at least 5.5 h of charging is taken for the
   timer, and a CE pulse during a real NTC or overvoltage fault is harmless -
   the charger stays paused by its own logic.
@@ -242,7 +243,7 @@ exception: a damaged or hot device or a deformed cell is not charged
 * `ac_core` - the scheduling, filtering, baseline, classification, event
   detection, history, 24 h statistics, LED logic and the power module's
   decisions (PWR-K decoding, charge pause, safety-timer restart) - is covered
-  by 528 host checks that run on every build, plus the Power-Standard's own
+  by 537 host checks that run on every build, plus the Power-Standard's own
   `pwr_std` test.
 * `ac_hal` - the actual sensor drivers - is **not covered by any automated
   test**. It cannot be, without hardware. Every register address, command

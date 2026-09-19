@@ -93,7 +93,7 @@ All values are standard clusters on five endpoints. No vendor extensions.
 | Power Source | BatVoltage | `0x000B` | uint32, mV | cell voltage (four cells in parallel) |
 | Power Source | BatChargeLevel | `0x000E` | enum8 | 0 OK, 1 Warning (below 3.20 V, about 10 %), 2 Critical (below 3.10 V, about 6 %; the sensor stops measuring) |
 | Power Source | BatChargeState | `0x001A` | enum8 | 0 Unknown, 1 **IsCharging**, 2 IsAtFullCharge (also during the charge pause), 3 IsNotCharging |
-| Power Source | BatReplacementNeeded | `0x000F` | bool | true on a latched charger fault (the safety timer ran out twice, or an ISET / over-current fault): show it as a fault - unplug and replug USB-C, then `docs/TROUBLESHOOTING.md` |
+| Power Source | BatReplacementNeeded | `0x000F` | bool | true on a latched charger fault (the safety timer ran out twice - the first, planned restart is not reported; or an ISET / over-current fault): show it as a fault - unplug and replug USB-C, then `docs/TROUBLESHOOTING.md` |
 | Power Source | BatReplacementDescription | `0x0013` | string | "4 x AER18650m2A2 LiFePO4, all at once" |
 | Power Source | BatQuantity | `0x0019` | uint8 | 4 |
 
@@ -262,3 +262,11 @@ been built yet. The first time a dashboard reads a sensor, check in this
 order: NodeLabel, one MeasuredValue, one PeakMeasuredValue, battery, both
 Power Sources' `Status` with and without a charger in the sensor's USB-C
 socket, and `BatChargeState` while it charges.
+
+## Charge faults
+
+Subscribe to the Power Source event `BatChargeFaultChange` (endpoint 0,
+cluster 0x002F, event 0x02) to learn why the cells do not charge: SafetyTimeout
+(0x0A), AmbientTooCold (0x02), AmbientTooHot (0x01) or Unspecified (0x00); an
+empty `current` list means cleared (`docs/MATTER.md`, "Charge faults").
+

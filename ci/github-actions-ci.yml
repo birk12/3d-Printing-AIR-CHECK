@@ -7,7 +7,7 @@ on:
 
 jobs:
   core-tests:
-    name: measurement core (528 checks) + pwr_std
+    name: measurement core (537 checks) + pwr_std
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +27,7 @@ jobs:
           ./pwr_test
 
   electrical:
-    name: electrical rule check (710 checks)
+    name: electrical rule check (748 checks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

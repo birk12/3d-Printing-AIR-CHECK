@@ -10,7 +10,7 @@ components/pwr_std/    the Power-Standard's LFP module (C99), copied unchanged
 components/ac_hal/     ESP-IDF drivers: SEN62, Sunrise, SGP40, SHT40, the VBAT_S / PWR-K / VSYS ADC, CE, LED, button, NVS
 components/sensirion_gas_index/   vendored VOC Index algorithm (BSD-3)
 main/                  app_main.cpp and the Matter data model
-test/host/             528 checks plus the pwr_std test, run on a workstation
+test/host/             537 checks plus the pwr_std test, run on a workstation
 ```
 
 The split is the point: `ac_core` decides what happens and when, `ac_hal`
@@ -60,7 +60,7 @@ cc -std=c99 -Wall -Wextra -Werror -Icomponents/pwr_std/include \
 /tmp/pwr_test
 ```
 
-528 checks, about 20 ms, then `all tests passed` from `pwr_std`. See
+537 checks, about 20 ms, then `all tests passed` from `pwr_std`. See
 `docs/TESTING.md` for what they cover.
 
 ## Power (1.4.0)

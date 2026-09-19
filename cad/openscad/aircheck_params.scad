@@ -121,8 +121,10 @@ CHG_NOTCH_W       =   8.0;
 // vents: compartment pressure relief, charger chamber through-flow
 BATC_VENT_W       =   8.0;
 BATC_VENT_H       =   1.6;
-CHG_VENT_W        =   6.0;
-CHG_VENT_H        =   1.6;
+CHG_VENT_W        =   8.0;   // bottom-wall slots, along X (bridged roof)
+CHG_VENT_SW       =   6.0;   // side-wall slots, along Y (bridged roof)
+CHG_VENT_H        =   2.4;
+CHG_VENT_MIN_MM2  = 300.0;   // per side: ~1.5-1.8 W of charger heat (battery review P1)
 
 // ---------- lid screw posts (upper zone corners) -------------------------
 POST_XY = [[6.5, UP_Y0 + 6.5], [CASE_W - 6.5, UP_Y0 + 6.5],

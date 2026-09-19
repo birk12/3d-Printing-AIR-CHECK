@@ -78,7 +78,9 @@ KH_SCREWS    = [for (x = KH_XS, dy = [-KH_SCREW_Y, KH_SCREW_Y]) [x + KH_W / 2, K
 KH_PADS      = [for (x = KH_XS, dx = [-12, 12], dy = [-14, 14]) [x + KH_W / 2 + dx, KH_Y + KH_L / 2 + dy]];
 // cell centres (X), and the cell the NTC sits on: holder 1's inner cell
 CELL_XS      = [for (x = KH_XS, dx = [-KH_CELL_PITCH / 2, KH_CELL_PITCH / 2]) x + KH_W / 2 + dx];
-NTC_X        = KH1_X + KH_W / 2 + KH_CELL_PITCH / 2;
+// the NTC sits on holder 2's outer cell: next to the charger chamber, the
+// warmest one (battery review P3)
+NTC_X        = KH2_X + KH_W / 2 + KH_CELL_PITCH / 2;
 NTC_Y        = KH_Y + KH_L / 2;
 CHG_HOLES_XY = [for (h = CHG_HOLES) [CHG_X + h[1], CHG_Y + h[0]]];
 DOOR_POSTS   = [[DOOR_POST_X, DOOR_POST_Y_L], [CASE_W - DOOR_POST_X, DOOR_POST_Y_R]];
@@ -209,16 +211,18 @@ module panel_holes() {
 // pressurise a sealed box).  Charger chamber: air in through the bottom wall,
 // out through the right-hand wall high up - a chimney past the #6091.
 BATC_VENT_XS = [for (i = [0 : 3]) KH1_X + 6 + i * 20];
-CHG_VENT_XS  = [for (i = [0 : 2]) CHG_X + 2 + i * (CHG_VENT_W + 2.2)];
-CHG_VENT_YS  = [for (i = [0 : 2]) BATC_Y1 - 6 - i * (CHG_VENT_W + 2.2) - CHG_VENT_W];
-CHG_VENT_ZS  = [8.0, 12.0, 16.0, 20.0];
+CHG_VENT_XS  = [for (i = [0 : 2]) CHG_WALL_X + CHG_WALL_T + 2.0 + i * (CHG_VENT_W + 2.2)];
+CHG_VENT_YS  = [for (i = [0 : 3]) DOOR_POST_Y_R + DOOR_POST_D / 2 + 1.5 + i * (CHG_VENT_SW + 2.2)];
+CHG_VENT_ZS  = [for (i = [0 : 5]) 5.0 + i * (CHG_VENT_H + 1.2)];
+CHG_VENT_LOW  = len(CHG_VENT_XS) * len(CHG_VENT_ZS) * CHG_VENT_W * CHG_VENT_H;
+CHG_VENT_HIGH = len(CHG_VENT_YS) * len(CHG_VENT_ZS) * CHG_VENT_SW * CHG_VENT_H;
 module batc_vents() {
     for (x = BATC_VENT_XS)
         translate([x, -1, WALL_TOP_Z - 6]) cube([BATC_VENT_W, WALL + 2, BATC_VENT_H]);
     for (x = CHG_VENT_XS, z = CHG_VENT_ZS)
         translate([x, -1, z]) cube([CHG_VENT_W, WALL + 2, CHG_VENT_H]);
     for (y = CHG_VENT_YS, z = CHG_VENT_ZS)
-        translate([CASE_W - WALL - 1, y, z]) cube([WALL + 2, CHG_VENT_W, CHG_VENT_H]);
+        translate([CASE_W - WALL - 1, y, z]) cube([WALL + 2, CHG_VENT_SW, CHG_VENT_H]);
 }
 
 // ---------------------------------------------------------------------
@@ -528,7 +532,7 @@ for (n = ["SHT40", "SGP40", "Sunrise", "Sunrise filter clearance"])
 for (b = BODIES) if (b[0] == "holder 1 + cells" || b[0] == "holder 2 + cells" || b[0] == "#6091 charger"
                      || b[0] == "BMS") assert(in_batc(b), str(b[0], " is not in the compartment"));
 for (n = ["FireBeetle", "SW1 Pololu 2810", "PS1 Pololu S9V11E2A", "D1 LM66200", "LED holder",
-          "button", "SEN62", "SEN62 plug keep-out", "PS2 Pololu S9V11E2A",
+          "button", "SEN62", "SEN62 plug keep-out",
           "J2 USB-C power socket", "J2 socket"])
     for (b = BODIES) if (b[0] == n) assert(in_elec(b), str(n, " is not in the electronics zone"));
 // 3. posts against bodies
@@ -561,16 +565,22 @@ assert(CELL_TOP_Z + 2.4 < LID_IN_Z - 2, "no room over the cells for the retainer
 assert(KH1_X > DOOR_POSTS[0][0] + DOOR_POST_D / 2, "the left door post hits holder 1");
 for (p = DOOR_POSTS) assert(p[1] - DOOR_POST_D / 2 > WALL && p[1] + DOOR_POST_D / 2 < BATC_Y1,
                             "a door post is outside the compartment");
-for (y = CHG_VENT_YS) assert(y > DOOR_POSTS[1][1] + DOOR_POST_D / 2 || y + CHG_VENT_W < DOOR_POSTS[1][1] - DOOR_POST_D / 2,
+for (y = CHG_VENT_YS) assert(y > DOOR_POSTS[1][1] + DOOR_POST_D / 2 || y + CHG_VENT_SW < DOOR_POSTS[1][1] - DOOR_POST_D / 2,
                              "a chamber vent cuts into the right door post");
 assert(KH2_X + KH_W < CHG_WALL_X, "holder 2 reaches into the charger chamber");
 // Power-Standard review E4: the charger >= 5 mm from every wall, vents low and high
 assert(CHG_X - (CHG_WALL_X + CHG_WALL_T) >= 5 && CASE_W - WALL - (CHG_X + CHG_W) >= 5 - 0.001
        && CHG_Y - WALL >= 5 - 0.001 && BATC_Y1 - (CHG_Y + CHG_L) >= 5,
        "the #6091 is closer than 5 mm to a wall");
-assert(len(CHG_VENT_XS) > 0 && len(CHG_VENT_YS) > 0, "the charger chamber needs vents low and high");
-for (y = CHG_VENT_YS) assert(y > CHG_Y + CHG_L && y + CHG_VENT_W < BATC_Y1, "a chamber vent misses the chamber top");
-for (x = CHG_VENT_XS) assert(x > CHG_WALL_X + CHG_WALL_T && x + CHG_VENT_W < CASE_W - WALL, "a chamber vent misses the chamber");
+assert(CHG_VENT_LOW >= CHG_VENT_MIN_MM2 && CHG_VENT_HIGH >= CHG_VENT_MIN_MM2,
+       str("charger chamber vents: ", CHG_VENT_LOW, " mm2 low, ", CHG_VENT_HIGH,
+           " mm2 high; >= ", CHG_VENT_MIN_MM2, " each"));
+echo(str("charger chamber vents: ", CHG_VENT_LOW, " mm2 in the bottom wall, ", CHG_VENT_HIGH,
+         " mm2 high in the side wall"));
+for (y = CHG_VENT_YS) assert(y > CHG_Y + CHG_L && y + CHG_VENT_SW < BATC_Y1 - 1, "a chamber vent misses the chamber top");
+for (x = CHG_VENT_XS) assert(x > CHG_WALL_X + CHG_WALL_T && x + CHG_VENT_W < CASE_W - WALL - 3.6,
+                             "a chamber vent misses the chamber or runs into the corner radius");
+for (z = CHG_VENT_ZS) assert(z > FACE && z + CHG_VENT_H < WALL_TOP_Z, "a chamber vent row is out of range");
 // E5: >= 30 mm from the charger to the gas bay's sensors
 function gap2d(a, b) = let(dx = max(0, max(a[1] - (b[1] + b[4]), b[1] - (a[1] + a[4]))),
                            dy = max(0, max(a[2] - (b[2] + b[5]), b[2] - (a[2] + a[5]))))

@@ -26,6 +26,8 @@ Kurzanleitung für den Alltag. Technische Hintergründe: [ENGINEERING_DECISIONS.
   wird warm. Die App bzw. das Dashboard zeigt „lädt“, solange das der Fall ist.
 - Laden nur bei **0–45 °C Umgebung**. Nicht auf dem Heizkörper, nicht in praller Sonne, nicht abgedeckt.
   Bei Kälte lädt das Gerät absichtlich nicht und läuft aus dem Akku weiter.
+- **Beim Laden aufrecht stellen** (Wand oder Tischständer), nicht flach auf den Rücken legen: Die
+  Ladekammer wird von unten nach oben durchlüftet, liegend funktioniert das nicht.
 
 ## 3. Anzeigen (Apple Home / Matter und die LED)
 
@@ -35,10 +37,12 @@ Kurzanleitung für den Alltag. Technische Hintergründe: [ENGINEERING_DECISIONS.
 | Akku „voll“ / „lädt nicht“ bei USB | voll oder Ladepause | nichts |
 | **Akku schwach** (LED: gelbes Blinken auf Tastendruck) | noch etwa 10 % (3,20 V) | Kabel anstecken |
 | **Akku kritisch** | noch etwa 6 % (3,10 V): das Gerät meldet es ein letztes Mal und geht dann in Tiefschlaf (keine Messung, kein Funk), um die Zellen zu schonen; es prüft stündlich | Kabel anstecken - spätestens nach einer Stunde läuft es wieder |
-| **Fehler / „Ersatz nötig“** | zu kalt/heiß beim Laden, oder Ladezeit zweimal überschritten | Gerät in normale Raumtemperatur bringen, Kabel neu stecken. Kommt der Fehler wieder: nicht mehr laden, siehe §4 |
+| Akku „lädt nicht“ bei USB, obwohl nicht voll | zu kalt oder zu heiß zum Laden (Temperaturfühler) - das Gerät lädt von selbst weiter, sobald es wieder passt; Apple Home/Dashboard bekommen eine Lade-Fehlermeldung (zu kalt/zu heiß, soweit erkennbar) | Gerät in normale Raumtemperatur bringen |
+| **„Ersatz nötig“** | die Ladung hat zweimal hintereinander zu lange gedauert (Sicherheits-Zeitschaltung) - nicht beim ersten Mal, das ist aus leer normal | Kabel ziehen und neu stecken. Kommt es wieder: nicht mehr laden, siehe §4 |
 
 Bei 3,0 V schaltet die Ladeelektronik das Gerät selbst ab, damit die Zellen nicht tiefentladen werden. Mit
-Kabel startet es wieder.
+Kabel startet es wieder - ohne Kabel auch dann, wenn sich die Zellen danach über 3,15 V erholen; es prüft
+dann stündlich und schläft weiter, solange der Akku kritisch ist.
 
 ## 4. Wenn etwas nicht stimmt – sofort handeln
 
@@ -62,7 +66,8 @@ es riecht stechend, oder das Gerät ist heruntergefallen und das Akkufach besch�
 4. Spannungen messen: **höchstens 20 mV Unterschied** zwischen den Zellen.
 5. Polarität wie im Fach markiert (+ / −) einsetzen.
 6. **Temperaturfühler zurück in die Mulde, bevor die Tür schließt:** Der kleine Fühler (mit Kapton) gehört
-   oben auf die innere Zelle des linken Halters; der Finger an der Tür drückt ihn beim Schließen an.
+   oben auf die äußere Zelle des rechten Halters (direkt neben der Ladekammer, von hinten gesehen); der
+   Finger an der Tür drückt ihn beim Schließen an.
 7. Tür zuschrauben.
 
 ## 6. Lagern, Transport, Entsorgen

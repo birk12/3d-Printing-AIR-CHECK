@@ -189,14 +189,20 @@ PARTS: list[Part] = [
     ),
     # ---- power -------------------------------------------------------------
     Part(
-        ref="BH1", value="2 x 18650 holder, THT", mfr="Keystone", mpn="1049", qty=2,
+        ref="BH1", value="2 x 18650 holder, THT (cells 1A, 1B)", mfr="Keystone", mpn="1049",
         footprint="2 x 18650, 4 separate pins (see cad/openscad for the mount)",
         pins={"A+": "cell A +", "A-": "cell A -", "B+": "cell B +", "B-": "cell B -"},
-        why="Two of them hold the four cells, each cell with its own contacts so "
-            "each gets its own PICO fuse; UL94 V-0. Cells stay user-replaceable "
-            "(EU Battery Regulation, relevant only if ever sold). BH1 stands for "
-            "both holders in the netlist: pins A/B of the first, and of the second "
-            "through BH2's identical wiring (NETLIST.md, inline parts).",
+        why="Holds two of the four cells, each with its own contacts so each gets "
+            "its own PICO fuse; UL94 V-0. Cells stay user-replaceable (EU Battery "
+            "Regulation, relevant only if ever sold).",
+        price_eur=6.22, supplier="Mouser",
+    ),
+    Part(
+        ref="BH2", value="2 x 18650 holder, THT (cells 2A, 2B)", mfr="Keystone", mpn="1049",
+        footprint="2 x 18650, 4 separate pins",
+        pins={"A+": "cell A +", "A-": "cell A -", "B+": "cell B +", "B-": "cell B -"},
+        why="The second holder, next to the charger chamber; its outer cell (2B) "
+            "carries the NTC.",
         price_eur=6.22, supplier="Mouser",
     ),
     Part(ref="CELL", value="LiFePO4 18650, 1.8 Ah, AER18650m2A2", mfr="Lithium Werks",
@@ -205,17 +211,26 @@ PARTS: list[Part] = [
              "cycles. One type, one batch, charged together in an XTAR MX4 (LFP) "
              "before the first fit, <= 20 mV apart (Power-Standard).",
          price_eur=5.90, supplier="akkuteile.de"),
-    Part(ref="FU1", value="PICO II fuse 2 A fast, axial (cell A of each holder)",
-         mfr="Littelfuse", mpn="0251002.MAT1L (Reichelt LITT 0251002.MAT)",
-         footprint="axial, d2.8 x 7.1", pins={"1": "cell", "2": "B+"}, qty=2,
-         why="One per cell, right at its + terminal: a shorted cell cannot be fed by "
-             "its three neighbours. FU1 is the fuse of each holder's cell A, FU2 of "
-             "cell B.",
+    Part(ref="FU1", value="PICO II fuse 2 A fast, axial (cell 1A)", mfr="Littelfuse",
+         mpn="0251002.MAT1L (Reichelt LITT 0251002.MAT)", footprint="axial, d2.8 x 7.1",
+         pins={"1": "cell", "2": "B+"},
+         why="One per cell, right at its + contact pin: a shorted cell cannot be fed by its three neighbours.",
          price_eur=0.82, supplier="Reichelt"),
-    Part(ref="FU2", value="PICO II fuse 2 A fast, axial (cell B of each holder)",
-         mfr="Littelfuse", mpn="0251002.MAT1L (Reichelt LITT 0251002.MAT)",
-         footprint="axial, d2.8 x 7.1", pins={"1": "cell", "2": "B+"}, qty=2,
-         why="As FU1, for each holder's cell B.", price_eur=0.82, supplier="Reichelt"),
+    Part(ref="FU2", value="PICO II fuse 2 A fast, axial (cell 1B)", mfr="Littelfuse",
+         mpn="0251002.MAT1L (Reichelt LITT 0251002.MAT)", footprint="axial, d2.8 x 7.1",
+         pins={"1": "cell", "2": "B+"},
+         why="As FU1.",
+         price_eur=0.82, supplier="Reichelt"),
+    Part(ref="FU3", value="PICO II fuse 2 A fast, axial (cell 2A)", mfr="Littelfuse",
+         mpn="0251002.MAT1L (Reichelt LITT 0251002.MAT)", footprint="axial, d2.8 x 7.1",
+         pins={"1": "cell", "2": "B+"},
+         why="As FU1.",
+         price_eur=0.82, supplier="Reichelt"),
+    Part(ref="FU4", value="PICO II fuse 2 A fast, axial (cell 2B)", mfr="Littelfuse",
+         mpn="0251002.MAT1L (Reichelt LITT 0251002.MAT)", footprint="axial, d2.8 x 7.1",
+         pins={"1": "cell", "2": "B+"},
+         why="As FU1.",
+         price_eur=0.82, supplier="Reichelt"),
     Part(
         ref="U5", value="LiFePO4 1S BMS 2.5 A (HY2112 + 8205A)", mfr="eremit",
         mpn="LiFePO4 1S 3,2V Schutzschaltung BMS 2,5A",
@@ -228,8 +243,8 @@ PARTS: list[Part] = [
         price_eur=1.79, supplier="eremit.de"),
     Part(ref="TH1", value="NTC 10 k, B = 3435 K", mfr="Semitec", mpn="103AT-2",
          footprint="glass bead, leads", pins={"1": "a", "2": "b"},
-         why="On holder 1's inner cell, the middle of the pack, held by a finger on "
-             "the battery door, Kapton between: the BQ25185 charges only between 0 and 60 C with it. The "
+         why="On BH2's outer cell (2B), the one next to the charger chamber and so "
+             "the warmest, held by a finger on the battery door, Kapton between: the BQ25185 charges only between 0 and 60 C with it. The "
              "#6091's TH jumper is opened for it - with the jumper closed there is "
              "no temperature protection at all.",
          price_eur=1.50, supplier="Mouser"),
@@ -366,7 +381,7 @@ PARTS: list[Part] = [
          mfr="generic", mpn="T 250A SW", footprint="7 mm hole, ~29 mm long",
          pins={"1": "a", "2": "b"},
          why="The one button: pairing, fresh-air calibration, reset (hold times in "
-             "USER_GUIDE). To GND; the pull-up is inside the ESP32-C6.",
+             "README, 'The LED and the button'). To GND; the pull-up is inside the ESP32-C6.",
          price_eur=0.60, supplier="Reichelt"),
     # ---- mechanical and consumables ----------------------------------------
     Part(ref="X1", value="M2.5 brass heat-set inserts + M2.5 screws", mfr="ruthex",
@@ -407,13 +422,14 @@ PARTS_BY_REF = {p.ref: p for p in PARTS}
 
 NETS: dict[str, list[tuple[str, str]]] = {
     # ---- cells and protection ---------------------------------------------------
-    # BH1 stands for both holders, FU1/FU2 for the fuses of their cells A/B:
     # every cell's + goes through its own PICO fuse to PACK_B+, every cell's -
-    # to CELL_B-.
-    "CELL_A+":   [("BH1", "A+"), ("FU1", "1")],
-    "CELL_B+":   [("BH1", "B+"), ("FU2", "1")],
-    "PACK_B+":   [("FU1", "2"), ("FU2", "2"), ("U5", "B+")],
-    "CELL_B-":   [("BH1", "A-"), ("BH1", "B-"), ("U5", "B-")],
+    # to CELL_B-, and only the BMS joins them to the rest
+    "CELL1A+":   [("BH1", "A+"), ("FU1", "1")],
+    "CELL1B+":   [("BH1", "B+"), ("FU2", "1")],
+    "CELL2A+":   [("BH2", "A+"), ("FU3", "1")],
+    "CELL2B+":   [("BH2", "B+"), ("FU4", "1")],
+    "PACK_B+":   [("FU1", "2"), ("FU2", "2"), ("FU3", "2"), ("FU4", "2"), ("U5", "B+")],
+    "CELL_B-":   [("BH1", "A-"), ("BH1", "B-"), ("BH2", "A-"), ("BH2", "B-"), ("U5", "B-")],
     "VCELL":     [("U5", "P+"), ("U6", "BATT+"), ("R1", "1")],
     # ---- charger and power path ----------------------------------------------
     "VBUS_EXT":  [("J2", "VBUS"), ("U6", "DCIN+"), ("R20", "1")],
@@ -463,8 +479,10 @@ NETS: dict[str, list[tuple[str, str]]] = {
 
 # Where each inline part is physically soldered (for NETLIST.md and ASSEMBLY).
 SOLDER_AT = {
-    "FU1": "one per holder, at cell A's + contact pin, under heat shrink",
-    "FU2": "one per holder, at cell B's + contact pin, under heat shrink",
+    "FU1": "at BH1's cell A + contact pin, under heat shrink",
+    "FU2": "at BH1's cell B + contact pin, under heat shrink",
+    "FU3": "at BH2's cell A + contact pin, under heat shrink",
+    "FU4": "at BH2's cell B + contact pin, under heat shrink",
     "R1": "from the BMS P+ lead to FireBeetle IO3",
     "R2": "at FireBeetle IO3 to GND, together with C1",
     "C1": "at FireBeetle IO3 to GND",
@@ -475,7 +493,7 @@ SOLDER_AT = {
     "D21": "cathode on the #6091's S1 pad, anode to R23",
     "R22": "from D20 to the PWR-K node at IO4",
     "R23": "from D21 to the PWR-K node at IO4",
-    "TH1": "between #6091 TH and its GND (the DCIN- pad), bead on the pack's middle cell",
+    "TH1": "between #6091 TH and its GND (the DCIN- pad), bead on BH2's outer cell (2B)",
     "R3": "from SW1 VOUT to the SEN62 SDA wire",
     "R4": "from SW1 VOUT to the SEN62 SCL wire",
     "R5": "across Sunrise pins 3 (VDDIO) and 4 (SDA)",
@@ -641,19 +659,26 @@ def run_erc() -> Erc:
 
     # 5. the cells (review checklist K1/K2): every cell through its own fuse
     #    to the BMS, the BMS to the charger; P- is GND and B- goes nowhere else
-    e.check(sorted(NETS["CELL_A+"]) == [("BH1", "A+"), ("FU1", "1")]
-            and sorted(NETS["CELL_B+"]) == [("BH1", "B+"), ("FU2", "1")],
-            "each cell's + may only go to its own fuse")
-    e.check(set(NETS["PACK_B+"]) == {("FU1", "2"), ("FU2", "2"), ("U5", "B+")},
-            "the fused cells must meet only at the BMS's B+")
-    e.check(set(NETS["CELL_B-"]) == {("BH1", "A-"), ("BH1", "B-"), ("U5", "B-")},
-            "B- may connect nothing but the cells and the BMS")
-    e.check(("U5", "P-") in NETS["GND"], "BMS P- must be the system ground")
-    e.check(_nets_of("U5", "P+") == ["VCELL"] and ("U6", "BATT+") in NETS["VCELL"],
-            "BMS P+ must feed the charger's BATT+")
-    e.check(PARTS_BY_REF["FU1"].qty + PARTS_BY_REF["FU2"].qty == PARTS_BY_REF["CELL"].qty == 4
-            and PARTS_BY_REF["BH1"].qty * 2 == PARTS_BY_REF["CELL"].qty,
-            "one fuse per cell, two cells per holder")
+    # every one of the four paths against its expected set (review K1/K14)
+    for net, holder, pin, fuse in (("CELL1A+", "BH1", "A+", "FU1"), ("CELL1B+", "BH1", "B+", "FU2"),
+                                   ("CELL2A+", "BH2", "A+", "FU3"), ("CELL2B+", "BH2", "B+", "FU4")):
+        e.check(set(NETS[net]) == {(holder, pin), (fuse, "1")},
+                f"{net}: the cell's + must go to its own fuse and nowhere else")
+    e.check(set(NETS["PACK_B+"]) == {("FU1", "2"), ("FU2", "2"), ("FU3", "2"), ("FU4", "2"),
+                                      ("U5", "B+")},
+            "the four fuses must meet only at the BMS's B+")
+    e.check(set(NETS["CELL_B-"]) == {("BH1", "A-"), ("BH1", "B-"), ("BH2", "A-"), ("BH2", "B-"),
+                                      ("U5", "B-")},
+            "B- may connect nothing but the four cells and the BMS")
+    e.check(set(NETS["VCELL"]) == {("U5", "P+"), ("U6", "BATT+"), ("R1", "1")},
+            "VCELL must be exactly BMS P+, charger BATT+ and the VBAT_S divider")
+    e.check(("U5", "P-") in NETS["GND"] and ("U6", "BATT-") in NETS["GND"],
+            "BMS P- must be the system ground, the charger's BATT- on it")
+    cell_refs = {r for n in ("CELL1A+", "CELL1B+", "CELL2A+", "CELL2B+", "CELL_B-")
+                 for r, _ in NETS[n]}
+    e.check(cell_refs == {"BH1", "BH2", "FU1", "FU2", "FU3", "FU4", "U5"},
+            f"only holders, fuses and the BMS may touch the cells, not {cell_refs}")
+    e.check(PARTS_BY_REF["CELL"].qty == 4, "four cells")
     e.check(_nets_of("U6", "TH") == ["NTC"] and _nets_of("TH1", "2") == ["GND"],
             "the NTC must sit between the charger's TH and GND (checklist K3)")
 
@@ -953,7 +978,7 @@ def bom_markdown() -> str:
         "controller (FireBeetle)": ("M1",),
         "power module C (charger, BMS, holders, fuses, NTC, regulator, ideal diode, "
         "switch, USB-C socket)":
-            ("U6", "U5", "BH1", "FU1", "FU2", "TH1", "PS1", "D1", "SW1", "J1", "J2", "D20", "D21"),
+            ("U6", "U5", "BH1", "BH2", "FU1", "FU2", "FU3", "FU4", "TH1", "PS1", "D1", "SW1", "J1", "J2", "D20", "D21"),
         "cells (4 x LiFePO4)": ("CELL",),
         "LED, button, resistors": ("LED1", "LH1", "SW2", "C1", "C2", "R1", "R2", "R3", "R4",
                                    "R5", "R6", "R7", "R8", "R9", "R10", "R20", "R21",

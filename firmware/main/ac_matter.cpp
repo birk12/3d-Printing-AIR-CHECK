@@ -4,6 +4,7 @@
 #include <esp_matter.h>
 #include <esp_matter_ota.h>
 
+#include <app/EventLogging.h>
 #include <app/server/CommissioningWindowManager.h>
 #include <app/server/Server.h>
 #include <setup_payload/OnboardingCodesUtil.h>
@@ -286,6 +287,11 @@ esp_err_t ac_matter_init(ac_engine_t *engine)
             cluster::power_source::attribute::create_bat_voltage(
                 psc, nullable<uint32_t>(), nullable<uint32_t>(0),
                 nullable<uint32_t>(4000));
+            /* Charge faults go out as the BatChargeFaultChange event: the
+             * SDK's Power Source server only serves EndpointList itself, so a
+             * list attribute like ActiveBatChargeFaults would have no one to
+             * answer it (docs/MATTER.md). */
+            cluster::power_source::event::create_bat_charge_fault_change(psc);
         } else {
             ESP_LOGE(TAG, "power source cluster was not created");
         }
@@ -400,6 +406,22 @@ esp_err_t ac_matter_publish(const ac_engine_t *e)
     return ESP_OK;
 }
 
+/* BatChargeFaultEnum (PowerSource/Enums.h): 0 Unspecified, 1 AmbientTooHot,
+ * 2 AmbientTooCold, 10 SafetyTimeout.  0xFF: no fault. */
+static void log_charge_fault(uint8_t now, uint8_t before)
+{
+    using namespace chip::app::Clusters::PowerSource;
+    BatChargeFaultEnum cur[1] = { static_cast<BatChargeFaultEnum>(now) };
+    BatChargeFaultEnum prev[1] = { static_cast<BatChargeFaultEnum>(before) };
+    Events::BatChargeFaultChange::Type ev;
+    ev.current = chip::app::DataModel::List<const BatChargeFaultEnum>(cur, now == 0xFF ? 0 : 1);
+    ev.previous = chip::app::DataModel::List<const BatChargeFaultEnum>(prev, before == 0xFF ? 0 : 1);
+    chip::EventNumber n;
+    chip::DeviceLayer::StackLock lock;
+    if (chip::app::LogEvent(ev, 0, n) != CHIP_NO_ERROR)
+        ESP_LOGW(TAG, "BatChargeFaultChange event not logged");
+}
+
 esp_err_t ac_matter_publish_power(const pwr_state_t *st, bool ext, float vbat)
 {
     /* pwr_std reports "battery" also when there is no cell and no USB-C
@@ -449,6 +471,24 @@ esp_err_t ac_matter_publish_power(const pwr_state_t *st, bool ext, float vbat)
     esp_matter_attr_val_t need = esp_matter_bool(st->fault == PWR_FLT_LATCHED);
     attribute::update(0, PowerSource::Id,
                       PowerSource::Attributes::BatReplacementNeeded::Id, &need);
+
+    /* Charge faults as events.  PWR-K cannot tell an NTC too-hot from a
+     * too-cold fault (or from input OVP): the room temperature from the SHT40
+     * decides where it can, otherwise the fault stays Unspecified. */
+    static uint8_t s_last_fault = 0xFF;
+    uint8_t code = 0xFF;
+    if (st->fault == PWR_FLT_LATCHED) {
+        code = 10;                                       /* SafetyTimeout */
+    } else if (st->fault == PWR_FLT_RECOVERABLE) {
+        bool t_ok = s_engine && s_engine->health.sht_ok &&
+                    s_engine->last.temperature > -40.0f;
+        float t = t_ok ? s_engine->last.temperature : 20.0f;
+        code = t <= 5.0f ? 2 : t >= 40.0f ? 1 : 0;       /* too cold / too hot / ? */
+    }
+    if (code != s_last_fault) {
+        log_charge_fault(code, s_last_fault);
+        s_last_fault = code;
+    }
     return ESP_OK;
 }
 

@@ -1,9 +1,9 @@
-/* Status LED: Adafruit 159, 5 mm diffused RGB, common anode on the 4.0 V
- * regulator output.
+/* Status LED: Adafruit 159, 5 mm diffused RGB, common anode on VSYS (the
+ * regulator's 3.90 V behind the ideal diode).
  *
  * On  = drive the cathode low.
  * Off = release the pin (high impedance), never drive it high: with the anode
- *       at 4.0 V a driven-high cathode would still leave 0.9 V across
+ *       at 3.9 V a driven-high cathode would still leave 0.6 V across
  *       LED and resistor.  That is below every forward voltage, so it would be
  *       dark, but high impedance is also dark and cannot surprise anyone. */
 #include "ac_hal/ac_hal.h"

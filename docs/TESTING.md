@@ -17,11 +17,11 @@ believed.
 
 | area | status | evidence |
 |---|---|---|
-| measurement core logic | SIMULATED, 528 checks | `firmware/test/host/test_ac_core.c` |
-| status LED logic | SIMULATED | part of the 528; every pattern and its timing |
-| LFP power module (`ac_power` over `pwr_std`) | SIMULATED | part of the 528, plus `firmware/test/host/test_pwr_std.c`: PWR-K decoding, charge pause, safety-timer restart, voltage levels, Matter's charge states |
+| measurement core logic | SIMULATED, 537 checks | `firmware/test/host/test_ac_core.c` |
+| status LED logic | SIMULATED | part of the 537; every pattern and its timing |
+| LFP power module (`ac_power` over `pwr_std`) | SIMULATED | part of the 537, plus `firmware/test/host/test_pwr_std.c`: PWR-K decoding, charge pause, safety-timer restart, voltage levels, Matter's charge states |
 | energy model | BUILD-VERIFIED | `tools/battery_calculator/model.py`, inputs traced to datasheets |
-| electrical design | BUILD-VERIFIED | 710 rule checks in `electronics/schematic/design.py`, one standing warning (T-P3) |
+| electrical design | BUILD-VERIFIED | 748 rule checks in `electronics/schematic/design.py`, one standing warning (T-P3) |
 | enclosure | BUILD-VERIFIED | OpenSCAD asserts over every module, post and zone, and `tools/diagnostics/stl_check.py`: all four parts manifold, 1.2 % overhang on the front shell |
 | firmware build | BUILD-VERIFIED | full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6: 1.69 MB image (14 % free in the OTA slot), 210 kB DIRAM (46.5 %) |
 | sensor drivers | **untested** | register addresses and timings read from datasheets |
@@ -43,7 +43,7 @@ cc -std=c99 -Wall -Wextra -Ifirmware/components/pwr_std/include \
    -o /tmp/pwr_test && /tmp/pwr_test
 ```
 
-528 checks in about 10 ms, then the Power-Standard's own `pwr_std` test
+537 checks in about 10 ms, then the Power-Standard's own `pwr_std` test
 (`all tests passed`). What they cover:
 
 | area | examples |
@@ -70,11 +70,11 @@ python3 electronics/schematic/design.py
 ```
 
 ```
-ERC: 710 checks, 0 error(s), 1 warning(s)
+ERC: 748 checks, 0 error(s), 1 warning(s)
   WARN  SW1 has no soft start: the SEN62's switch-on step lands on the FireBeetle's 3.3 V buck - verify on the bench (TESTING T-P3)
 ```
 
-What the 710 cover: every pin exists on its part and every pin of every part
+What the 748 cover: every pin exists on its part and every pin of every part
 is connected or declared open, no net has one connection, no pin is on two
 nets, every supply is within its part's range and the part really sits on
 that rail; **the cell chain** (Power-Standard checklist K1/K2): each cell's +
@@ -228,6 +228,7 @@ meter (PPK2 or µCurrent), a lab supply, freeze spray, a 33 kΩ resistor.
 | PS-1.4 | #6091 LOAD with USB-C, PS1 disconnected | 4.41–4.59 V |
 | PS-1.5 | S1/S2 really are STAT1/STAT2: (a) CE open (GPIO5 not driven), no cells → S2 toggles high/low (BQ25185 datasheet §6.3.10); (b) TH jumper open, **33 kΩ** at TH instead of the NTC (= cold) → S1 low, the PWR-K node at GPIO4 reads 0.99–1.34 V. **Never** bridge TH to GND: that is the button function, and holding it leads to the factory mode (SYS off) | as described |
 | PS-1.6 | !CE has its pull-down: GPIO5 an input (FireBeetle unpowered) → the #6091's CE pad | < 0.4 V |
+| PS-1.6a | CE through a reset: hold the FireBeetle in reset (EN / RST low) with USB-C in J2 and measure the #6091's CE pad | < 0.4 V (charging allowed; nothing on GPIO5 pulls it up) |
 | PS-1.7 | DCIN+ carries USB 5 V (R20 taps the PWR-K ladder there) | ≈ 5 V |
 | PS-1.8 | the board is labelled **"LFP 3,65 V"** | yes |
 
@@ -239,7 +240,7 @@ meter (PPK2 or µCurrent), a lab supply, freeze spray, a 33 kΩ resistor.
 | PS-2.2 | the BMS IC reads HY2112, **not DW01** | yes |
 | PS-2.3 | polarity at every holder contact measured before the cells go in | yes |
 | PS-2.4 | BMS P− is the ground of the whole device, B− goes nowhere else | yes |
-| PS-2.5 | the NTC on holder 1's inner cell under Kapton, held by the door's finger; resistance at room temperature | 9–11 kΩ at 25 °C |
+| PS-2.5 | the NTC on holder 2's outer cell (next to the charger chamber) under Kapton, held by the door's finger; resistance at room temperature | 9–11 kΩ at 25 °C |
 | PS-2.6 | TH jumper cut (visual) | yes |
 | PS-2.7 | cold test: freeze spray on the NTC, below 0 °C → FLT_N low (PWR-K node 0.99–1.34 V, log `fault (temperature/OVP)`), charging stops | yes |
 | PS-2.8 | charge current into flat cells, ammeter between BMS P+ and #6091 BATT+, PS1 disconnected. With the device running, its own draw comes out of the 1.1 A input limit (about 0.8 A left for the cells, EDR-21) | 1000 mA ± 10 % |
@@ -247,7 +248,7 @@ meter (PPK2 or µCurrent), a lab supply, freeze spray, a 33 kΩ resistor.
 | PS-2.10 | pull USB-C during a SEN62 window (fan running) | no reset: uptime continues, the window completes, the log shows `power: cells` |
 | PS-2.11 | the cells' quiescent current without USB-C, PS1's input disconnected, µA meter in the BMS P+ lead (charger, BMS and the 470k/470k VBAT_S divider) → open points O1/O2 | ≤ 15 µA |
 | PS-2.12 | short-circuit test at the BMS output (through 1 Ω, briefly): the BMS switches off | yes |
-| PS-2.13 | temperature at the #6091's IC after 30 min charging at 1 A in the closed case → open point O3 | < 70 °C |
+| PS-2.13 | **thermocouples on the #6091's IC and on holder 2's outer cell** (the one next to the chamber, where the NTC sits), device upright, closed case, 30 min charging at 1 A from half-empty cells → open point O3. Note both temperatures and the NTC cell against holder 1's cells | IC < 70 °C (release for use only then); the NTC's cell is the warmest of the four |
 
 **4. The interface at the FireBeetle** (PWR-K: VBAT_S on GPIO3, the ladder on
 GPIO4, CE on GPIO5):
@@ -274,7 +275,7 @@ GPIO4, CE on GPIO5):
 | T-L1 | **PWR-K node voltages** | at GPIO4 against GND: no USB-C **0 V**; USB-C and a fault (PS-1.5b or PS-2.7) **0.99–1.34 V**; charging **2.08–2.35 V**; full or paused **2.85–3.15 V**. Never above 3.15 V |
 | T-L2 | **reset with 3.15 V on GPIO4** | GPIO4 held at 3.15 V (lab supply on the PWR-K node): reset and power-cycle the FireBeetle several times - it boots normally every time (banner, no reset loop). GPIO4/5 are strapping pins only for the SDIO slave timing, which is not used |
 | T-L3 | **charge pause** | USB-C in J2 until full: the log shows `full`, then `charge paused`; GPIO5 (CE) is driven high, the node sits at 2.85–3.15 V, the device keeps running from USB-C. Released - GPIO5 an input again, CE below 0.4 V through the #6091's pull-down - when USB-C is unplugged, when the cells fall below 3.30 V, or after 30 days. Unplug and replug to see the release; the 3.30 V and 30-day releases are covered by the host tests, on hardware note when they happen |
-| T-L4 | **safety-timer restart** | from flat cells, USB-C in J2, the device running: the BQ25185 stops after 6 h; the log shows `safety timer ran out before full: charging restarted once`, one 150 ms pulse on GPIO5, and `charging` again. A second timer fault in the same USB session stays: `FAULT (timer?)` and Matter `BatReplacementNeeded` true. Unplug and replug: cleared |
+| T-L4 | **safety-timer restart** | from flat cells, USB-C in J2, the device running: the BQ25185 stops after 6 h; the log shows `safety timer ran out before full: charging restarted once`, one 150 ms pulse on GPIO5, and `charging` again - **no** fault published (`BatReplacementNeeded` stays false, no charge-fault event). A second timer fault in the same USB session stays: `FAULT (timer?)`, Matter `BatReplacementNeeded` true and a `BatChargeFaultChange` event with SafetyTimeout. Unplug and replug: cleared |
 | T-L5 | **restart after BUVLO** | a lab supply in place of the BMS at #6091 BATT+ / BATT−, J2 empty, USB unplugged. Lower it slowly from 3.3 V: at 3.0 V the #6091 switches LOAD off and the device goes dark. Raise it again: LOAD returns by 3.15 V, the S9V11E2A starts and the device boots |
 | T-L6 | **Matter power sources** | read by a controller (`chip-tool`, DASHBOARD_INTERFACE.md). On the cells: endpoint 0 `Status` 1 (Active), `BatChargeState` 3 (IsNotCharging); USB-C endpoint `Status` 3, `WiredPresent` false. USB-C in J2, charging: endpoint 0 `Status` 2 (Standby), `BatChargeState` 1 (IsCharging); USB-C endpoint `Status` 1 (Active), `WiredPresent` true (a computer on the FireBeetle counts too). Full or paused: `BatChargeState` 2 (IsAtFullCharge). USB-C without cells: endpoint 0 `Status` 3 (Unavailable), `BatPresent` false, `BatPercentRemaining` null, no battery alarm. `BatVoltage` agrees with `diag`. With a lab supply in place of the cells: `BatChargeLevel` 1 below 3.20 V (yellow blink on a press), 2 below 3.10 V (red blip every 10 s, measuring stops) |
 | T-L7 | **T/RH offset while charging** | closed case, a reference thermometer/hygrometer beside the device, a room that does not change. 1 h charging at 1 A (cells well below full, log `charging`, `BatChargeState` 1), then 1 h with charging over or USB-C out: record the temperature and humidity difference to the reference in both hours. Nothing is compensated: the result tells how much the dashboard's charging mark matters (EDR-21) |

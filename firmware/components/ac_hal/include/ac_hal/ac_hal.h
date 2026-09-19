@@ -17,10 +17,12 @@ extern "C" {
 
 /* ---- pin map (DFRobot FireBeetle 2 ESP32-C6, modules wired to it) -------
  * Only GPIO0..GPIO7 are LP pads on the ESP32-C6.  GPIO4, 5, 8, 9 and 15 are
- * strapping pins; 9 is also the BOOT button and 15 the board's green LED, so
- * all five are left alone.  GPIO0 is wired on the board to its own 1M/1M
- * divider on the battery input, which since v1.3 carries the regulated 4.0 V,
- * not the cells - the pack is measured separately on GPIO3. */
+ * strapping pins; 8, 9 (BOOT button) and 15 (the board's green LED) are left
+ * alone.  GPIO4/5 (MTMS/MTDI) only set the SDIO slave's timing, which is not
+ * used, so they carry the power module's PWR-K ladder and CE (EDR-21).
+ * GPIO0 is wired on the board to its own 1M/1M divider on the battery input,
+ * which carries the regulated 3.90 V, not the cells - the cells are measured
+ * on GPIO3. */
 #define AC_PIN_REG_ADC       0   /* on-board divider: regulator output / 2   */
 #define AC_PIN_BUTTON        1   /* panel button to GND, internal pull-up   */
 #define AC_PIN_SEN_EN        2   /* Pololu #2810 ON pin: SEN62 supply       */

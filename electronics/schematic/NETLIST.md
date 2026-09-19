@@ -87,10 +87,12 @@ Every net is one or more wires. Solder, then heat-shrink every joint.
 
 | net | connections |
 |---|---|
-| `CELL_A+` | BH1.A+, FU1.1 |
-| `CELL_B+` | BH1.B+, FU2.1 |
-| `PACK_B+` | FU1.2, FU2.2, U5.B+ |
-| `CELL_B-` | BH1.A-, BH1.B-, U5.B- |
+| `CELL1A+` | BH1.A+, FU1.1 |
+| `CELL1B+` | BH1.B+, FU2.1 |
+| `CELL2A+` | BH2.A+, FU3.1 |
+| `CELL2B+` | BH2.B+, FU4.1 |
+| `PACK_B+` | FU1.2, FU2.2, FU3.2, FU4.2, U5.B+ |
+| `CELL_B-` | BH1.A-, BH1.B-, BH2.A-, BH2.B-, U5.B- |
 | `VCELL` | U5.P+, U6.BATT+, R1.1 |
 | `VBUS_EXT` | J2.VBUS, U6.DCIN+, R20.1 |
 | `LOAD` | U6.LOAD+, PS1.VIN |
@@ -128,8 +130,10 @@ Every net is one or more wires. Solder, then heat-shrink every joint.
 
 | ref | part | where |
 |---|---|---|
-| FU1 | PICO II fuse 2 A fast, axial (cell A of each holder) | one per holder, at cell A's + contact pin, under heat shrink |
-| FU2 | PICO II fuse 2 A fast, axial (cell B of each holder) | one per holder, at cell B's + contact pin, under heat shrink |
+| FU1 | PICO II fuse 2 A fast, axial (cell 1A) | at BH1's cell A + contact pin, under heat shrink |
+| FU2 | PICO II fuse 2 A fast, axial (cell 1B) | at BH1's cell B + contact pin, under heat shrink |
+| FU3 | PICO II fuse 2 A fast, axial (cell 2A) | at BH2's cell A + contact pin, under heat shrink |
+| FU4 | PICO II fuse 2 A fast, axial (cell 2B) | at BH2's cell B + contact pin, under heat shrink |
 | R1 | 470 k, 1 %, 0.25 W, metal film, THT | from the BMS P+ lead to FireBeetle IO3 |
 | R2 | 470 k, 1 %, 0.25 W, metal film, THT | at FireBeetle IO3 to GND, together with C1 |
 | C1 | 100 nF ceramic, THT | at FireBeetle IO3 to GND |
@@ -140,7 +144,7 @@ Every net is one or more wires. Solder, then heat-shrink every joint.
 | D21 | BAT43 Schottky, DO-35 | cathode on the #6091's S1 pad, anode to R23 |
 | R22 | 150 k, 1 %, 0.25 W, metal film, THT | from D20 to the PWR-K node at IO4 |
 | R23 | 33 k, 1 %, 0.25 W, metal film, THT | from D21 to the PWR-K node at IO4 |
-| TH1 | NTC 10 k, B = 3435 K | between #6091 TH and its GND (the DCIN- pad), bead on the pack's middle cell |
+| TH1 | NTC 10 k, B = 3435 K | between #6091 TH and its GND (the DCIN- pad), bead on BH2's outer cell (2B) |
 | R3 | 4.7 k, 1 %, 0.25 W, metal film, THT | from SW1 VOUT to the SEN62 SDA wire |
 | R4 | 4.7 k, 1 %, 0.25 W, metal film, THT | from SW1 VOUT to the SEN62 SCL wire |
 | R5 | 10 k, 1 %, 0.25 W, metal film, THT | across Sunrise pins 3 (VDDIO) and 4 (SDA) |

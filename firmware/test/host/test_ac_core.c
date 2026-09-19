@@ -874,7 +874,7 @@ static void test_power(void)
     o = ac_power_update(&p, 3.10f, chg, false, 1000);
     CHECK(o.charging);
     o = ac_power_update(&p, 3.30f, flt, false, 1000 + AC_TIMER_SUSPECT_S + 60);
-    CHECK(o.st.fault == PWR_FLT_LATCHED);
+    CHECK(o.st.fault == PWR_FLT_NONE);              /* the planned restart is no fault */
     CHECK(o.ce == AC_CE_PULSE);
     o = ac_power_update(&p, 3.32f, chg, false, 1000 + AC_TIMER_SUSPECT_S + 120);
     CHECK(o.charging && o.ce == AC_CE_RELEASE);
@@ -898,7 +898,7 @@ static void test_power(void)
     CHECK(o.st.fault == PWR_FLT_RECOVERABLE && o.ce == AC_CE_RELEASE);
     o = ac_power_update(&p, 3.20f, chg, false, 1000 + 8 * 3600 + 60);
     o = ac_power_update(&p, 3.30f, flt, false, 1000 + 11 * 3600);    /* 3 h more: 6 h charging */
-    CHECK(o.st.fault == PWR_FLT_LATCHED && o.ce == AC_CE_PULSE);
+    CHECK(o.st.fault == PWR_FLT_NONE && o.ce == AC_CE_PULSE);
 
     CASE("no pulse at or above 3.40 V");
     ac_power_init(&p);

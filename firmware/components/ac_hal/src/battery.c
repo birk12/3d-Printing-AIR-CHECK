@@ -52,9 +52,16 @@ static adc_cali_handle_t make_cali(adc_atten_t atten)
 
 esp_err_t ac_battery_init(void)
 {
-    gpio_reset_pin(AC_PIN_CE);
-    gpio_set_direction(AC_PIN_CE, GPIO_MODE_INPUT);   /* charging allowed */
-    gpio_set_pull_mode(AC_PIN_CE, GPIO_FLOATING);
+    /* Input without any pull (gpio_reset_pin would enable the pull-up for a
+     * moment): the #6091's pull-down keeps CE low = charging allowed. */
+    gpio_config_t ce = {
+        .pin_bit_mask = 1ULL << AC_PIN_CE,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&ce);
 
     adc_oneshot_unit_init_cfg_t ucfg = { .unit_id = ADC_UNIT_1 };
     esp_err_t err = adc_oneshot_new_unit(&ucfg, &s_adc);
