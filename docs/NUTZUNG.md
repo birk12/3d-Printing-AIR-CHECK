@@ -34,7 +34,7 @@ Kurzanleitung für den Alltag. Technische Hintergründe: [ENGINEERING_DECISIONS.
 | Akku „lädt“ | USB steckt, Akku wird geladen | nichts; T/RH können kurz etwas hoch sein |
 | Akku „voll“ / „lädt nicht“ bei USB | voll oder Ladepause | nichts |
 | **Akku schwach** (LED: gelbes Blinken auf Tastendruck) | noch etwa 10 % (3,20 V) | Kabel anstecken |
-| **Akku kritisch** (LED: kurzer roter Blitz alle 10 s) | noch etwa 6 % (3,10 V), das Gerät misst nicht mehr | sofort Kabel anstecken |
+| **Akku kritisch** | noch etwa 6 % (3,10 V): das Gerät meldet es ein letztes Mal und geht dann in Tiefschlaf (keine Messung, kein Funk), um die Zellen zu schonen; es prüft stündlich | Kabel anstecken - spätestens nach einer Stunde läuft es wieder |
 | **Fehler / „Ersatz nötig“** | zu kalt/heiß beim Laden, oder Ladezeit zweimal überschritten | Gerät in normale Raumtemperatur bringen, Kabel neu stecken. Kommt der Fehler wieder: nicht mehr laden, siehe §4 |
 
 Bei 3,0 V schaltet die Ladeelektronik das Gerät selbst ab, damit die Zellen nicht tiefentladen werden. Mit
@@ -60,8 +60,10 @@ es riecht stechend, oder das Gerät ist heruntergefallen und das Akkufach besch�
 3. Neue Zellen gleichen Typs (AER18650m2A2) und gleicher Charge, vorher **gemeinsam im XTAR MX4,
    Schalter auf „LiFePO4“**, voll laden, bis alle grün sind.
 4. Spannungen messen: **höchstens 20 mV Unterschied** zwischen den Zellen.
-5. Polarität wie im Fach markiert (+ / −) einsetzen, Temperaturfühler wieder in seine Halterung zwischen den
-   beiden Haltern drücken, Tür zuschrauben.
+5. Polarität wie im Fach markiert (+ / −) einsetzen.
+6. **Temperaturfühler zurück in die Mulde, bevor die Tür schließt:** Der kleine Fühler (mit Kapton) gehört
+   oben auf die innere Zelle des linken Halters; der Finger an der Tür drückt ihn beim Schließen an.
+7. Tür zuschrauben.
 
 ## 6. Lagern, Transport, Entsorgen
 

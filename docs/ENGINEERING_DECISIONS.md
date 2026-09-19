@@ -810,10 +810,24 @@ thermal throttling in the case even 12 h may end at a partial charge -
 safely. On permanent USB-C the pack is almost never flat.
 
 The compact status interface (PWR-K, one ADC node for EXT/CHG/FLT) cannot
-tell the timer's latched fault from a recoverable one. The firmware takes a
-fault that appears after at least 5.5 h of continuous charging for the timer
-(`ac_power.c`); pulsing CE during a real NTC or OVP fault is harmless, the
-charger stays paused by its own logic.
+tell the timer's latched fault from a recoverable one. **A deliberate
+heuristic, approved by the battery session with three conditions:** (1) only
+time with CHG_N "charging" in the current USB session counts towards the
+5.5 h; (2) the pulse comes at most once per session and only below 3.40 V
+(`pwr_timer_retry`); (3) CE is never driven low - level high first, then
+output, then back to input (`ac_battery_ce`). If the fault was really the
+NTC (hot/cold), the pulse does no harm: the BQ25185 keeps blocking through
+TS and its timer stands still.
+
+**Critical cells.** On the cells at the critical level (3.10 V) the device
+sends a last report, switches everything off and goes into deep sleep with a
+1 h timer; after each wake-up a boot check reads the cells before the radio
+starts and goes straight back to sleep while they are still low. Without it
+the device would run into the BQ25185's 3.0 V BUVLO, the unloaded cells would
+recover past 3.15 V, the device restart and load them again - a restart loop
+that walks them down towards the BMS's 2.1 V (battery session, condition K9).
+The brown-out detector stays at its default: the ESP32 sits behind the
+regulated 3.90 V → 3.3 V chain.
 
 **Charge pause.** After "full" on USB-C the firmware holds CE high
 (`pwr_hold_update()`): the cells rest, the device runs from USB. Charging is

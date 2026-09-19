@@ -14,9 +14,10 @@
  *  - PWR-K cannot tell a latched fault (both STAT pins low: the 6 h safety
  *    timer) from a recoverable one (STAT1 only: NTC hot/cold, OVP).  A 1S4P
  *    pack of 6.8-7.2 Ah takes longer than 6 h at 1 A, so the timer is an
- *    expected event here.  A fault that appears after at least
- *    AC_TIMER_SUSPECT_S of continuous charging is taken for the timer; the
- *    battery session approved one CE pulse per USB session for exactly that
+ *    expected event here.  A deliberate heuristic, approved by the battery
+ *    session: a fault that appears after at least AC_TIMER_SUSPECT_S of time
+ *    with CHG_N "charging" in the current USB session is taken for the timer,
+ *    and CE is pulsed once per session, only below 3.40 V
  *    (pwr_timer_retry).  A recoverable fault that gets pulsed by mistake is
  *    harmless: the charger stays paused by its own NTC or OVP logic.
  *  - "External power" for the measurement engine also includes a computer on
@@ -46,7 +47,9 @@ typedef enum {
 
 typedef struct {
     pwr_ctx_t pwr;
-    uint32_t  chg_since_s;  /* start of the current charge, 0: none         */
+    uint32_t  chg_accum_s;  /* seconds with CHG_N "charging" in this USB session */
+    uint32_t  last_s;       /* time of the previous update, 0: none          */
+    bool      was_charging; /* the previous update saw "charging"            */
 } ac_power_t;
 
 typedef struct {
@@ -57,6 +60,11 @@ typedef struct {
 } ac_power_out_t;
 
 void ac_power_init(ac_power_t *p);
+
+/* Before the radio starts: true when the device runs on the cells and they
+ * are at or below the critical level (plus hysteresis) - go straight back to
+ * deep sleep instead of loading them again (boot loop -> deep discharge). */
+bool ac_power_boot_should_sleep(float vbat, const float ladder_v[2]);
 
 /* vbat: cell volts (<0: no reading); ladder_v: two PWR-K readings ~50 ms
  * apart (STAT2 toggles without a cell); usb_host: a computer enumerated the

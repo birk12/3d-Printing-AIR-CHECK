@@ -889,6 +889,30 @@ static void test_power(void)
     o = ac_power_update(&p, 3.30f, flt, false, 60000 + AC_TIMER_SUSPECT_S + 1);
     CHECK(o.ce == AC_CE_PULSE);
 
+    CASE("only time with CHG_N 'charging' counts towards the timer");
+    ac_power_init(&p);
+    o = ac_power_update(&p, 3.10f, chg, false, 1000);
+    o = ac_power_update(&p, 3.20f, flt, false, 1000 + 3 * 3600);     /* 3 h charging, then NTC */
+    CHECK(o.st.fault == PWR_FLT_RECOVERABLE);
+    o = ac_power_update(&p, 3.20f, flt, false, 1000 + 8 * 3600);     /* 5 h paused: not counted */
+    CHECK(o.st.fault == PWR_FLT_RECOVERABLE && o.ce == AC_CE_RELEASE);
+    o = ac_power_update(&p, 3.20f, chg, false, 1000 + 8 * 3600 + 60);
+    o = ac_power_update(&p, 3.30f, flt, false, 1000 + 11 * 3600);    /* 3 h more: 6 h charging */
+    CHECK(o.st.fault == PWR_FLT_LATCHED && o.ce == AC_CE_PULSE);
+
+    CASE("no pulse at or above 3.40 V");
+    ac_power_init(&p);
+    o = ac_power_update(&p, 3.30f, chg, false, 100);
+    o = ac_power_update(&p, 3.42f, flt, false, 100 + AC_TIMER_SUSPECT_S + 10);
+    CHECK(o.ce != AC_CE_PULSE);
+
+    CASE("boot check: sleep again on critical cells, never on USB-C");
+    CHECK(ac_power_boot_should_sleep(3.05f, none));
+    CHECK(ac_power_boot_should_sleep(3.12f, none));        /* inside the hysteresis */
+    CHECK(!ac_power_boot_should_sleep(3.20f, none));
+    CHECK(!ac_power_boot_should_sleep(3.05f, idle));       /* USB-C: charge instead */
+    CHECK(!ac_power_boot_should_sleep(0.1f, none));        /* no cells: a computer powers it */
+
     CASE("an early fault (NTC hot/cold) is not taken for the timer");
     ac_power_init(&p);
     o = ac_power_update(&p, 3.20f, chg, false, 100);

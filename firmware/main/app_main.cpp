@@ -215,6 +215,24 @@ static void do_co2_calibration(uint16_t ppm)
     s_led_event = err == ESP_OK ? AC_LED_EVENT_CAL_OK : AC_LED_EVENT_CAL_FAIL;
 }
 
+/* Critical cells on battery (EDR-21, battery-session condition K9): stop
+ * loading them.  Without this the device would run until the charger's 3.0 V
+ * BUVLO, the unloaded cell would recover past 3.15 V, the device restart,
+ * load it again - a restart loop that walks the cells down towards the BMS's
+ * 2.1 V.  Everything off, then deep sleep with a 1 h timer; after the wake-up
+ * the boot check decides whether to sleep again before the radio starts. */
+#define AC_CRITICAL_SLEEP_S  3600ULL
+static void critical_sleep(void)
+{
+    ESP_LOGW(TAG, "cells critical on battery: deep sleep for %llu s", AC_CRITICAL_SLEEP_S);
+    ac_sen6x_power_off();
+    ac_battery_ce(0);                        /* CE released: fail-safe */
+    ac_led_set(AC_RGB_OFF);
+    ac_rail_hold(true);                      /* SEN_EN stays low through the sleep */
+    esp_sleep_enable_timer_wakeup(AC_CRITICAL_SLEEP_S * 1000000ULL);
+    esp_deep_sleep_start();
+}
+
 /* The LFP module C (EDR-21).  External power - the module's USB-C, or a
  * computer on the FireBeetle's own port - means CONTINUOUS mode and no battery
  * alarms, as USB always has.  While the module charges, temperature and
@@ -262,6 +280,13 @@ static void read_battery(void)
         last_key = key;
     }
     ac_matter_publish_power(&o.st, o.ext, vbat);
+
+    if (o.st.src == PWR_SRC_BATTERY && o.st.lvl == PWR_LVL_CRITICAL) {
+        /* the last report: give the subscribers' next poll time to pick up
+         * BatChargeLevel = Critical before the radio goes */
+        vTaskDelay(pdMS_TO_TICKS(20000));
+        critical_sleep();
+    }
 }
 
 static void persist(void)
@@ -525,6 +550,19 @@ extern "C" void app_main(void)
     s_lock = xSemaphoreCreateMutex();
     ESP_ERROR_CHECK(ac_store_init());
     ESP_ERROR_CHECK(ac_hal_init());
+    ac_rail_hold(false);                     /* release what a deep sleep held */
+
+    /* Boot check, before the radio: on critical cells go straight back to
+     * sleep instead of loading them with Thread and the sensors. */
+    {
+        float vbat = -1.0f, ladder[2] = { 0, 0 }, vsys = 0;
+        bool usb = false;
+        if (ac_battery_read(&vbat, ladder, &vsys, &usb) == ESP_OK && !usb &&
+            ac_power_boot_should_sleep(vbat, ladder)) {
+            ESP_LOGW(TAG, "boot check: cells at %.2f V", (double)vbat);
+            critical_sleep();
+        }
+    }
     ESP_ERROR_CHECK(ac_button_init());
     ac_led_set(AC_RGB_WHITE);                /* proof of life before Matter starts */
 

@@ -27,7 +27,7 @@ during boot is normal: it sits on GPIO16, which the ROM boot log toggles.
 | white pulse after a press | still warming up (first minute after power-on) |
 | yellow short blinks after a press | battery low (about 10 %, 3.20 V): **plug in USB-C** |
 | red blinks for 3 s after a press | all sensors failed: check the log |
-| red blip every 10 s, unprompted | battery critical (about 6 %, 3.10 V), measurement paused: plug in USB-C now |
+| dark, no Thread, on the cells | battery critical (about 6 %, 3.10 V): after a last report the device sleeps and re-checks every hour - plug in USB-C; it is back within the hour |
 | red blip every 5 s, unprompted | all sensors failed: check the log |
 | fast red for 3 s | factory reset in progress |
 | white fast blink | a controller sent Identify |
