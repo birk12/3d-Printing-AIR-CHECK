@@ -133,7 +133,7 @@ PARTS: list[Part] = [
             "at their job than the SEN6x combination modules (EDR-16, EDR-17). "
             "Power-gated by SW1 because it idles at 3.3 mA.",
         price_eur=20.71, supplier="Mouser (EUR 17.40 net)",
-        vsupply_min=3.15, vsupply_max=3.45, i_typ_ma=75.0, i_max_ma=190.0,
+        vsupply_min=3.15, vsupply_max=3.6, i_typ_ma=75.0, i_max_ma=190.0,   # v0.92 Table 11
         i2c_addr=0x6B, datasheet="Sensirion SEN6x Datasheet v0.92, December 2025",
     ),
     Part(ref="W1", value="JST GH 6-way cable, 150 mm, one end open", mfr="JST / generic",
