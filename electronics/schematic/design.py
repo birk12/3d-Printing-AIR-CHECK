@@ -386,10 +386,10 @@ PARTS: list[Part] = [
                      "diode leakage lifts the node by 12 mV instead of 120 mV. The "
                      "current comes from VBUS, never from the cells."),
     _r("R21", "15 k", "PWR-K: node to GND. 5.25 V x 15/25 = 3.15 V at most on GPIO4."),
-    _r("R22", "15 k", "PWR-K: D20 to STAT2 (CHG_N): charging pulls the node to 2.09-2.46 V "
+    _r("R22", "15 k", "PWR-K: D20 to STAT2 (CHG_N): charging pulls the node to 2.09-2.43 V "
                      "(worst case including the STAT pins' VOL, SLUSF65B 5.5; at 0.28 mA "
                      "of sink current, far below the 5 mA that figure is given for)."),
-    _r("R23", "3.3 k", "PWR-K: D21 to STAT1 (FLT_N): a fault pulls the node to 1.02-1.60 V "
+    _r("R23", "3.3 k", "PWR-K: D21 to STAT1 (FLT_N): a fault pulls the node to 1.05-1.54 V "
                       "(worst case including VOL)."),
     _r("R3", "4.7 k", "SEN62 SDA pull-up to +3V3_SEN: it switches off with the sensor, "
                      "so no pull-up back-feeds the unpowered SEN62."),
@@ -616,12 +616,17 @@ ADC_MAX_V = 2.9             # ESP32-C6 ADC, 12 dB attenuation, usable before cli
 ADC_12DB_MAX_V = 3.3        # ESP32-C6 DS v1.5 Tab. 5-6, ATTEN3 range 0-3300 mV
 LM66200_VRCB_MAX = 0.070    # reverse-current blocking threshold, max (SLVSG04)
 PWR_K_IDLE_MIN_V = 2.65     # pwr_std PWR_K_IDLE_MIN
-# PWR-K node, worst case over VBUS 4.75-5.25 V, BAT43 Vf 0.15-0.35 V and the
-# STAT pins' own VOL (TI SLUSF65B 5.5: up to 0.4 V), from the Power-Standard's
-# Monte-Carlo run (Elektronik-Audit sim/s1_pwrk.cir, NC-02)
-PWR_K_FLT_V = (1.02, 1.60)
-PWR_K_CHG_V = (2.09, 2.46)
+# PWR-K node, worst case over VBUS 4.75-5.25 V, the STAT pins' own VOL (TI
+# SLUSF65B 5.5: up to 0.4 V) and the diodes' forward drop at the current that
+# actually flows.  Numbers from the audit's Monte-Carlo run for the 10k
+# ladder (sim/s1_pwrk.cir, 3000 runs per state): the ratios are unchanged by
+# the scaling, but ten times the current lifts Vf from about 0.13 to 0.28 V,
+# which moves the fault bands up by up to 60 mV (NC-02 and the follow-up).
+PWR_K_FLT_V = (1.05, 1.54)
+PWR_K_CHG_V = (2.09, 2.43)
+PWR_K_IDLE_V = (2.84, 3.17)
 ADC_12DB_ERR_V = 0.040      # ESP32-C6 DS v1.5 Tab. 5-6, total error at 12 dB
+PWR_K_MIN_MARGIN_V = 0.100  # how close a band may come to its threshold
 ADC_6DB_MAX_V = 1.9         # ESP32-C6 ADC, 6 dB attenuation (Power-Standard PWR-7)
 R_TOL = 0.01                # metal film, 1 %
 PWR_K_R_TH = 6e3            # 10k || 15k, the ladder's source impedance
@@ -880,6 +885,15 @@ def run_erc() -> Erc:
             f"{PWR_K_CHG_V[0] - ADC_12DB_ERR_V:.2f} V")
     e.check(PWR_K_CHG_V[1] + ADC_12DB_ERR_V < PWR_K_IDLE_MIN_V,
             "the 'charging' band reaches into the 'idle' threshold")
+    # since the ladder went to 10k this is the smallest margin of the four
+    # (the fault bands moved up, the idle band moved down): idle's lower edge
+    # against its own threshold, ADC error included
+    margin = PWR_K_IDLE_V[0] - ADC_12DB_ERR_V - PWR_K_IDLE_MIN_V
+    e.check(margin >= PWR_K_MIN_MARGIN_V,
+            f"the smallest PWR-K margin is {margin * 1000:.0f} mV (idle against "
+            f"2.65 V), less than the {PWR_K_MIN_MARGIN_V * 1000:.0f} mV we keep")
+    e.check(PWR_K_IDLE_V[1] <= ADC_12DB_MAX_V,
+            "the 'idle' band leaves the ADC's range")
 
     # 9. I2C: unique addresses, pull-ups on the rail of the bus's devices
     addrs = [p.i2c_addr for p in PARTS if p.i2c_addr is not None]

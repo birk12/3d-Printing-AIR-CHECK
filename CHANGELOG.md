@@ -3,6 +3,25 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-09-20
+
+A correction to the reasoning behind 1.4.2, not to the circuit.
+
+### Changed
+
+- **The PWR-K bands are not identical between the two ladders.** "Only
+  ratios, so nothing moves" holds for the resistors, not for the diodes: ten
+  times the current lifts the BAT43's forward drop from about 0.13 V to
+  0.28 V, so the fault bands move up by up to 60 mV and the idle band down.
+  From the audit's Monte-Carlo for the 10k ladder (3000 runs per state):
+  fault **1.05-1.54 V**, charging **2.09-2.43 V**, idle **2.84-3.17 V**.
+  The thresholds hold (0 misdecodings in 15000 runs), but the smallest
+  margin is now 149 mV at the idle band's lower edge against 2.65 V, where
+  it used to be 182 mV at the fault band. The ERC checks that margin
+  explicitly (at least 100 mV, ADC error included), and the numbers in
+  TESTING, NETLIST and SP-1 follow. T-L1's "never above 3.15 V" becomes
+  "never above 3.20 V".
+
 ## [1.4.2] - 2026-09-20
 
 Follow-up to the audit, all of it from the two cross-project sessions: the

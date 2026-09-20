@@ -39,7 +39,7 @@ believed.
 | status LED logic | SIMULATED | part of the 537; every pattern and its timing |
 | LFP power module (`ac_power` over `pwr_std`) | SIMULATED | part of the 537, plus `firmware/test/host/test_pwr_std.c`: PWR-K decoding, charge pause, safety-timer restart, voltage levels, Matter's charge states |
 | energy model | BUILD-VERIFIED | `tools/battery_calculator/model.py`, inputs traced to datasheets |
-| electrical design | BUILD-VERIFIED | 777 rule checks in `electronics/schematic/design.py`, 0 warnings; the same wiring as `Elektronik-Audit/einreichung/SP-1_air-check.toml` (A1-A12, 0 errors) |
+| electrical design | BUILD-VERIFIED | 780 rule checks in `electronics/schematic/design.py`, 0 warnings; the same wiring as `Elektronik-Audit/einreichung/SP-1_air-check.toml` (A1-A12, 0 errors) |
 | enclosure | BUILD-VERIFIED | OpenSCAD asserts over every module, post and zone, and `tools/diagnostics/stl_check.py`: all four parts manifold, 1.2 % overhang on the front shell |
 | firmware build | BUILD-VERIFIED | full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6: 1.69 MB image (14 % free in the OTA slot), 210 kB DIRAM (46.5 %) |
 | sensor drivers | **untested** | register addresses and timings read from datasheets |
@@ -88,10 +88,10 @@ python3 electronics/schematic/design.py
 ```
 
 ```
-ERC: 777 checks, 0 error(s), 0 warning(s)
+ERC: 780 checks, 0 error(s), 0 warning(s)
 ```
 
-What the 777 cover: every pin exists on its part and every pin of every part
+What the 780 cover: every pin exists on its part and every pin of every part
 is connected or declared open, no net has one connection, no pin is on two
 nets, every supply is within its part's range and the part really sits on
 that rail; **the cell chain** (Power-Standard checklist K1/K2): each cell's +
@@ -247,7 +247,7 @@ meter (PPK2 or µCurrent), a lab supply, freeze spray, a 33 kΩ resistor.
 | PS-1.2 | USB-C in J2, **no cells**: voltage at #6091 BATT+ / BATT− | 3.60–3.70 V (may wander briefly) |
 | PS-1.3 | the same, if it reads 4.1–4.25 V: **stop**, a jumper is wrong | – |
 | PS-1.4 | #6091 LOAD with USB-C, PS1 disconnected | 4.41–4.59 V |
-| PS-1.5 | S1/S2 really are STAT1/STAT2: (a) CE open (GPIO5 not driven), no cells → S2 toggles high/low (BQ25185 datasheet §6.3.10); (b) TH jumper open, **33 kΩ** at TH instead of the NTC (= cold) → S1 low, the PWR-K node at GPIO4 reads 1.02–1.60 V. **Never** bridge TH to GND: that is the button function, and holding it leads to the factory mode (SYS off) | as described |
+| PS-1.5 | S1/S2 really are STAT1/STAT2: (a) CE open (GPIO5 not driven), no cells → S2 toggles high/low (BQ25185 datasheet §6.3.10); (b) TH jumper open, **33 kΩ** at TH instead of the NTC (= cold) → S1 low, the PWR-K node at GPIO4 reads 1.05–1.54 V. **Never** bridge TH to GND: that is the button function, and holding it leads to the factory mode (SYS off) | as described |
 | PS-1.6 | !CE has its pull-down: GPIO5 an input (FireBeetle unpowered) → the #6091's CE pad | < 0.4 V |
 | PS-1.6a | CE through a reset: hold the FireBeetle in reset (EN / RST low) with USB-C in J2 and measure the #6091's CE pad | < 0.4 V (charging allowed; nothing on GPIO5 pulls it up) |
 | PS-1.7 | DCIN+ carries USB 5 V (R20 taps the PWR-K ladder there) | ≈ 5 V |
@@ -263,7 +263,7 @@ meter (PPK2 or µCurrent), a lab supply, freeze spray, a 33 kΩ resistor.
 | PS-2.4 | BMS P− is the ground of the whole device, B− goes nowhere else | yes |
 | PS-2.5 | the NTC on holder 2's outer cell (next to the charger chamber) under Kapton, held by the door's finger; resistance at room temperature | 9–11 kΩ at 25 °C |
 | PS-2.6 | TH jumper cut (visual) | yes |
-| PS-2.7 | cold test: freeze spray on the NTC, below 0 °C → FLT_N low (PWR-K node 1.02–1.60 V, log `fault (temperature/OVP)`), charging stops | yes |
+| PS-2.7 | cold test: freeze spray on the NTC, below 0 °C → FLT_N low (PWR-K node 1.05–1.54 V, log `fault (temperature/OVP)`), charging stops | yes |
 | PS-2.8 | charge current into flat cells, ammeter between BMS P+ and #6091 BATT+, PS1 disconnected. With the device running, its own draw comes out of the 1.1 A input limit (about 0.8 A left for the cells, EDR-21) | 1000 mA ± 10 % |
 | PS-2.9 | end of charge: cell voltage at the end, CHG_N goes high (log `full`, then `charge paused`) | 3.60–3.70 V |
 | PS-2.10 | pull USB-C during a SEN62 window (fan running) | no reset: uptime continues, the window completes, the log shows `power: cells` |
@@ -294,7 +294,7 @@ GPIO4, CE on GPIO5):
 | T-P3a | **3.3 V with 470 uF**, once | TI's tested output-capacitor combinations for the TPS62A02 stop at 2 x 22 uF. With C3 fitted, a load step of 0 to 200 mA on +3V3 (the SEN62 switching on is one): the rail settles without ringing or repeated dips (no hiccup), ripple below Sensirion's 100 mV peak-to-peak limit |
 | T-P4 | rails | +3V3_SEN is off between windows and 3.2-3.4 V during one; the #2810's slide switch is in OFF; GPIO18 (Sunrise VDDIO) and GPIO14 (EN) are high only during a Sunrise measurement, and GPIO17/21 are quiet while EN is low; the red LED only flickers during boot (GPIO16 is U0TXD) |
 | T-P5 | computer on the FireBeetle | a computer on the FireBeetle's USB: the log shows `power: cells, ... VSYS 4.2x V` and `state CHARGING, mode CONTINUOUS` (the state means external power, not that the cells charge), no battery alarm, and the SEN62 runs continuously; unplugged, back to ECO within one battery read (`battery_interval_s`, 5 min by default) |
-| T-L1 | **PWR-K node voltages** | at GPIO4 against GND: no USB-C **0 V**; USB-C and a fault (PS-1.5b or PS-2.7) **1.02–1.60 V**; charging **2.09–2.46 V**; full or paused **2.85–3.15 V**. Never above 3.15 V |
+| T-L1 | **PWR-K node voltages** | at GPIO4 against GND: no USB-C **0 V**; USB-C and a fault (PS-1.5b or PS-2.7) **1.05–1.54 V**; charging **2.09–2.43 V**; full or paused **2.84–3.17 V**. Never above 3.20 V (T-L1b) |
 | T-L1b | **PWR-K node with a warm charger** (audit O2) | USB-C in J2, cells full, after 30 min of charging in the closed case (the same run as PS-2.13 / O3): the node at GPIO4 stays **below 3.20 V**. The ladder's own worst case is 3.175 V; with the 10k ladder its source impedance is 6 k, so every microamp of reverse current through D20/D21 - which idle with about 1.3 V across them next to the charger - adds only 6 mV. A reading near 3.4 V would mean the clamp D22 is conducting, which is the backstop, not the working point. Note the value either way and write it into `electronics/schematic/design.py` (`PWR_K_LEAK_UA`, 2 uA assumed) |
 | T-L1c | **cell measurement calibrated** (audit NC-03) | after PS-4.1 / protocol step 4.1b, with the multimeter still on the cells: `cal battery <V>`, then `cal show` and `diag` report the factor, and `diag` agrees with the multimeter within 20 mV. Power-cycle: the factor survives. The factor must lie within 0.95-1.05; further out means the divider is not what the schematic says |
 | T-L2 | **reset with 3.15 V on GPIO4** | GPIO4 held at 3.15 V (lab supply on the PWR-K node): reset and power-cycle the FireBeetle several times - it boots normally every time (banner, no reset loop). GPIO4/5 are strapping pins only for the SDIO slave timing, which is not used |
@@ -310,7 +310,7 @@ GPIO4, CE on GPIO5):
 
 | # | test | pass |
 |---|---|---|
-| T-B1 | flash and boot | the banner `3D Printing AIR CHECK 1.4.2` appears, no panic, no reset loop |
+| T-B1 | flash and boot | the banner `3D Printing AIR CHECK 1.4.3` appears, no panic, no reset loop |
 | T-B2 | status LED | white at boot, all three colours on a press, blue when pairing, readable in daylight in its panel holder |
 | T-B3 | button | short, long (3-8 s), calibrate (8-12 s) and very long all do the right thing, and the hold colour matches; over 20 s does nothing |
 | T-B4 | service console | with USB in, `aircheck_config.py get` lists the settings, `set name ...` changes the Matter NodeLabel, `diag` shows live values and the health of all four sensors and the power line (`LFP cells X.XX V, N %, charging, external power yes`); on the cells alone, the console is not running |

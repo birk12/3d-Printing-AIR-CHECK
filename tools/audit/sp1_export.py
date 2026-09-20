@@ -255,9 +255,10 @@ ANALOG_NETS = {
         "adc_atten_mv": 3300,
         "pegel_definiert_durch": "Leiter R20 10 k an VBUS_EXT, R21 15 k nach GND; "
                                  "R22/R23 ueber D20/D21 an den STAT-Pins",
-        "baender": "kein USB 0 V | Fehler 1,02-1,60 V | laedt 2,09-2,46 V | voll bzw. "
-                   "Ladepause 2,85-3,15 V; Schwellen in pwr_std.h 0,60 / 1,85 / 2,65 V "
-                   "(Stand nach NC-02)",
+        "baender": "kein USB 0 V | Fehler 1,05-1,54 V | laedt 2,09-2,43 V | voll bzw. "
+                   "Ladepause 2,84-3,17 V (Monte-Carlo des Audits fuer die 10k-Leiter, "
+                   "3000 Laeufe je Zustand); Schwellen in pwr_std.h 0,60 / 1,85 / "
+                   "2,65 V, unveraendert",
         "hinweis": "ADC1_CH4 mit 12 dB, Messbereich 0-3300 mV (DS v1.5 Tab. 5-6). "
                    "Oberhalb von etwa 2,9 V geht der Wandler in die Saettigung; "
                    "das stoert nicht, weil das oberste Band ('voll bzw. Ladepause') "
@@ -266,10 +267,15 @@ ANALOG_NETS = {
                    "liegen beide STAT-Pins ueber die Board-LEDs auf etwa 4,5 V, "
                    "D20/D21 sperren mit rund 1,3 V und heben den Knoten. Deshalb "
                    "ist die Leiter seit v1.4.2 zehnfach niederohmiger "
-                   "(10k/15k/15k/3k3, Standarddimensionierung des Power-Standards): "
-                   "die Baender haengen nur an Verhaeltnissen und bleiben auf drei "
-                   "Stellen gleich, die Quellimpedanz faellt aber von 60 k auf 6 k, "
-                   "jedes uA hebt den Knoten also um 6 mV statt 60 mV. Der Strom "
+                   "(10k/15k/15k/3k3, Standarddimensionierung des Power-Standards). "
+                   "Die Baender haengen nur an den Widerstandsverhaeltnissen und "
+                   "bleiben von der Skalierung unberuehrt; die Flussspannung der "
+                   "Dioden steigt mit dem zehnfachen Strom aber von rund 0,13 auf "
+                   "0,28 V, wodurch die Fehlerbaender um bis zu 60 mV steigen "
+                   "(kleinste Marge zur Schwelle 149 mV statt 182 mV, 0 von 15000 "
+                   "Fehldekodierungen im Monte-Carlo des Audits). Die Quellimpedanz "
+                   "faellt von 60 k auf 6 k, jedes uA Sperrstrom hebt den Knoten "
+                   "also um 6 mV statt 60 mV. Der Strom "
                    "kommt aus VBUS, nie aus den Zellen; der Senkstrom der STAT-Pins "
                    "bleibt mit 0,28 mA weit unter den 5 mA, fuer die SLUSF65B 5.5 "
                    "die 0,4 V VOL angibt. D22 klemmt zusaetzlich auf VDD+Vf (K16). "

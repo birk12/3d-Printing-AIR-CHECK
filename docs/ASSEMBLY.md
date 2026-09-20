@@ -14,7 +14,7 @@ PARTS -> PRINT + BAKE -> SET UP THE POWER MODULE -> WIRE -> FLASH -> INTO THE CA
 
 The wiring list, the pin map and where each inline part goes are in
 [`electronics/schematic/NETLIST.md`](../electronics/schematic/NETLIST.md).
-That file is generated from `design.py` and checked by 777 rules; if this
+That file is generated from `design.py` and checked by 780 rules; if this
 guide and the netlist ever disagree, the netlist wins.
 
 The power system is the Power-Standard's **module C** (EDR-21): LiFePO4
@@ -262,7 +262,7 @@ idf.py -p /dev/tty.usbmodem* flash monitor
 Within a few seconds:
 
 ```
-I (xxx) aircheck: 3D Printing AIR CHECK 1.4.2
+I (xxx) aircheck: 3D Printing AIR CHECK 1.4.3
 I (xxx) aircheck: serial AC-XXXX-XXXX
 I (xxx) sgp40: VOC index algorithm at a 10 s sampling interval
 I (xxx) aircheck: SEN62 <serial>
