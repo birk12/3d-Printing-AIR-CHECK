@@ -333,10 +333,13 @@ PARTS: list[Part] = [
          why="Clamp at the PWR-K node (Power-Standard rule K16, from the "
              "electronics audit's observation O2): with both STAT pins high the "
              "board's LEDs hold them near 4.5 V, D20/D21 are reverse biased next "
-             "to the warm charger, and their leakage lifts the node - 60 mV per "
-             "microamp at the ladder's 60 k source impedance. The clamp takes "
+             "to the warm charger, and their leakage lifts the node - 6 mV per "
+             "microamp since the ladder went to 6 k source impedance, ten times "
+             "that with the standard's earlier 100k ladder. The clamp takes "
              "everything above +3V3 plus its forward drop, so GPIO4 stays under "
-             "its VDD + 0.3 V. Anode at the node, cathode on +3V3.",
+             "its VDD + 0.3 V in any case; K16 makes it mandatory with the 100k "
+             "ladder and recommends it with this one. Anode at the node, cathode "
+             "on +3V3.",
          price_eur=0.10, supplier="Reichelt"),
     Part(ref="J1", value="JST PH 2-way pigtail, 100 mm", mfr="generic",
          mpn="PHR-2 with leads", footprint="JST PH 2.0 mm", pins={"+": "+", "-": "-"},

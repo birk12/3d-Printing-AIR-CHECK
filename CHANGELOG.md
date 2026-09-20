@@ -3,6 +3,23 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2026-09-20
+
+### Changed
+
+- `pwr_std` taken over again: its PWR-K comment now carries **both** ladders
+  with their bands, the shift between them and the open point (TI specify
+  VOL at 5 mA, not at the 0.28 mA that actually flows). Byte-identical to
+  the Power-Standard's copy, as always.
+- **Swept the repository for the old wording** rather than only writing the
+  new one in - the Power-Standard's new checklist point K18, after a
+  correction of its own ended up contradicting itself in the same file. Out:
+  the 748 rule checks in `ci/README.md` and `electronics/pcb/README.md`, the
+  "one standing warning" that C3 removed, 1.4.0 in `firmware/README.md`,
+  the old band 2.85-3.15 V in PS-4.2 and T-L3, the 150k/33k of the old
+  ladder in the SP-1 exporter, and the 60 k source impedance in D22's own
+  reason for existing.
+
 ## [1.4.3] - 2026-09-20
 
 A correction to the reasoning behind 1.4.2, not to the circuit.

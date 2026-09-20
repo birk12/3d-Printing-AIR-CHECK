@@ -501,8 +501,8 @@ SIGNAL_LEVEL = {
     "BTN": "interner Pull-up des ESP32-C6 an GPIO1, SW2 zieht nach GND",
     "CHG_N": "STAT2 des BQ25185, open drain gegen den LED-Zweig auf dem Board",
     "FLT_N": "STAT1 des BQ25185, open drain",
-    "CHG_R": "R22 150 k von D20 zum PWR-K-Knoten",
-    "FLT_R": "R23 33 k von D21 zum PWR-K-Knoten",
+    "CHG_R": "R22 15 k von D20 zum PWR-K-Knoten",
+    "FLT_R": "R23 3,3 k von D21 zum PWR-K-Knoten",
     "LED_R_K": "GPIO16 senkt ueber R8", "LED_G_K": "GPIO22 senkt ueber R9",
     "LED_B_K": "GPIO23 senkt ueber R10",
 }

@@ -114,13 +114,29 @@ uint8_t pwr_lfp_pct(float vbat);
 
 /* ---- compact interface PWR-K (devices with one free ADC pin) ---------
  * EXT, CHG_N and FLT_N share one node: VBUS -100k- node -150k- GND,
- * CHG_N via BAT43 + 150k, FLT_N via BAT43 + 33k.  ADC_ATTEN_DB_12.
- * Worst case over VBUS 4.75..5.25 V, BAT43 Vf 0.15..0.35 V AND the STAT pins'
- * own VOL (TI SLUSF65B: up to 0.4 V) - the earlier numbers left VOL out:
- *   no USB 0 V | fault 1.02..1.60 V | charging 2.09..2.46 V | idle 2.85..3.15 V
- * Thresholds sit in the middle of the gaps, each >= 180 mV from a band edge,
- * which covers the C6 ADC's +-40 mV at 12 dB.
- * Recoverable and latched faults overlap there; both decode as a fault. */
+ * Two dimensionings are allowed, both with the SAME thresholds below.
+ *   10k  ladder (standard, new devices): 10k / 15k, CHG_N via BAT43 + 15k,
+ *        FLT_N via BAT43 + 3k3.  Node impedance 6 kOhm.
+ *   100k ladder (existing devices, needs the clamp diode of K16):
+ *        100k / 150k, CHG_N via BAT43 + 150k, FLT_N via BAT43 + 33k.  60 kOhm.
+ * ADC_ATTEN_DB_12 in both cases.
+ *
+ * Bands from the audit's Monte Carlo (3000 runs each, R 1 %, VBUS +-5 %,
+ * VOL 0.01..0.40 V per SLUSF65B 5.5, BAT43 as a SPICE diode):
+ *
+ *   state        100k ladder        10k ladder        shift
+ *   no USB       0.000              0.000               0 mV
+ *   fault        1.018..1.493 V     1.052..1.541 V    +48..+60 mV
+ *   charging     2.091..2.428 V     2.087..2.434 V     +6 mV
+ *   idle (full)  2.891..3.226 V     2.839..3.174 V     -52 mV
+ *
+ * The bands themselves only depend on the resistor RATIOS, but ten times the
+ * current raises the BAT43 forward drop from ~0.13 to ~0.28 V, which lifts the
+ * fault bands.  Thresholds hold for both (0 misdecodes in 15000 runs); the
+ * smallest margin is 149 mV with the 10k ladder and sits at the idle lower
+ * bound against PWR_K_IDLE_MIN, ADC error +-40 mV included.
+ * Open: VOL at 0.28 mA is not specified - TI gives only the 5 mA point.
+ * Recoverable and latched faults overlap; both decode as a fault. */
 #define PWR_K_USB_MIN   0.60f
 #define PWR_K_CHG_MIN   1.85f
 #define PWR_K_IDLE_MIN  2.65f

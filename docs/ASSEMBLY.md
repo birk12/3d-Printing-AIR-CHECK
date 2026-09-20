@@ -262,7 +262,7 @@ idf.py -p /dev/tty.usbmodem* flash monitor
 Within a few seconds:
 
 ```
-I (xxx) aircheck: 3D Printing AIR CHECK 1.4.3
+I (xxx) aircheck: 3D Printing AIR CHECK 1.4.4
 I (xxx) aircheck: serial AC-XXXX-XXXX
 I (xxx) sgp40: VOC index algorithm at a 10 s sampling interval
 I (xxx) aircheck: SEN62 <serial>

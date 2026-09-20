@@ -34,7 +34,7 @@ not. Note that `esp-matter/examples/common` is deliberately **not** on
 handling.
 
 The first build takes a while: it compiles the whole Matter SDK. The result
-(v1.4.0, ESP-IDF v5.5.5):
+(v1.4.4, ESP-IDF v5.5.5):
 
 ```
 aircheck.bin   1 687 776 bytes, 14 % free in the 1.9 MB OTA partition
@@ -63,7 +63,7 @@ cc -std=c99 -Wall -Wextra -Werror -Icomponents/pwr_std/include \
 537 checks, about 20 ms, then `all tests passed` from `pwr_std`. See
 `docs/TESTING.md` for what they cover.
 
-## Power (1.4.0)
+## Power (1.4.4)
 
 The Power-Standard's module C (EDR-21): a USB-C socket, the #6091 charger
 (TI BQ25185), 1S4P LiFePO4. `ac_hal/battery.c` reads the cell voltage /
