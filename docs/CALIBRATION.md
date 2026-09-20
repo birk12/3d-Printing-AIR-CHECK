@@ -155,9 +155,15 @@ cal show                # the stored factor
 cal battery 0           # back to the nominal ratio
 ```
 
-Do it during assembly, when the meter is on the cells anyway (test protocol
-PS-4.1, acceptance T-L1c). The factor survives a power cycle, is refused
-outside 0.95-1.05, and shows up in `diag`. This is the electronics audit's
+Do it during assembly, when the meter is on the cells anyway - the
+Power-Standard's protocol has it as step **4.1b**, right after the divider
+check, and T-L1c is the acceptance here. The arithmetic is the standard's
+(`pwr_cal_factor` / `pwr_cal_apply` in `pwr_std`), so every device built to
+PWR-7 calibrates the same way; this project only decides where the factor is
+stored (NVS). The factor survives a power cycle and shows up in `diag`. More than 5 %
+apart, the device refuses it and stores nothing: that distance is not the
+ADC and not 1 % resistors, it is a wrong or badly soldered divider, and half
+a correction would hide the fault. This is the electronics audit's
 NC-03, and it is the reason the runtime figures and the Matter battery level
 can be trusted to about 20 mV instead of 77.
 

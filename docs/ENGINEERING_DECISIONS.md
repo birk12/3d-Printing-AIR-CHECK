@@ -919,7 +919,10 @@ GND, and the ERC computes what is left of +3V3 for the worst capacitance the
 module may have. At the acceptance limit of **33 uF** the rail dips to
 3.03 V, above the C6's 3.00 V VDD minimum and well above the brown-out.
 T-P3 measures C(SEN62) before assembly against that limit; above it, a
-second C3 goes in parallel. C3 also keeps the 2 ms 190 mA peak inside
+second C3 goes in parallel. The audit simulated the fix against its own
+model afterwards and got 3.133 V at 33 uF and 3.067 V even at 47 uF, so our
+3.03 V is the conservative end of the two - we keep ours as the design
+figure and its run as the counter-check. C3 also keeps the 2 ms 190 mA peak inside
 Sensirion's own 100 mV ripple limit. It costs 30 uA of leakage (0.01CV,
 worst case) - 3.1 mWh/day, about 1.6 % of ECO, and the runtime figure moves
 from 2.9 to 2.8 months. One open point goes to the bench: TI's tested output
@@ -941,7 +944,11 @@ the cell voltage and, with the 1 % divider, reaches +-77 mV - more than the
 levels. Better resistors do not fix that, because the larger half is the
 ADC. What fixes it is a one-point calibration per device: the multimeter
 reading from PS-4.1 goes into the device once, and the factor is stored.
-See `docs/CALIBRATION.md` and the console command `cal battery`.
+See `docs/CALIBRATION.md` and the console command `cal battery`. The
+Power-Standard took the idea over the same day - `pwr_cal_factor()` and
+`pwr_cal_apply()` are part of `pwr_std` now, with the clamp and the
+no-cell guard in the module and the storage left to the project, and the
+protocol has it as step 4.1b. Every PWR-7 device calibrates the same way.
 
 **NC-12 was already satisfied, just not pointed at.** Module C section 7 asks
 for 30 mm between the charger and a temperature/humidity sensor. The CAD has
@@ -956,13 +963,22 @@ which is what the Power-Standard's own submissions carry, so both documents
 now say the same about the same pin. Observation O2 found a term neither side
 had modelled: with both STAT pins high the charger's board LEDs hold them near
 4.5 V, D20 and D21 are reverse biased, and their leakage flows into the PWR-K
-node - 60 mV per microamp at the ladder's 60 k source impedance, and the
+node - with the ladder as it then was, 60 mV per microamp at 60 k, and the
 diodes sit at the charger's pads, which our own O3 lets reach 70 °C. Nothing
 functional depends on it (the top band is recognised by being above 2.65 V),
 but GPIO4 could pass VDD + 0.3 V. A bleeder does not help: 1 MOhm would move
 the idle point by 178 mV and catch only 195 mV. The Power-Standard turned it
-into rule **K16**, and D22 (a third BAT43, anode at the node, cathode on
-+3V3) is now in the wiring list; T-L1b measures the node with a warm charger.
+into rule **K16** and, a few hours later, into a second and better answer:
+the whole ladder is now **ten times lower in impedance** (10k / 15k / 15k /
+3k3). The bands depend only on ratios, so nothing in the firmware moves,
+but 6 k of source impedance turns the leakage term into 6 mV per microamp.
+It costs 126 uA - out of the charger, never out of the cells, because the
+ladder hangs on VBUS and sits at 0 V without a cable. D22 (a third BAT43,
+anode at the node, cathode on +3V3) stays as the backstop; T-L1b measures the node with a warm charger.
+The clamp is rail-referenced, which is the point of it: the node lands at
+VDD + Vf and the limit is VDD + 0.3 V, so with 0.13-0.2 V of forward drop at
+the relevant microamps there are at least 100 mV of margin at every
+operating point, not only at the nominal rail.
 
 **NC-02 came back from the Power-Standard as a correction to `pwr_std`**: the
 PWR-K bands had left out the STAT pins' own VOL (up to 0.4 V), so the

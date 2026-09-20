@@ -380,12 +380,17 @@ PARTS: list[Part] = [
     _r("R1", "470 k", "VBAT_S top: cell / 2, 3.65 V -> 1.83 V at GPIO3 (ADC 6 dB, 0-1.9 V). "
                       "3.5 uA from the cells."),
     _r("R2", "470 k", "VBAT_S bottom."),
-    _r("R20", "100 k", "PWR-K: from USB 5 V to the node (EXT)."),
-    _r("R21", "150 k", "PWR-K: node to GND. 5.25 V x 150/250 = 3.15 V at most on GPIO4."),
-    _r("R22", "150 k", "PWR-K: D20 to STAT2 (CHG_N): charging pulls the node to 2.09-2.46 V "
-                      "(worst case including the STAT pins' VOL, SLUSF65B 5.5)."),
-    _r("R23", "33 k", "PWR-K: D21 to STAT1 (FLT_N): a fault pulls the node to 1.02-1.60 V "
-                     "(worst case including VOL)."),
+    _r("R20", "10 k", "PWR-K: from USB 5 V to the node (EXT). The Power-Standard "
+                     "scaled the whole ladder by 1/10 (audit O2): only ratios set "
+                     "the bands, but the source impedance falls from 60 k to 6 k, so "
+                     "diode leakage lifts the node by 12 mV instead of 120 mV. The "
+                     "current comes from VBUS, never from the cells."),
+    _r("R21", "15 k", "PWR-K: node to GND. 5.25 V x 15/25 = 3.15 V at most on GPIO4."),
+    _r("R22", "15 k", "PWR-K: D20 to STAT2 (CHG_N): charging pulls the node to 2.09-2.46 V "
+                     "(worst case including the STAT pins' VOL, SLUSF65B 5.5; at 0.28 mA "
+                     "of sink current, far below the 5 mA that figure is given for)."),
+    _r("R23", "3.3 k", "PWR-K: D21 to STAT1 (FLT_N): a fault pulls the node to 1.02-1.60 V "
+                      "(worst case including VOL)."),
     _r("R3", "4.7 k", "SEN62 SDA pull-up to +3V3_SEN: it switches off with the sensor, "
                      "so no pull-up back-feeds the unpowered SEN62."),
     _r("R4", "4.7 k", "SEN62 SCL pull-up, as R3."),
@@ -619,10 +624,10 @@ PWR_K_CHG_V = (2.09, 2.46)
 ADC_12DB_ERR_V = 0.040      # ESP32-C6 DS v1.5 Tab. 5-6, total error at 12 dB
 ADC_6DB_MAX_V = 1.9         # ESP32-C6 ADC, 6 dB attenuation (Power-Standard PWR-7)
 R_TOL = 0.01                # metal film, 1 %
-PWR_K_R_TH = 60e3           # 100k || 150k, the ladder's source impedance
+PWR_K_R_TH = 6e3            # 10k || 15k, the ladder's source impedance
 PWR_K_LEAK_UA = 2.0         # reverse current of D20/D21 together, warm (audit O2)
 BAT43_VF_CLAMP = 0.20       # forward drop at a few uA
-GPIO_ABS_MAX_V = 3.6        # VDD + 0.3 V
+GPIO_ABS_MAX_V = 3.6        # VDD + 0.3 V at the nominal rail
 THREAD_TX_DBM = 20          # ESP-IDF default, see docs/THREAD.md
 TPS62A02_DROPOUT_V = 0.35   # FireBeetle buck at ~350 mA radio peaks, 100 % duty
 LED_VF = {"R": 1.8, "G": 2.9, "B": 2.9}     # minimum forward voltages
@@ -825,8 +830,8 @@ def run_erc() -> Erc:
     v_vbat_s = (RAILS["VCELL"].vmax * (1 + R_TOL)) / ((1 - R_TOL) + (1 + R_TOL))
     e.check(v_vbat_s <= ADC_6DB_MAX_V,
             f"VBAT_S {v_vbat_s * 1000:.0f} mV (1 % resistors) exceeds the 6 dB range")
-    v_ladder_worst = (RAILS["VBUS_EXT"].vmax * 150e3 * (1 + R_TOL)
-                      / (100e3 * (1 - R_TOL) + 150e3 * (1 + R_TOL)))
+    v_ladder_worst = (RAILS["VBUS_EXT"].vmax * 15e3 * (1 + R_TOL)
+                      / (10e3 * (1 - R_TOL) + 15e3 * (1 + R_TOL)))
     e.check(v_ladder_worst <= ADC_12DB_MAX_V,
             f"PWR-K {v_ladder_worst * 1000:.0f} mV (1 % resistors) exceeds the 12 dB range")
     # the STAT pins idle at ~4.5 V, so D20/D21 leak into the node (audit O2)
@@ -837,13 +842,17 @@ def run_erc() -> Erc:
     # K16 (Power-Standard): a clamp holds the node whatever the leakage does
     e.check(("D22", "A") in NETS["PWR_K"] and _nets_of("D22", "K") == ["+3V3"],
             "K16: D22 must clamp the PWR-K node to +3V3 (anode at the node)")
+    # the clamp is rail-referenced: the node lands at VDD + Vf and the limit is
+    # VDD + 0.3 V, so what matters is the drop, not the absolute rail voltage
+    e.check(BAT43_VF_CLAMP < GPIO_ABS_MAX_V - RAILS["+3V3"].vnom,
+            f"the clamp's {BAT43_VF_CLAMP} V drop leaves no margin to VDD + 0.3 V")
     v_clamp = RAILS["+3V3"].vmax + BAT43_VF_CLAMP
     e.check(v_clamp <= GPIO_ABS_MAX_V,
             f"the clamp lets GPIO4 reach {v_clamp:.2f} V, above the pad's "
             f"{GPIO_ABS_MAX_V} V")
     e.check(v_clamp > PWR_K_IDLE_MIN_V + 0.3,
             "the clamp would cut into the 'idle' band")
-    v_ladder = RAILS["VBUS_EXT"].vmax * 150e3 / (100e3 + 150e3)
+    v_ladder = RAILS["VBUS_EXT"].vmax * 15e3 / (10e3 + 15e3)
     e.check(v_ladder <= 3.6, f"PWR-K node {v_ladder:.2f} V exceeds the pad's 3.6 V")
     # above ~2.9 V the 12 dB range clips; the highest threshold must sit below
     e.check(PWR_K_IDLE_MIN_V < ADC_MAX_V,
@@ -859,7 +868,7 @@ def run_erc() -> Erc:
                 thr[name] = float(line.split()[2].rstrip("f"))
     e.check(len(thr) == 3, "pwr_std.h does not define all three PWR-K thresholds")
     e.check("PWR_K_USB_MIN" in thr
-            and RAILS["VBUS_EXT"].vmin * 150e3 / 250e3 - 0.35 > thr["PWR_K_USB_MIN"],
+            and RAILS["VBUS_EXT"].vmin * 15e3 / 25e3 - 0.35 > thr["PWR_K_USB_MIN"],
             "PWR-K: USB present does not clear pwr_std's threshold")
     e.check(thr.get("PWR_K_IDLE_MIN") == PWR_K_IDLE_MIN_V,
             "PWR_K_IDLE_MIN here and in pwr_std.h differ")
@@ -992,9 +1001,9 @@ def netlist_markdown() -> str:
     w("#6091 LOAD (3.0-3.65 V on the cells, 4.5 V on USB-C) --> PS1 S9V11E2A --> +VREG 3.90 V")
     w("+VREG --> D1 LM66200 VIN1 (VIN2, ON at GND) --> VSYS --> FireBeetle BAT (J1)")
     w("VCELL --R1 470k--+--R2 470k-- GND      VBAT_S on GPIO3 (C1 100 nF)")
-    w("VBUS --R20 100k--+--R21 150k-- GND     PWR_K on GPIO4 (C2 100 nF)")
-    w("                 +--R22 150k--|<D20-- #6091 S2 (CHG_N)")
-    w("                 +--R23  33k--|<D21-- #6091 S1 (FLT_N)")
+    w("VBUS --R20 10k--+--R21 15k-- GND      PWR_K on GPIO4 (C2 100 nF)")
+    w("                +--R22 15k--|<D20--  #6091 S2 (CHG_N)")
+    w("                +--R23 3k3--|<D21--  #6091 S1 (FLT_N)")
     w("GPIO5 --> #6091 !CE (high = charge pause, input = charging)")
     w("VSYS --> Sunrise VBB, LED common anode (spliced onto the J1 + lead)")
     w("Computer on the FireBeetle's USB-C --> its CN3165 --> VSYS 4.2 V: D1 blocks it from")

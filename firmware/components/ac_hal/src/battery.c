@@ -11,6 +11,7 @@
  *           The #6091's pull-down holds CE low through a reset: fail-safe.
  */
 #include "ac_hal/ac_hal.h"
+#include "pwr_std.h"
 
 #include "driver/gpio.h"
 #include "driver/usb_serial_jtag.h"
@@ -32,11 +33,11 @@ static const char *TAG = "battery";
  * voltage - more than the 50 mV hysteresis and half the distance between the
  * warning and the critical level.  Both error terms are gains, so one
  * measured point removes most of them: PS-4.1 already puts a multimeter on
- * the cells, and `cal battery <V>` stores the factor.  Without it the device
- * runs on the nominal ratio, as before. */
+ * the cells, and `cal battery <V>` stores the factor (protocol step 4.1b).
+ * The arithmetic and the clamp live in the Power-Standard's pwr_std; this
+ * side only reads, writes and applies.  Without a factor the device runs on
+ * the nominal ratio, as before. */
 #define K_VBAT_CAL  "vbatcal"
-#define CAL_MIN     0.90f
-#define CAL_MAX     1.10f
 
 static float s_vbat_gain = 1.0f;
 static adc_oneshot_unit_handle_t s_adc;
@@ -83,7 +84,7 @@ esp_err_t ac_battery_init(void)
     if (err != ESP_OK) return err;
     float gain = 1.0f;
     if (ac_store_blob_load(K_VBAT_CAL, &gain, sizeof(gain)) == ESP_OK
-        && gain >= CAL_MIN && gain <= CAL_MAX) {
+        && pwr_cal_apply(1.0f, gain) != 1.0f) {     /* pwr_std vets the factor */
         s_vbat_gain = gain;
         ESP_LOGI(TAG, "cell measurement calibrated, factor %.4f", (double)gain);
     }
@@ -120,7 +121,7 @@ esp_err_t ac_battery_read(float *vbat, float ladder_v[2], float *vsys, bool *usb
     float mv = 0;
     esp_err_t err = read_mv(s_ch_vbat, s_cali6, N_SAMPLES, &mv);
     if (err != ESP_OK) return err;
-    if (vbat) *vbat = s_vbat_gain * VBAT_RATIO * mv / 1000.0f;
+    if (vbat) *vbat = pwr_cal_apply(VBAT_RATIO * mv / 1000.0f, s_vbat_gain);
     for (int i = 0; i < 2; i++) {
         if (i) vTaskDelay(pdMS_TO_TICKS(50));
         float l = 0;
@@ -148,13 +149,21 @@ esp_err_t ac_battery_cal_set(float measured_v)
     esp_err_t err = read_mv(s_ch_vbat, s_cali6, N_SAMPLES, &mv);
     if (err != ESP_OK) return err;
     float raw = VBAT_RATIO * mv / 1000.0f;        /* what the divider alone says */
-    if (raw < 1.0f) return ESP_ERR_INVALID_STATE;
-    float gain = measured_v / raw;
-    if (gain < CAL_MIN || gain > CAL_MAX) {
-        ESP_LOGE(TAG, "factor %.4f outside %.2f..%.2f - wrong reading, or the "
-                 "divider is not what the schematic says", (double)gain,
-                 (double)CAL_MIN, (double)CAL_MAX);
+    pwr_cal_status_t st;
+    float gain = pwr_cal_factor(raw, measured_v, &st);
+    if (st == PWR_CAL_OUT_OF_RANGE) {
+        /* More than 5 % apart is no longer the ADC or 1 % resistors: the
+         * divider is wrong or badly soldered.  Storing half a correction
+         * would hide that, so nothing is stored. */
+        ESP_LOGE(TAG, "read %.3f V, multimeter %.3f V: more than 5 %% apart - "
+                 "check the divider (R1/R2) and the joints, not the calibration",
+                 (double)raw, (double)measured_v);
         return ESP_ERR_INVALID_ARG;
+    }
+    if (st == PWR_CAL_NO_CELL) {
+        ESP_LOGE(TAG, "read %.3f V: no cell in the holder, or a typo in the "
+                 "reference", (double)raw);
+        return ESP_ERR_INVALID_STATE;
     }
     s_vbat_gain = gain;
     return ac_store_blob_save(K_VBAT_CAL, &gain, sizeof(gain));

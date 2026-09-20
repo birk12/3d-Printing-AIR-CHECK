@@ -3,6 +3,33 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-09-20
+
+Follow-up to the audit, all of it from the two cross-project sessions: the
+PWR-K ladder gets ten times lower impedance, the calibration moves into the
+Power-Standard, and C3's rule is now K17. No change to the topology - same
+nets, same parts, four different resistor values.
+
+### Changed
+
+- **PWR-K ladder 10k / 15k / 15k / 3k3** instead of 100k / 150k / 150k / 33k
+  (the standard's new dimensioning, audit observation O2). Only ratios set
+  the bands, so they stay the same to three digits and `PWR_K_CHG_MIN` stays
+  at 1.85 V - but the source impedance falls from 60 k to 6 k, so a
+  microamp of diode leakage lifts the node by 6 mV instead of 60. The
+  ladder hangs on VBUS and draws nothing from the cells; the STAT pins sink
+  0.28 mA, far below the 5 mA the 0.4 V VOL figure is given for. D22 stays
+  as the backstop (K16: mandatory with the 100k ladder, recommended with
+  this one). T-L1b now expects **below 3.20 V** instead of 3.45 V.
+- **Calibration arithmetic taken from `pwr_std`** (`pwr_cal_factor`,
+  `pwr_cal_apply`, protocol step 4.1b). More than 5 % off is no longer
+  clamped but refused with `PWR_CAL_OUT_OF_RANGE`: at that distance it is
+  not the ADC but a wrong or badly soldered divider, and half a correction
+  would hide it. `cal battery` says so and stores nothing.
+- The ERC checks the clamp the way it actually works - rail-referenced, at
+  least 100 mV of margin at every operating point, not only at the nominal
+  rail (the audit's precision).
+
 ## [1.4.1] - 2026-09-20
 
 The electronics audit (PA-01) went over all four household projects and
@@ -24,6 +51,9 @@ way four findings against AIR CHECK and two cross-project corrections.
 - **One-point calibration of the cell measurement** (audit NC-03):
   `cal battery <V>` stores a factor per device, which takes out the divider's
   1 % and most of the ADC's +-23 mV. `docs/CALIBRATION.md`, acceptance T-L1c.
+  The arithmetic moved into the Power-Standard on the same day
+  (`pwr_cal_factor` / `pwr_cal_apply`, protocol step 4.1b); this side keeps
+  the console command and the NVS key.
 - `tools/audit/sp1_export.py`: turns `design.py` into the audit's submission
   (`Elektronik-Audit/einreichung/SP-1_air-check.toml`), so the two cannot
   drift apart. `cad/render.sh`: every drawing's camera, in the repository

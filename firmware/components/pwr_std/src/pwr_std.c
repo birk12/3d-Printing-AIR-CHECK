@@ -144,3 +144,18 @@ bool pwr_timer_retry(pwr_ctx_t *c, const pwr_state_t *s, float vbat)
     c->retried = true;
     return true;
 }
+
+float pwr_cal_factor(float measured, float reference, pwr_cal_status_t *st)
+{
+    if (st) *st = PWR_CAL_OK;
+    if (measured < PWR_V_ABSENT || reference < PWR_V_ABSENT) {
+        if (st) *st = PWR_CAL_NO_CELL;     /* no cell, or a typo */
+        return 1.0f;
+    }
+    float k = reference / measured;
+    if (k < PWR_CAL_MIN || k > PWR_CAL_MAX) {
+        if (st) *st = PWR_CAL_OUT_OF_RANGE;
+        return 1.0f;                       /* uncalibrated beats half-corrected */
+    }
+    return k;
+}

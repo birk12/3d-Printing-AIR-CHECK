@@ -39,7 +39,7 @@
 
 static const char *TAG = "aircheck";
 
-#define AC_FW_VERSION "1.4.1"
+#define AC_FW_VERSION "1.4.2"
 #define WDT_TIMEOUT_S 120
 /* Today's outdoor CO2 background, the reference for a fresh-air
  * calibration (NOAA global mean, 2026: about 425 ppm). */

@@ -128,6 +128,36 @@ uint8_t pwr_lfp_pct(float vbat);
 typedef struct { bool ext; bool chg_low; bool flt_low; } pwr_k_t;
 pwr_k_t pwr_k_decode(float pin_volts);
 
+/* ---- one-point calibration of the VBAT_S divider ---------------------
+ * The ADC dominates the error (+-23 mV at the pin = +-46 mV at the cell,
+ * more than the 1 % divider contributes), so better resistors only fix half
+ * of it.  Measure the cell with a multimeter once, hand both values to
+ * pwr_cal_factor(), store the result wherever the project keeps settings
+ * (NVS, file, ...) and multiply every later reading with it.  pwr_std itself
+ * stays free of storage.
+ *
+ * Outside 0.95..1.05 the deviation no longer comes from the ADC (+-46 mV at
+ * the cell) or from 1 % resistors: it means a wrong or badly soldered
+ * divider.  The function then returns 1.0 - uncalibrated - instead of
+ * clamping, because a half-corrected reading hides the fault. */
+#define PWR_CAL_MIN 0.95f
+#define PWR_CAL_MAX 1.05f
+
+typedef enum {
+    PWR_CAL_OK = 0,        /* factor usable                                   */
+    PWR_CAL_NO_CELL,       /* measured or reference implausible (< 1.0 V)     */
+    PWR_CAL_OUT_OF_RANGE,  /* > 5 % off: check the divider, do not calibrate  */
+} pwr_cal_status_t;
+
+/* reference: multimeter at the cell, measured: what the HAL read.  Returns
+ * the factor, or 1.0 with a status != OK.  'st' may be NULL. */
+float pwr_cal_factor(float measured_v, float reference_v, pwr_cal_status_t *st);
+
+static inline float pwr_cal_apply(float v, float k)
+{
+    return (k >= PWR_CAL_MIN && k <= PWR_CAL_MAX) ? v * k : v;
+}
+
 /* Matter BatPercentRemaining is in half percent. */
 static inline uint8_t pwr_matter_pct(uint8_t pct) { return (uint8_t)(pct * 2u); }
 

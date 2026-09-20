@@ -253,7 +253,7 @@ ANALOG_NETS = {
     "PWR_K": {
         "vmin": 0.0, "vnom": 3.00, "vmax": 3.15, "vmax_worstcase": 3.175,
         "adc_atten_mv": 3300,
-        "pegel_definiert_durch": "Leiter R20 100 k an VBUS_EXT, R21 150 k nach GND; "
+        "pegel_definiert_durch": "Leiter R20 10 k an VBUS_EXT, R21 15 k nach GND; "
                                  "R22/R23 ueber D20/D21 an den STAT-Pins",
         "baender": "kein USB 0 V | Fehler 1,02-1,60 V | laedt 2,09-2,46 V | voll bzw. "
                    "Ladepause 2,85-3,15 V; Schwellen in pwr_std.h 0,60 / 1,85 / 2,65 V "
@@ -264,15 +264,17 @@ ANALOG_NETS = {
                    "allein daran erkannt wird, dass der Wert ueber 2,65 V liegt. "
                    "Sperrstrom der Dioden (Audit-Beobachtung O2): im Leerlauf "
                    "liegen beide STAT-Pins ueber die Board-LEDs auf etwa 4,5 V, "
-                   "D20/D21 sperren mit rund 1,3 V. Die Quellimpedanz des Knotens "
-                   "ist 100k||150k = 60 k, jedes uA Sperrstrom hebt ihn also um "
-                   "60 mV. Bis zur Pin-Grenze VDD+0,3 V = 3,6 V sind ab dem Worst "
-                   "Case 3,175 V noch 425 mV Luft, das sind 7 uA fuer beide Dioden "
-                   "zusammen. BAT43: I_R <= 0,5 uA bei V_R 25 V und 25 C, bei 1,3 V "
-                   "deutlich weniger, mit der Temperatur aber steigend - und die "
-                   "Dioden sitzen an den Pads des Ladekerns. Gerechnet wird in der "
-                   "ERC mit 2 uA Zuschlag (3,30 V); T-L1b misst den Knoten nach "
-                   "30 min Laden bei warmem Kern gegen 3,45 V",
+                   "D20/D21 sperren mit rund 1,3 V und heben den Knoten. Deshalb "
+                   "ist die Leiter seit v1.4.2 zehnfach niederohmiger "
+                   "(10k/15k/15k/3k3, Standarddimensionierung des Power-Standards): "
+                   "die Baender haengen nur an Verhaeltnissen und bleiben auf drei "
+                   "Stellen gleich, die Quellimpedanz faellt aber von 60 k auf 6 k, "
+                   "jedes uA hebt den Knoten also um 6 mV statt 60 mV. Der Strom "
+                   "kommt aus VBUS, nie aus den Zellen; der Senkstrom der STAT-Pins "
+                   "bleibt mit 0,28 mA weit unter den 5 mA, fuer die SLUSF65B 5.5 "
+                   "die 0,4 V VOL angibt. D22 klemmt zusaetzlich auf VDD+Vf (K16). "
+                   "Die ERC rechnet mit 2 uA Zuschlag (3,19 V); T-L1b misst den "
+                   "Knoten nach 30 min Laden bei warmem Kern gegen 3,20 V",
     },
 }
 

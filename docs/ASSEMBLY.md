@@ -162,10 +162,10 @@ for control lines.
 |---|---|---|
 | **R1 470 k** | BMS P+ lead | FireBeetle **IO3** (VBAT_S, cell / 2) |
 | **R2 470 k**, **C1 100 nF** | IO3 | GND |
-| **R20 100 k** | the J2 / DCIN+ wire | PWR-K node at **IO4** |
-| **R21 150 k**, **C2 100 nF** | IO4 | GND |
-| **D20 BAT43** + **R22 150 k** | cathode on the #6091's **S2** pad, anode to R22 | R22 to IO4 (CHG_N) |
-| **D21 BAT43** + **R23 33 k** | cathode on the #6091's **S1** pad, anode to R23 | R23 to IO4 (FLT_N) |
+| **R20 10 k** | the J2 / DCIN+ wire | PWR-K node at **IO4** |
+| **R21 15 k**, **C2 100 nF** | IO4 | GND |
+| **D20 BAT43** + **R22 15 k** | cathode on the #6091's **S2** pad, anode to R22 | R22 to IO4 (CHG_N) |
+| **D21 BAT43** + **R23 3.3 k** | cathode on the #6091's **S1** pad, anode to R23 | R23 to IO4 (FLT_N) |
 | wire | FireBeetle **IO5** | #6091 **!CE** (charge pause) |
 | **C3 470 uF** (watch the polarity: the stripe is the minus lead) | **SW1 VIN** | **SW1 GND**, short leads |
 | **D22 BAT43** | anode at the PWR-K node (**IO4**) | cathode on the FireBeetle's **3V3** pin (clamp, K16) |
@@ -262,7 +262,7 @@ idf.py -p /dev/tty.usbmodem* flash monitor
 Within a few seconds:
 
 ```
-I (xxx) aircheck: 3D Printing AIR CHECK 1.4.1
+I (xxx) aircheck: 3D Printing AIR CHECK 1.4.2
 I (xxx) aircheck: serial AC-XXXX-XXXX
 I (xxx) sgp40: VOC index algorithm at a 10 s sampling interval
 I (xxx) aircheck: SEN62 <serial>

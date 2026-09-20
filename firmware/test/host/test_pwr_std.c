@@ -88,6 +88,20 @@ int main(void)
     r = raw(3.30f, true, false, true); s = pwr_update(&c, &r);
     CHECK(!pwr_timer_retry(&c, &s, r.vbat));               /* recoverable: no */
 
+    /* One-point calibration */
+    {
+        pwr_cal_status_t st;
+        float k = pwr_cal_factor(3.28f, 3.30f, &st);
+        CHECK(k > 1.005f && k < 1.007f && st == PWR_CAL_OK);
+        CHECK(pwr_cal_factor(3.30f, 3.30f, &st) == 1.0f && st == PWR_CAL_OK);
+        CHECK(pwr_cal_factor(3.00f, 3.60f, &st) == 1.0f && st == PWR_CAL_OUT_OF_RANGE);
+        CHECK(pwr_cal_factor(3.60f, 3.00f, &st) == 1.0f && st == PWR_CAL_OUT_OF_RANGE);
+        CHECK(pwr_cal_factor(0.0f, 3.30f, &st) == 1.0f && st == PWR_CAL_NO_CELL);
+        CHECK(pwr_cal_factor(3.28f, 3.30f, NULL) > 1.0f);  /* NULL erlaubt */
+    }
+    CHECK(pwr_cal_apply(3.28f, 1.006f) > 3.29f);
+    CHECK(pwr_cal_apply(3.28f, 1.9f) == 3.28f);           /* implausible: ignored */
+
     /* PWR-K ladder, band edges from the worst-case calculation */
     {
         pwr_k_t k;

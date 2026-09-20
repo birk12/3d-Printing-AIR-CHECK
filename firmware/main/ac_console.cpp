@@ -193,7 +193,9 @@ static int cmd_cal(int argc, char **argv)
         esp_err_t err = ac_battery_cal_set(v);
         if (err != ESP_OK) {
             printf("calibration rejected (%s). Measure at the cells with the "
-                   "door open, cable unplugged, and type the voltage in volts.\n",
+                   "door open, cable unplugged, and type the voltage in volts. "
+                   "More than 5 %% apart is not a calibration case: check the "
+                   "470k/470k divider and its joints first (see the log).\n",
                    esp_err_to_name(err));
             return 1;
         }

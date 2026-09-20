@@ -12,9 +12,9 @@ VCELL <--> #6091 BATT+        NTC 103AT-2 on the middle cell --> #6091 TH
 #6091 LOAD (3.0-3.65 V on the cells, 4.5 V on USB-C) --> PS1 S9V11E2A --> +VREG 3.90 V
 +VREG --> D1 LM66200 VIN1 (VIN2, ON at GND) --> VSYS --> FireBeetle BAT (J1)
 VCELL --R1 470k--+--R2 470k-- GND      VBAT_S on GPIO3 (C1 100 nF)
-VBUS --R20 100k--+--R21 150k-- GND     PWR_K on GPIO4 (C2 100 nF)
-                 +--R22 150k--|<D20-- #6091 S2 (CHG_N)
-                 +--R23  33k--|<D21-- #6091 S1 (FLT_N)
+VBUS --R20 10k--+--R21 15k-- GND      PWR_K on GPIO4 (C2 100 nF)
+                +--R22 15k--|<D20--  #6091 S2 (CHG_N)
+                +--R23 3k3--|<D21--  #6091 S1 (FLT_N)
 GPIO5 --> #6091 !CE (high = charge pause, input = charging)
 VSYS --> Sunrise VBB, LED common anode (spliced onto the J1 + lead)
 Computer on the FireBeetle's USB-C --> its CN3165 --> VSYS 4.2 V: D1 blocks it from
@@ -137,13 +137,13 @@ Every net is one or more wires. Solder, then heat-shrink every joint.
 | R1 | 470 k, 1 %, 0.25 W, metal film, THT | from the BMS P+ lead to FireBeetle IO3 |
 | R2 | 470 k, 1 %, 0.25 W, metal film, THT | at FireBeetle IO3 to GND, together with C1 |
 | C1 | 100 nF ceramic, THT | at FireBeetle IO3 to GND |
-| R20 | 100 k, 1 %, 0.25 W, metal film, THT | from the J2/#6091 DCIN+ wire to the PWR-K node, at FireBeetle IO4 |
-| R21 | 150 k, 1 %, 0.25 W, metal film, THT | PWR-K node to GND at FireBeetle IO4, together with C2 |
+| R20 | 10 k, 1 %, 0.25 W, metal film, THT | from the J2/#6091 DCIN+ wire to the PWR-K node, at FireBeetle IO4 |
+| R21 | 15 k, 1 %, 0.25 W, metal film, THT | PWR-K node to GND at FireBeetle IO4, together with C2 |
 | C2 | 100 nF ceramic, THT | at FireBeetle IO4 to GND |
 | D20 | BAT43 Schottky, DO-35 | cathode on the #6091's S2 pad, anode to R22 |
 | D21 | BAT43 Schottky, DO-35 | cathode on the #6091's S1 pad, anode to R23 |
-| R22 | 150 k, 1 %, 0.25 W, metal film, THT | from D20 to the PWR-K node at IO4 |
-| R23 | 33 k, 1 %, 0.25 W, metal film, THT | from D21 to the PWR-K node at IO4 |
+| R22 | 15 k, 1 %, 0.25 W, metal film, THT | from D20 to the PWR-K node at IO4 |
+| R23 | 3.3 k, 1 %, 0.25 W, metal film, THT | from D21 to the PWR-K node at IO4 |
 | TH1 | NTC 10 k, B = 3435 K | between #6091 TH and its GND (the DCIN- pad), bead on BH2's outer cell (2B) |
 | R3 | 4.7 k, 1 %, 0.25 W, metal film, THT | from SW1 VOUT to the SEN62 SDA wire |
 | R4 | 4.7 k, 1 %, 0.25 W, metal film, THT | from SW1 VOUT to the SEN62 SCL wire |
