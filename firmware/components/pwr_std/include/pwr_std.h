@@ -113,7 +113,8 @@ bool pwr_timer_retry(pwr_ctx_t *c, const pwr_state_t *s, float vbat);
 uint8_t pwr_lfp_pct(float vbat);
 
 /* ---- compact interface PWR-K (devices with one free ADC pin) ---------
- * EXT, CHG_N and FLT_N share one node: VBUS -100k- node -150k- GND,
+ * EXT, CHG_N and FLT_N share one node: VBUS - R3 - node - R4 - GND, with the
+ * two STAT pins tied in through a BAT43 and a series resistor each.
  * Two dimensionings are allowed, both with the SAME thresholds below.
  *   10k  ladder (standard, new devices): 10k / 15k, CHG_N via BAT43 + 15k,
  *        FLT_N via BAT43 + 3k3.  Node impedance 6 kOhm.
