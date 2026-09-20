@@ -56,8 +56,8 @@ The Sunrise is the single most expensive part. It is also the reason the CO2 num
 | R2 | 1 | 470 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-470k` | Reichelt / Mouser | 0.10 | VBAT_S bottom. |
 | R20 | 1 | 100 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-100k` | Reichelt / Mouser | 0.10 | PWR-K: from USB 5 V to the node (EXT). |
 | R21 | 1 | 150 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-150k` | Reichelt / Mouser | 0.10 | PWR-K: node to GND. 5.25 V x 150/250 = 3.15 V at most on GPIO4. |
-| R22 | 1 | 150 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-150k` | Reichelt / Mouser | 0.10 | PWR-K: D20 to STAT2 (CHG_N): charging pulls the node to 2.08-2.35 V. |
-| R23 | 1 | 33 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-33k` | Reichelt / Mouser | 0.10 | PWR-K: D21 to STAT1 (FLT_N): a fault pulls the node to 0.99-1.34 V. |
+| R22 | 1 | 150 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-150k` | Reichelt / Mouser | 0.10 | PWR-K: D20 to STAT2 (CHG_N): charging pulls the node to 2.09-2.46 V (worst case including the STAT pins' VOL, SLUSF65B 5.5). |
+| R23 | 1 | 33 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-33k` | Reichelt / Mouser | 0.10 | PWR-K: D21 to STAT1 (FLT_N): a fault pulls the node to 1.02-1.60 V (worst case including VOL). |
 | R3 | 1 | 4.7 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-4.7k` | Reichelt / Mouser | 0.10 | SEN62 SDA pull-up to +3V3_SEN: it switches off with the sensor, so no pull-up back-feeds the unpowered SEN62. |
 | R4 | 1 | 4.7 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-4.7k` | Reichelt / Mouser | 0.10 | SEN62 SCL pull-up, as R3. |
 | R5 | 1 | 10 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-10k` | Reichelt / Mouser | 0.10 | Sunrise SDA pull-up to CO2_VDDIO (GPIO18). Senseair recommend 5-15k. Solder it across Sunrise pins 3 and 4. |

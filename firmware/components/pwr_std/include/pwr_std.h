@@ -115,11 +115,14 @@ uint8_t pwr_lfp_pct(float vbat);
 /* ---- compact interface PWR-K (devices with one free ADC pin) ---------
  * EXT, CHG_N and FLT_N share one node: VBUS -100k- node -150k- GND,
  * CHG_N via BAT43 + 150k, FLT_N via BAT43 + 33k.  ADC_ATTEN_DB_12.
- * Pin volts over VBUS 4.75..5.25 V and Vf 0.15..0.35 V:
- *   no USB 0 V | fault 0.99..1.34 V | charging 2.08..2.35 V | idle 2.85..3.15 V
+ * Worst case over VBUS 4.75..5.25 V, BAT43 Vf 0.15..0.35 V AND the STAT pins'
+ * own VOL (TI SLUSF65B: up to 0.4 V) - the earlier numbers left VOL out:
+ *   no USB 0 V | fault 1.02..1.60 V | charging 2.09..2.46 V | idle 2.85..3.15 V
+ * Thresholds sit in the middle of the gaps, each >= 180 mV from a band edge,
+ * which covers the C6 ADC's +-40 mV at 12 dB.
  * Recoverable and latched faults overlap there; both decode as a fault. */
 #define PWR_K_USB_MIN   0.60f
-#define PWR_K_CHG_MIN   1.70f
+#define PWR_K_CHG_MIN   1.85f
 #define PWR_K_IDLE_MIN  2.65f
 
 typedef struct { bool ext; bool chg_low; bool flt_low; } pwr_k_t;

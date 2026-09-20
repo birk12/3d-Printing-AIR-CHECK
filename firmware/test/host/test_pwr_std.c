@@ -93,9 +93,9 @@ int main(void)
         pwr_k_t k;
         k = pwr_k_decode(0.0f);  CHECK(!k.ext);
         k = pwr_k_decode(0.99f); CHECK(k.ext && k.flt_low && !k.chg_low);
-        k = pwr_k_decode(1.34f); CHECK(k.ext && k.flt_low);
-        k = pwr_k_decode(2.08f); CHECK(k.ext && k.chg_low && !k.flt_low);
-        k = pwr_k_decode(2.35f); CHECK(k.chg_low);
+        k = pwr_k_decode(1.60f); CHECK(k.ext && k.flt_low);   /* worst case incl. VOL */
+        k = pwr_k_decode(2.09f); CHECK(k.ext && k.chg_low && !k.flt_low);
+        k = pwr_k_decode(2.46f); CHECK(k.chg_low);
         k = pwr_k_decode(2.85f); CHECK(k.ext && !k.chg_low && !k.flt_low);
         k = pwr_k_decode(3.15f); CHECK(k.ext && !k.chg_low);
     }

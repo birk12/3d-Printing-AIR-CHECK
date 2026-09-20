@@ -235,7 +235,7 @@ meter (PPK2 or µCurrent), a lab supply, freeze spray, a 33 kΩ resistor.
 | PS-1.2 | USB-C in J2, **no cells**: voltage at #6091 BATT+ / BATT− | 3.60–3.70 V (may wander briefly) |
 | PS-1.3 | the same, if it reads 4.1–4.25 V: **stop**, a jumper is wrong | – |
 | PS-1.4 | #6091 LOAD with USB-C, PS1 disconnected | 4.41–4.59 V |
-| PS-1.5 | S1/S2 really are STAT1/STAT2: (a) CE open (GPIO5 not driven), no cells → S2 toggles high/low (BQ25185 datasheet §6.3.10); (b) TH jumper open, **33 kΩ** at TH instead of the NTC (= cold) → S1 low, the PWR-K node at GPIO4 reads 0.99–1.34 V. **Never** bridge TH to GND: that is the button function, and holding it leads to the factory mode (SYS off) | as described |
+| PS-1.5 | S1/S2 really are STAT1/STAT2: (a) CE open (GPIO5 not driven), no cells → S2 toggles high/low (BQ25185 datasheet §6.3.10); (b) TH jumper open, **33 kΩ** at TH instead of the NTC (= cold) → S1 low, the PWR-K node at GPIO4 reads 1.02–1.60 V. **Never** bridge TH to GND: that is the button function, and holding it leads to the factory mode (SYS off) | as described |
 | PS-1.6 | !CE has its pull-down: GPIO5 an input (FireBeetle unpowered) → the #6091's CE pad | < 0.4 V |
 | PS-1.6a | CE through a reset: hold the FireBeetle in reset (EN / RST low) with USB-C in J2 and measure the #6091's CE pad | < 0.4 V (charging allowed; nothing on GPIO5 pulls it up) |
 | PS-1.7 | DCIN+ carries USB 5 V (R20 taps the PWR-K ladder there) | ≈ 5 V |
@@ -251,7 +251,7 @@ meter (PPK2 or µCurrent), a lab supply, freeze spray, a 33 kΩ resistor.
 | PS-2.4 | BMS P− is the ground of the whole device, B− goes nowhere else | yes |
 | PS-2.5 | the NTC on holder 2's outer cell (next to the charger chamber) under Kapton, held by the door's finger; resistance at room temperature | 9–11 kΩ at 25 °C |
 | PS-2.6 | TH jumper cut (visual) | yes |
-| PS-2.7 | cold test: freeze spray on the NTC, below 0 °C → FLT_N low (PWR-K node 0.99–1.34 V, log `fault (temperature/OVP)`), charging stops | yes |
+| PS-2.7 | cold test: freeze spray on the NTC, below 0 °C → FLT_N low (PWR-K node 1.02–1.60 V, log `fault (temperature/OVP)`), charging stops | yes |
 | PS-2.8 | charge current into flat cells, ammeter between BMS P+ and #6091 BATT+, PS1 disconnected. With the device running, its own draw comes out of the 1.1 A input limit (about 0.8 A left for the cells, EDR-21) | 1000 mA ± 10 % |
 | PS-2.9 | end of charge: cell voltage at the end, CHG_N goes high (log `full`, then `charge paused`) | 3.60–3.70 V |
 | PS-2.10 | pull USB-C during a SEN62 window (fan running) | no reset: uptime continues, the window completes, the log shows `power: cells` |
@@ -281,7 +281,7 @@ GPIO4, CE on GPIO5):
 | T-P3 | **SEN62 switch-on dip** | a scope on the FireBeetle's 3.3 V while the #2810 switches the SEN62 on: the rail stays at or above 3.20 V (NETLIST.md), the ESP32-C6 does not reset, and the SGP40/SHT40 reading taken during the window succeeds. This is the ERC's standing warning; the #2810 has no soft start |
 | T-P4 | rails | +3V3_SEN is off between windows and 3.2-3.4 V during one; the #2810's slide switch is in OFF; GPIO18 (Sunrise VDDIO) and GPIO14 (EN) are high only during a Sunrise measurement, and GPIO17/21 are quiet while EN is low; the red LED only flickers during boot (GPIO16 is U0TXD) |
 | T-P5 | computer on the FireBeetle | a computer on the FireBeetle's USB: the log shows `power: cells, ... VSYS 4.2x V` and `state CHARGING, mode CONTINUOUS` (the state means external power, not that the cells charge), no battery alarm, and the SEN62 runs continuously; unplugged, back to ECO within one battery read (`battery_interval_s`, 5 min by default) |
-| T-L1 | **PWR-K node voltages** | at GPIO4 against GND: no USB-C **0 V**; USB-C and a fault (PS-1.5b or PS-2.7) **0.99–1.34 V**; charging **2.08–2.35 V**; full or paused **2.85–3.15 V**. Never above 3.15 V |
+| T-L1 | **PWR-K node voltages** | at GPIO4 against GND: no USB-C **0 V**; USB-C and a fault (PS-1.5b or PS-2.7) **1.02–1.60 V**; charging **2.09–2.46 V**; full or paused **2.85–3.15 V**. Never above 3.15 V |
 | T-L2 | **reset with 3.15 V on GPIO4** | GPIO4 held at 3.15 V (lab supply on the PWR-K node): reset and power-cycle the FireBeetle several times - it boots normally every time (banner, no reset loop). GPIO4/5 are strapping pins only for the SDIO slave timing, which is not used |
 | T-L3 | **charge pause** | USB-C in J2 until full: the log shows `full`, then `charge paused`; GPIO5 (CE) is driven high, the node sits at 2.85–3.15 V, the device keeps running from USB-C. Released - GPIO5 an input again, CE below 0.4 V through the #6091's pull-down - when USB-C is unplugged, when the cells fall below 3.30 V, or after 30 days. Unplug and replug to see the release; the 3.30 V and 30-day releases are covered by the host tests, on hardware note when they happen |
 | T-L4 | **safety-timer restart** | from flat cells, USB-C in J2, the device running: the BQ25185 stops after 6 h; the log shows `safety timer ran out before full: charging restarted once`, one 150 ms pulse on GPIO5, and `charging` again - **no** fault published (`BatReplacementNeeded` stays false, no charge-fault event). A second timer fault in the same USB session stays: `FAULT (timer?)`, Matter `BatReplacementNeeded` true and a `BatChargeFaultChange` event with SafetyTimeout. Unplug and replug: cleared |

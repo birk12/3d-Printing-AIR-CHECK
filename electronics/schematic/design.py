@@ -354,8 +354,10 @@ PARTS: list[Part] = [
     _r("R2", "470 k", "VBAT_S bottom."),
     _r("R20", "100 k", "PWR-K: from USB 5 V to the node (EXT)."),
     _r("R21", "150 k", "PWR-K: node to GND. 5.25 V x 150/250 = 3.15 V at most on GPIO4."),
-    _r("R22", "150 k", "PWR-K: D20 to STAT2 (CHG_N): charging pulls the node to 2.08-2.35 V."),
-    _r("R23", "33 k", "PWR-K: D21 to STAT1 (FLT_N): a fault pulls the node to 0.99-1.34 V."),
+    _r("R22", "150 k", "PWR-K: D20 to STAT2 (CHG_N): charging pulls the node to 2.09-2.46 V "
+                      "(worst case including the STAT pins' VOL, SLUSF65B 5.5)."),
+    _r("R23", "33 k", "PWR-K: D21 to STAT1 (FLT_N): a fault pulls the node to 1.02-1.60 V "
+                     "(worst case including VOL)."),
     _r("R3", "4.7 k", "SEN62 SDA pull-up to +3V3_SEN: it switches off with the sensor, "
                      "so no pull-up back-feeds the unpowered SEN62."),
     _r("R4", "4.7 k", "SEN62 SCL pull-up, as R3."),
@@ -579,6 +581,12 @@ ESP_TX_PEAK_MA = 350.0      # ESP32-C6 802.15.4 TX peak at 3.3 V, conservative
 ADC_MAX_V = 2.9             # ESP32-C6 ADC, 12 dB attenuation, usable range
 LM66200_VRCB_MAX = 0.070    # reverse-current blocking threshold, max (SLVSG04)
 PWR_K_IDLE_MIN_V = 2.65     # pwr_std PWR_K_IDLE_MIN
+# PWR-K node, worst case over VBUS 4.75-5.25 V, BAT43 Vf 0.15-0.35 V and the
+# STAT pins' own VOL (TI SLUSF65B 5.5: up to 0.4 V), from the Power-Standard's
+# Monte-Carlo run (Elektronik-Audit sim/s1_pwrk.cir, NC-02)
+PWR_K_FLT_V = (1.02, 1.60)
+PWR_K_CHG_V = (2.09, 2.46)
+ADC_12DB_ERR_V = 0.040      # ESP32-C6 DS v1.5 Tab. 5-6, total error at 12 dB
 ADC_6DB_MAX_V = 1.9         # ESP32-C6 ADC, 6 dB attenuation (Power-Standard PWR-7)
 TPS62A02_DROPOUT_V = 0.35   # FireBeetle buck at ~350 mA radio peaks, 100 % duty
 LED_VF = {"R": 1.8, "G": 2.9, "B": 2.9}     # minimum forward voltages
@@ -730,13 +738,26 @@ def run_erc() -> Erc:
     e.check(RAILS["VSYS"].vmax / 2 <= ADC_MAX_V, "VSYS / 2 exceeds the ADC range")
     e.check(("D20", "K") in NETS["CHG_N"] and ("D21", "K") in NETS["FLT_N"],
             "STAT pins reach the ladder only through their Schottky diodes")
-    thr = None
+    thr: dict[str, float] = {}
     hdr = os.path.join(ROOT, "firmware/components/pwr_std/include/pwr_std.h")
     for line in open(hdr):
-        if line.startswith("#define PWR_K_USB_MIN"):
-            thr = float(line.split()[2].rstrip("f"))
-    e.check(thr is not None and RAILS["VBUS_EXT"].vmin * 150e3 / 250e3 - 0.35 > thr,
+        for name in ("PWR_K_USB_MIN", "PWR_K_CHG_MIN", "PWR_K_IDLE_MIN"):
+            if line.startswith(f"#define {name}"):
+                thr[name] = float(line.split()[2].rstrip("f"))
+    e.check(len(thr) == 3, "pwr_std.h does not define all three PWR-K thresholds")
+    e.check("PWR_K_USB_MIN" in thr
+            and RAILS["VBUS_EXT"].vmin * 150e3 / 250e3 - 0.35 > thr["PWR_K_USB_MIN"],
             "PWR-K: USB present does not clear pwr_std's threshold")
+    e.check(thr.get("PWR_K_IDLE_MIN") == PWR_K_IDLE_MIN_V,
+            "PWR_K_IDLE_MIN here and in pwr_std.h differ")
+    # the 'charging' threshold must separate the two bands with the ADC's own
+    # error on top of each edge (audit NC-02: VOL was missing from the bands)
+    e.check("PWR_K_CHG_MIN" in thr
+            and PWR_K_FLT_V[1] + ADC_12DB_ERR_V < thr["PWR_K_CHG_MIN"] < PWR_K_CHG_V[0] - ADC_12DB_ERR_V,
+            f"PWR_K_CHG_MIN must lie between {PWR_K_FLT_V[1] + ADC_12DB_ERR_V:.2f} V and "
+            f"{PWR_K_CHG_V[0] - ADC_12DB_ERR_V:.2f} V")
+    e.check(PWR_K_CHG_V[1] + ADC_12DB_ERR_V < PWR_K_IDLE_MIN_V,
+            "the 'charging' band reaches into the 'idle' threshold")
 
     # 9. I2C: unique addresses, pull-ups on the rail of the bus's devices
     addrs = [p.i2c_addr for p in PARTS if p.i2c_addr is not None]
