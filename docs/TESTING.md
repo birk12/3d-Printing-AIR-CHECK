@@ -1,14 +1,23 @@
 # Testing
 
 
-**Release (2026-09-19):** the cross-project battery session reviewed v1.4 at
-commit `5e51a8d` against the Power-Standard's review checklist and released
-it for ordering, printing and flashing. Conditions for *use*, all on the
-first unit: PS-2.13 / O3 (IC < 70 °C, holder 2's outer cell measured), T-L7
-(T/RH offset while charging, documented), T-L8 (NTC seated), T-L9 (critical
-sleep, no restart loop), PS-1.6a (CE < 0.4 V in reset), T-P3 (SEN62 switch-on
-step), O1/O2 (quiescent current). The full protocol PS-1.1 to PS-4.7 comes
-before the first charge.
+**Release (2026-09-19), suspended (2026-09-20):** the cross-project battery
+session reviewed v1.4 at commit `5e51a8d` against the Power-Standard's review
+checklist and released it for ordering, printing and flashing. The
+electronics audit then blocked every release across all projects until each
+one hands in a machine-checkable schematic (PA-01). **Ours is in and
+accepted:** `Elektronik-Audit/einreichung/SP-1_air-check.toml`, generated
+from `design.py` by `tools/audit/sp1_export.py`, 45 parts, 38 nets, 0 errors
+against A1-A12. The user has decided that the block stands until the other
+documents are through, so nothing is ordered, printed or flashed yet.
+
+Conditions for *use*, all on the first unit: PS-2.13 / O3 (IC < 70 °C,
+holder 2's outer cell measured), T-L7 (T/RH offset while charging,
+documented), T-L8 (NTC seated), T-L9 (critical sleep, no restart loop),
+PS-1.6a (CE < 0.4 V in reset), T-P3 (C(SEN62) measured, switch-on step),
+T-P3a (3.3 V stable with C3), T-L1b (PWR-K node with a warm charger), T-L1c
+(cell measurement calibrated), O1/O2 (quiescent current). The full protocol
+PS-1.1 to PS-4.7 comes before the first charge.
 ## Status, honestly
 
 Three levels, and it matters which is which:
@@ -30,7 +39,7 @@ believed.
 | status LED logic | SIMULATED | part of the 537; every pattern and its timing |
 | LFP power module (`ac_power` over `pwr_std`) | SIMULATED | part of the 537, plus `firmware/test/host/test_pwr_std.c`: PWR-K decoding, charge pause, safety-timer restart, voltage levels, Matter's charge states |
 | energy model | BUILD-VERIFIED | `tools/battery_calculator/model.py`, inputs traced to datasheets |
-| electrical design | BUILD-VERIFIED | 748 rule checks in `electronics/schematic/design.py`, one standing warning (T-P3) |
+| electrical design | BUILD-VERIFIED | 777 rule checks in `electronics/schematic/design.py`, 0 warnings; the same wiring as `Elektronik-Audit/einreichung/SP-1_air-check.toml` (A1-A12, 0 errors) |
 | enclosure | BUILD-VERIFIED | OpenSCAD asserts over every module, post and zone, and `tools/diagnostics/stl_check.py`: all four parts manifold, 1.2 % overhang on the front shell |
 | firmware build | BUILD-VERIFIED | full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6: 1.69 MB image (14 % free in the OTA slot), 210 kB DIRAM (46.5 %) |
 | sensor drivers | **untested** | register addresses and timings read from datasheets |
@@ -79,11 +88,10 @@ python3 electronics/schematic/design.py
 ```
 
 ```
-ERC: 748 checks, 0 error(s), 1 warning(s)
-  WARN  SW1 has no soft start: the SEN62's switch-on step lands on the FireBeetle's 3.3 V buck - verify on the bench (TESTING T-P3)
+ERC: 777 checks, 0 error(s), 0 warning(s)
 ```
 
-What the 748 cover: every pin exists on its part and every pin of every part
+What the 777 cover: every pin exists on its part and every pin of every part
 is connected or declared open, no net has one connection, no pin is on two
 nets, every supply is within its part's range and the part really sits on
 that rail; **the cell chain** (Power-Standard checklist K1/K2): each cell's +
@@ -109,9 +117,13 @@ timing only, approved), only an LED sits on GPIO16, the net list, the GPIO
 map and the firmware's `AC_PIN_` table agree, and no LED glows with its GPIO
 high.
 
-The one warning stands on purpose: the Pololu #2810 has no soft start, and
-whether the SEN62's switch-on step upsets the FireBeetle's 3.3 V is a bench
-measurement, not a rule (T-P3).
+The #2810 still has no soft start, but since v1.4.1 that is a calculation
+instead of a warning: C3 (470 uF at SW1's VIN) carries the switch-on step, and
+the ERC computes what is left of the rail for the worst capacitance the SEN62
+may have - 3.03 V at the 33 uF acceptance limit, against a 3.00 V VDD minimum
+and a 2.92 V brown-out. Sensirion specify no input capacitance for the SEN6x
+at all (the word "capacitor" does not appear in the datasheet), so T-P3
+measures it before assembly and the limit is the acceptance criterion.
 
 What the ERC cannot catch is a module that differs from what was fed into it
 (EDR-11, EDR-14: in both cases a board was modelled from its product page and
@@ -278,10 +290,13 @@ GPIO4, CE on GPIO5):
 |---|---|---|
 | T-P1 | regulator set | **before the LM66200 is connected** (ASSEMBLY step 4.3): PS1 reads **3.90 V ± 0.03 V** from #6091 LOAD with USB-C in J2 and no cells; later, running, +VREG stays within 3.82–3.98 V on the cells and on USB-C |
 | T-P2 | **SEN62 rail at the lowest battery voltage** | a lab supply at **3.0 V** directly on PS1 VIN (the #6091's LOAD disconnected), J2 empty, USB unplugged, a SEN62 window running and Thread attached: +VREG 3.90 V, +3V3_SEN at or above **3.15 V** (the SEN62's minimum), no reset during radio peaks |
-| T-P3 | **SEN62 switch-on dip** | a scope on the FireBeetle's 3.3 V while the #2810 switches the SEN62 on: the rail stays at or above 3.20 V (NETLIST.md), the ESP32-C6 does not reset, and the SGP40/SHT40 reading taken during the window succeeds. This is the ERC's standing warning; the #2810 has no soft start |
+| T-P3 | **SEN62 switch-on dip**, in two steps | (a) **before assembly**, LCR meter across the SEN62's VDD (pin 1 or 6) and GND (pin 2 or 5), module unpowered: **C(SEN62) <= 33 uF**. Above that, a second C3 goes in parallel and the measurement is repeated (Sensirion document no value; audit NC-05). (b) **with C3 fitted**, a scope on the FireBeetle's 3.3 V while the #2810 switches the SEN62 on: the rail stays **at or above 3.00 V**, the ESP32-C6 does not reset, and the SGP40/SHT40 reading taken during the window succeeds |
+| T-P3a | **3.3 V with 470 uF**, once | TI's tested output-capacitor combinations for the TPS62A02 stop at 2 x 22 uF. With C3 fitted, a load step of 0 to 200 mA on +3V3 (the SEN62 switching on is one): the rail settles without ringing or repeated dips (no hiccup), ripple below Sensirion's 100 mV peak-to-peak limit |
 | T-P4 | rails | +3V3_SEN is off between windows and 3.2-3.4 V during one; the #2810's slide switch is in OFF; GPIO18 (Sunrise VDDIO) and GPIO14 (EN) are high only during a Sunrise measurement, and GPIO17/21 are quiet while EN is low; the red LED only flickers during boot (GPIO16 is U0TXD) |
 | T-P5 | computer on the FireBeetle | a computer on the FireBeetle's USB: the log shows `power: cells, ... VSYS 4.2x V` and `state CHARGING, mode CONTINUOUS` (the state means external power, not that the cells charge), no battery alarm, and the SEN62 runs continuously; unplugged, back to ECO within one battery read (`battery_interval_s`, 5 min by default) |
 | T-L1 | **PWR-K node voltages** | at GPIO4 against GND: no USB-C **0 V**; USB-C and a fault (PS-1.5b or PS-2.7) **1.02–1.60 V**; charging **2.09–2.46 V**; full or paused **2.85–3.15 V**. Never above 3.15 V |
+| T-L1b | **PWR-K node with a warm charger** (audit O2) | USB-C in J2, cells full, after 30 min of charging in the closed case (the same run as PS-2.13 / O3): the node at GPIO4 stays **below 3.45 V**. The ladder's own worst case is 3.175 V; every microamp of reverse current through D20/D21, which idle with about 1.3 V across them next to the charger, adds 60 mV, and the pad's limit is VDD + 0.3 V = 3.6 V. Above roughly 3.5 V the clamp D22 is already conducting, which is the backstop, not the working point - note the value either way and write it into `electronics/schematic/design.py` (`PWR_K_LEAK_UA`, 2 uA assumed) |
+| T-L1c | **cell measurement calibrated** (audit NC-03) | after PS-4.1, with the multimeter still on the cells: `cal battery <V>`, then `cal show` and `diag` report the factor, and `diag` agrees with the multimeter within 20 mV. Power-cycle: the factor survives. The factor must lie within 0.95-1.05; further out means the divider is not what the schematic says |
 | T-L2 | **reset with 3.15 V on GPIO4** | GPIO4 held at 3.15 V (lab supply on the PWR-K node): reset and power-cycle the FireBeetle several times - it boots normally every time (banner, no reset loop). GPIO4/5 are strapping pins only for the SDIO slave timing, which is not used |
 | T-L3 | **charge pause** | USB-C in J2 until full: the log shows `full`, then `charge paused`; GPIO5 (CE) is driven high, the node sits at 2.85–3.15 V, the device keeps running from USB-C. Released - GPIO5 an input again, CE below 0.4 V through the #6091's pull-down - when USB-C is unplugged, when the cells fall below 3.30 V, or after 30 days. Unplug and replug to see the release; the 3.30 V and 30-day releases are covered by the host tests, on hardware note when they happen |
 | T-L4 | **safety-timer restart** | from flat cells, USB-C in J2, the device running: the BQ25185 stops after 6 h; the log shows `safety timer ran out before full: charging restarted once`, one 150 ms pulse on GPIO5, and `charging` again - **no** fault published (`BatReplacementNeeded` stays false, no charge-fault event). A second timer fault in the same USB session stays: `FAULT (timer?)`, Matter `BatReplacementNeeded` true and a `BatChargeFaultChange` event with SafetyTimeout. Unplug and replug: cleared |
@@ -295,7 +310,7 @@ GPIO4, CE on GPIO5):
 
 | # | test | pass |
 |---|---|---|
-| T-B1 | flash and boot | the banner `3D Printing AIR CHECK 1.4.0` appears, no panic, no reset loop |
+| T-B1 | flash and boot | the banner `3D Printing AIR CHECK 1.4.1` appears, no panic, no reset loop |
 | T-B2 | status LED | white at boot, all three colours on a press, blue when pairing, readable in daylight in its panel holder |
 | T-B3 | button | short, long (3-8 s), calibrate (8-12 s) and very long all do the right thing, and the hold colour matches; over 20 s does nothing |
 | T-B4 | service console | with USB in, `aircheck_config.py get` lists the settings, `set name ...` changes the Matter NodeLabel, `diag` shows live values and the health of all four sensors and the power line (`LFP cells X.XX V, N %, charging, external power yes`); on the cells alone, the console is not running |
@@ -336,7 +351,7 @@ cells deliver (T-E0).
 |---|---|---|---|
 | T-E0 | **quiescent at the cells**: PS1's 3.9 V output disconnected, the µA meter in the BMS P+ lead (it then sees the regulator, the charger and the BMS, and the 940 kΩ VBAT_S divider) | < 0.2 mA for the regulator (Pololu), 4 + 3 µA charger and BMS, ~3.5 µA divider | recorded; above 0.2 mA for the regulator the ECO runtime drops as in BATTERY_LIFE.md "What would change these numbers" |
 | T-E1 | **idle floor**: SEN62 off, averaged between two windows (VOC samples, Sunrise shots and Thread polls included) | about 2.6 mW at the cells | recorded, and fed back into `model.py`. Well above the model: look for the #2810's slide switch in ON, the SparkFun LED jumper not cut, the FireBeetle's green LED (GPIO15), or a pin back-feeding an unpowered sensor |
-| T-E2 | **one full ECO hour**, SEN62 window included | 8.1 mWh at the cells | recorded; this is the number the 2.9 months rest on |
+| T-E2 | **one full ECO hour**, SEN62 window included | 8.3 mWh at the cells | recorded; this is the number the 2.8 months rest on |
 | T-E3 | **one SEN62 window** on its own | 5.5 mWh at the cells | recorded; replaces the datasheet figure |
 
 To compare with the model at the cells: the energy in the 3.9 V line divided

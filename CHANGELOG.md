@@ -3,6 +3,52 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-09-20
+
+The electronics audit (PA-01) went over all four household projects and
+blocked every release until each hands in a machine-checkable schematic.
+Ours is generated from `design.py`, was handed in and is accepted. Along the
+way four findings against AIR CHECK and two cross-project corrections.
+
+### Added
+
+- **C3, 470 uF at SW1's VIN** (audit NC-05): Sensirion specify no input
+  capacitance for the SEN62 anywhere, so the rail now carries the switch-on
+  step for any value up to **33 uF**, which T-P3 measures before assembly.
+  The ERC computes the dip (3.03 V at the limit, against a 3.00 V VDD
+  minimum) instead of carrying a warning.
+- **D22, a third BAT43** from the PWR-K node to +3V3 (Power-Standard rule
+  K16, audit observation O2): with both STAT pins high, D20/D21 are reverse
+  biased next to the warm charger and their leakage lifts GPIO4 by 60 mV per
+  microamp. The clamp holds it under VDD + 0.3 V.
+- **One-point calibration of the cell measurement** (audit NC-03):
+  `cal battery <V>` stores a factor per device, which takes out the divider's
+  1 % and most of the ADC's +-23 mV. `docs/CALIBRATION.md`, acceptance T-L1c.
+- `tools/audit/sp1_export.py`: turns `design.py` into the audit's submission
+  (`Elektronik-Audit/einreichung/SP-1_air-check.toml`), so the two cannot
+  drift apart. `cad/render.sh`: every drawing's camera, in the repository
+  instead of in a shell history.
+- New tests: T-P3a (3.3 V stable with 470 uF, TI's tested combinations stop
+  at 2 x 22 uF), T-L1b (PWR-K node with a warm charger), T-L1c.
+
+### Changed
+
+- **PWR-K bands** follow the Power-Standard's correction (audit NC-02): the
+  STAT pins' own VOL was missing, so fault is 1.02-1.60 V, charging
+  2.09-2.46 V and `PWR_K_CHG_MIN` moves 1.70 V -> 1.85 V. `pwr_std` taken
+  over unchanged; the ERC now reads the thresholds out of the header.
+- **ERC** counts the resistors' tolerance at both ADC dividers (NC-04:
+  1894 mV instead of the nominal 1875 mV against the 1900 mV range) and
+  checks the PWR-K node against the pad's limit. 777 checks, 0 warnings.
+- ECO on the cells 2.9 -> **2.8 months**: C3 leaks up to 30 uA.
+- Drawings re-rendered, `back_view.png` added.
+
+### Note
+
+**Nothing is ordered, printed or flashed.** The battery session's release of
+2026-09-19 is suspended by the user's decision until the audit's other
+documents are through.
+
 ## [1.4.0] - 2026-09-19
 
 User decision: the power system moves to the cross-project Power-Standard's

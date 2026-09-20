@@ -1,8 +1,8 @@
 # Assembly
 
 v1.4 has no circuit board to make or order. Everything is a finished module;
-you solder wires to module pins, and fourteen through-hole resistors, two
-capacitors, two Schottky diodes, four fuses and the NTC in line, under heat
+you solder wires to module pins, and fourteen through-hole resistors, three
+capacitors, three Schottky diodes, four fuses and the NTC in line, under heat
 shrink. An evening's work once the parts and prints are on the desk, plus the
 cells' first charge in an external charger.
 
@@ -14,7 +14,7 @@ PARTS -> PRINT + BAKE -> SET UP THE POWER MODULE -> WIRE -> FLASH -> INTO THE CA
 
 The wiring list, the pin map and where each inline part goes are in
 [`electronics/schematic/NETLIST.md`](../electronics/schematic/NETLIST.md).
-That file is generated from `design.py` and checked by 748 rules; if this
+That file is generated from `design.py` and checked by 777 rules; if this
 guide and the netlist ever disagree, the netlist wins.
 
 The power system is the Power-Standard's **module C** (EDR-21): LiFePO4
@@ -167,6 +167,16 @@ for control lines.
 | **D20 BAT43** + **R22 150 k** | cathode on the #6091's **S2** pad, anode to R22 | R22 to IO4 (CHG_N) |
 | **D21 BAT43** + **R23 33 k** | cathode on the #6091's **S1** pad, anode to R23 | R23 to IO4 (FLT_N) |
 | wire | FireBeetle **IO5** | #6091 **!CE** (charge pause) |
+| **C3 470 uF** (watch the polarity: the stripe is the minus lead) | **SW1 VIN** | **SW1 GND**, short leads |
+| **D22 BAT43** | anode at the PWR-K node (**IO4**) | cathode on the FireBeetle's **3V3** pin (clamp, K16) |
+
+D22 points the other way round from D20 and D21: its **anode** is at IO4.
+It clamps the node if the other two leak (EDR-22, Power-Standard rule K16).
+
+C3 is the bulk capacitor that carries the SEN62's switch-on step (EDR-22).
+It sits at the #2810's own VIN and GND pins, not somewhere along the wire:
+the point is the short path. Measure C(SEN62) before you fit the module
+(T-P3) - above 33 uF a second C3 goes in parallel.
 
 **Check the pigtail polarity against the "+" on the FireBeetle** before you
 plug it in. JST PH leads are not standardised. Then plug it into the
@@ -252,7 +262,7 @@ idf.py -p /dev/tty.usbmodem* flash monitor
 Within a few seconds:
 
 ```
-I (xxx) aircheck: 3D Printing AIR CHECK 1.4.0
+I (xxx) aircheck: 3D Printing AIR CHECK 1.4.1
 I (xxx) aircheck: serial AC-XXXX-XXXX
 I (xxx) sgp40: VOC index algorithm at a 10 s sampling interval
 I (xxx) aircheck: SEN62 <serial>
@@ -343,8 +353,23 @@ dashboard: Home app → the sensor → Accessory Settings →
 | setting | when |
 |---|---|
 | `altitude_m` | always: the CO2 pressure correction (1.6 % per 10 hPa) |
-| `default_mode` | NORMAL next to a busy printer: about 4 weeks on the cells instead of 2.9 months. On USB-C it does not matter: the device runs CONTINUOUS |
+| `default_mode` | NORMAL next to a busy printer: about 4 weeks on the cells instead of 2.8 months. On USB-C it does not matter: the device runs CONTINUOUS |
 | `name` | published as Matter NodeLabel so the dashboard can tell units apart |
+
+**Calibrate the cell measurement once** (per device, audit NC-03). While the
+multimeter is still on the cells in PS-4.1, with the USB-C cable out:
+
+```
+cal battery 3.28        # the voltage the multimeter reads, in volts
+cal show
+```
+
+The device stores one factor and applies it to every later reading. Without
+it the cell voltage carries the divider's 1 % and the ADC's +-23 mV, which
+together are +-77 mV - more than the hysteresis between "low" and "critical".
+`cal battery 0` clears it. The factor has to fall between 0.95 and 1.05;
+anything further out means the divider is not the 470k/470k of the schematic,
+and the device refuses it.
 
 ## Running from a USB-C charger
 

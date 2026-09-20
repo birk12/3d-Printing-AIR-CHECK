@@ -250,7 +250,7 @@ thermometer you trust, note the offset - there is no offset setting yet
 
 ## Battery drains far faster than expected
 
-ECO on the cells is modelled at 2.9 months with margin
+ECO on the cells is modelled at 2.8 months with margin
 (`docs/BATTERY_LIFE.md`). If that is not enough, run it from a USB-C charger
 in J2 permanently - that is allowed, and the cells stay topped up. In order
 of likelihood:

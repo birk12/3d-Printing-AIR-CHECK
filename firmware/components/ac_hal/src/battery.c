@@ -27,6 +27,18 @@ static const char *TAG = "battery";
 #define VSYS_RATIO  2.0f
 #define N_SAMPLES   16
 
+/* One-point calibration of the cell measurement (Elektronik-Audit NC-03).
+ * The chain divider 1 % + ADC +-23 mV at 6 dB add up to +-77 mV on the cell
+ * voltage - more than the 50 mV hysteresis and half the distance between the
+ * warning and the critical level.  Both error terms are gains, so one
+ * measured point removes most of them: PS-4.1 already puts a multimeter on
+ * the cells, and `cal battery <V>` stores the factor.  Without it the device
+ * runs on the nominal ratio, as before. */
+#define K_VBAT_CAL  "vbatcal"
+#define CAL_MIN     0.90f
+#define CAL_MAX     1.10f
+
+static float s_vbat_gain = 1.0f;
 static adc_oneshot_unit_handle_t s_adc;
 static adc_cali_handle_t s_cali6, s_cali12;
 static adc_channel_t s_ch_vbat, s_ch_ladder, s_ch_vsys;
@@ -69,6 +81,12 @@ esp_err_t ac_battery_init(void)
     if (err == ESP_OK) err = config_channel(AC_PIN_PWR_K, ADC_ATTEN_DB_12, &s_ch_ladder);
     if (err == ESP_OK) err = config_channel(AC_PIN_REG_ADC, ADC_ATTEN_DB_12, &s_ch_vsys);
     if (err != ESP_OK) return err;
+    float gain = 1.0f;
+    if (ac_store_blob_load(K_VBAT_CAL, &gain, sizeof(gain)) == ESP_OK
+        && gain >= CAL_MIN && gain <= CAL_MAX) {
+        s_vbat_gain = gain;
+        ESP_LOGI(TAG, "cell measurement calibrated, factor %.4f", (double)gain);
+    }
     s_cali6 = make_cali(ADC_ATTEN_DB_6);
     s_cali12 = make_cali(ADC_ATTEN_DB_12);
     if (!s_cali6 || !s_cali12) {
@@ -102,7 +120,7 @@ esp_err_t ac_battery_read(float *vbat, float ladder_v[2], float *vsys, bool *usb
     float mv = 0;
     esp_err_t err = read_mv(s_ch_vbat, s_cali6, N_SAMPLES, &mv);
     if (err != ESP_OK) return err;
-    if (vbat) *vbat = VBAT_RATIO * mv / 1000.0f;
+    if (vbat) *vbat = s_vbat_gain * VBAT_RATIO * mv / 1000.0f;
     for (int i = 0; i < 2; i++) {
         if (i) vTaskDelay(pdMS_TO_TICKS(50));
         float l = 0;
@@ -112,6 +130,34 @@ esp_err_t ac_battery_read(float *vbat, float ladder_v[2], float *vsys, bool *usb
     if (vsys && read_mv(s_ch_vsys, s_cali12, N_SAMPLES, &mv) == ESP_OK)
         *vsys = VSYS_RATIO * mv / 1000.0f;
     return ESP_OK;
+}
+
+float ac_battery_cal_get(void)
+{
+    return s_vbat_gain;
+}
+
+esp_err_t ac_battery_cal_set(float measured_v)
+{
+    if (measured_v == 0.0f) {                     /* back to the nominal ratio */
+        s_vbat_gain = 1.0f;
+        return ac_store_blob_save(K_VBAT_CAL, &s_vbat_gain, sizeof(s_vbat_gain));
+    }
+    if (measured_v < 2.0f || measured_v > 4.0f) return ESP_ERR_INVALID_ARG;
+    float mv = 0;
+    esp_err_t err = read_mv(s_ch_vbat, s_cali6, N_SAMPLES, &mv);
+    if (err != ESP_OK) return err;
+    float raw = VBAT_RATIO * mv / 1000.0f;        /* what the divider alone says */
+    if (raw < 1.0f) return ESP_ERR_INVALID_STATE;
+    float gain = measured_v / raw;
+    if (gain < CAL_MIN || gain > CAL_MAX) {
+        ESP_LOGE(TAG, "factor %.4f outside %.2f..%.2f - wrong reading, or the "
+                 "divider is not what the schematic says", (double)gain,
+                 (double)CAL_MIN, (double)CAL_MAX);
+        return ESP_ERR_INVALID_ARG;
+    }
+    s_vbat_gain = gain;
+    return ac_store_blob_save(K_VBAT_CAL, &gain, sizeof(gain));
 }
 
 void ac_battery_ce(int mode)

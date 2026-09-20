@@ -119,7 +119,8 @@ PARTS: list[Part] = [
             "LM66200 in front of the battery input blocks it from the LFP cells "
             "(EDR-21).",
         price_eur=7.50, supplier="Botland / Berrybase / DFRobot",
-        vsupply_min=3.0, vsupply_max=4.25,
+        nc=("VIN", "IO8", "IO9", "IO15", "RST"),
+        vsupply_min=3.0, vsupply_max=4.25, i_max_ma=2000.0,   # TPS62A02, TI DS 6.3
         datasheet="https://wiki.dfrobot.com/SKU_DFR1075_FireBeetle_2_Board_ESP32_C6",
     ),
     # ---- sensors ----------------------------------------------------------
@@ -284,7 +285,10 @@ PARTS: list[Part] = [
             "EN open. Set the trimpot before connecting anything (ASSEMBLY).",
         price_eur=6.50, supplier="Eckstein / Pololu",
         nc=("EN",),
-        vsupply_min=3.0, vsupply_max=16.0, i_max_ma=1700.0,
+        # 1.7 A is Pololu's figure for VIN close to VOUT; their output-current
+        # graph gives about 1.0 A at our worst point (VIN 3.0 V, VOUT 3.9 V),
+        # and the board limits itself to ~0.7 A until the output has risen
+        vsupply_min=3.0, vsupply_max=16.0, i_max_ma=1000.0,
     ),
     Part(
         ref="D1", value="Adafruit LM66200 ideal diode breakout", mfr="Adafruit",
@@ -324,6 +328,16 @@ PARTS: list[Part] = [
          footprint="axial", pins={"A": "anode", "K": "cathode"},
          why="PWR-K ladder: STAT1 (FLT_N), as D20.",
          price_eur=0.10, supplier="Reichelt"),
+    Part(ref="D22", value="BAT43 Schottky, DO-35", mfr="Vishay", mpn="BAT43", qty=1,
+         footprint="axial", pins={"A": "anode", "K": "cathode"},
+         why="Clamp at the PWR-K node (Power-Standard rule K16, from the "
+             "electronics audit's observation O2): with both STAT pins high the "
+             "board's LEDs hold them near 4.5 V, D20/D21 are reverse biased next "
+             "to the warm charger, and their leakage lifts the node - 60 mV per "
+             "microamp at the ladder's 60 k source impedance. The clamp takes "
+             "everything above +3V3 plus its forward drop, so GPIO4 stays under "
+             "its VDD + 0.3 V. Anode at the node, cathode on +3V3.",
+         price_eur=0.10, supplier="Reichelt"),
     Part(ref="J1", value="JST PH 2-way pigtail, 100 mm", mfr="generic",
          mpn="PHR-2 with leads", footprint="JST PH 2.0 mm", pins={"+": "+", "-": "-"},
          why="LM66200 output to the FireBeetle's battery socket. Check the polarity "
@@ -349,6 +363,20 @@ PARTS: list[Part] = [
          footprint="radial 2.54 mm", pins={"1": "+", "2": "-"},
          why="PWR-K node at GPIO4, directly at the pin.",
          price_eur=0.10, supplier="Reichelt / Mouser"),
+    Part(ref="C3", value="470 uF, 6.3 V, low-ESR electrolytic, radial",
+         mfr="Panasonic", mpn="EEU-FR0J471", footprint="radial 8 x 11.5 mm, 3.5 mm pitch",
+         pins={"1": "+", "2": "-"},
+         why="Buffers the SEN62's switch-on step on +3V3 (audit NC-05, EDR-22): the "
+             "module's input capacitance is nowhere specified by Sensirion, so the "
+             "rail carries enough charge for any value up to 47 uF, which T-P3 "
+             "measures before assembly. It also keeps the 2 ms 190 mA peak inside "
+             "Sensirion's 100 mV supply-ripple limit (SEN6x v0.92 Table 11). Low "
+             "ESR (20 mOhm) so it damps rather than destabilises the FireBeetle's "
+             "buck; 30 uA leakage at most (0.01CV), about 1 % of the ECO average. "
+             "Soldered at SW1's VIN and GND pins with short leads.",
+         price_eur=0.45, supplier="Reichelt / Mouser",
+         vsupply_min=0.0, vsupply_max=6.3,
+         datasheet="Panasonic FR series, EEU-FR0J471"),
     _r("R1", "470 k", "VBAT_S top: cell / 2, 3.65 V -> 1.83 V at GPIO3 (ADC 6 dB, 0-1.9 V). "
                       "3.5 uA from the cells."),
     _r("R2", "470 k", "VBAT_S bottom."),
@@ -444,7 +472,8 @@ NETS: dict[str, list[tuple[str, str]]] = {
     "CHG_R":     [("D20", "A"), ("R22", "1")],
     "FLT_R":     [("D21", "A"), ("R23", "1")],
     "VSYS":      [("D1", "VOUT"), ("J1", "+"), ("M1", "BAT+"), ("U4", "2"), ("LED1", "A")],
-    "+3V3":      [("M1", "3V3"), ("SW1", "VIN"), ("U2", "3V3"), ("U3", "VCC")],
+    "+3V3":      [("M1", "3V3"), ("SW1", "VIN"), ("U2", "3V3"), ("U3", "VCC"),
+                  ("C3", "1"), ("D22", "K")],
     "+3V3_SEN":  [("SW1", "VOUT"), ("U1", "1"), ("U1", "6"), ("R3", "1"), ("R4", "1")],
     "GND":       [("U5", "P-"), ("U6", "BATT-"), ("U6", "DCIN-"), ("U6", "LOAD-"),
                   ("TH1", "2"), ("R21", "2"), ("C2", "2"),
@@ -452,11 +481,11 @@ NETS: dict[str, list[tuple[str, str]]] = {
                   ("D1", "ON"), ("J2", "GND"), ("J1", "-"), ("M1", "BAT-"), ("M1", "GND"),
                   ("SW1", "GND"), ("U1", "2"), ("U1", "5"), ("U2", "GND"),
                   ("U3", "GND"), ("U4", "1"), ("U4", "6"), ("R2", "2"), ("C1", "2"),
-                  ("R7", "2"), ("SW2", "2")],
+                  ("R7", "2"), ("SW2", "2"), ("C3", "2")],
     # ---- measurement / control ---------------------------------------------
     "VBAT_S":    [("R1", "2"), ("R2", "1"), ("C1", "1"), ("M1", "IO3")],
     "PWR_K":     [("R20", "2"), ("R21", "1"), ("R22", "2"), ("R23", "2"), ("C2", "1"),
-                  ("M1", "IO4")],
+                  ("M1", "IO4"), ("D22", "A")],
     "CE":        [("M1", "IO5"), ("U6", "!CE")],
     "SEN_EN":    [("M1", "IO2"), ("SW1", "ON")],
     "CO2_EN":    [("M1", "IO14"), ("U4", "9"), ("R7", "1")],
@@ -578,7 +607,8 @@ BUSES = {
 
 # Currents for the power checks (datasheets; see the Part entries)
 ESP_TX_PEAK_MA = 350.0      # ESP32-C6 802.15.4 TX peak at 3.3 V, conservative
-ADC_MAX_V = 2.9             # ESP32-C6 ADC, 12 dB attenuation, usable range
+ADC_MAX_V = 2.9             # ESP32-C6 ADC, 12 dB attenuation, usable before clipping
+ADC_12DB_MAX_V = 3.3        # ESP32-C6 DS v1.5 Tab. 5-6, ATTEN3 range 0-3300 mV
 LM66200_VRCB_MAX = 0.070    # reverse-current blocking threshold, max (SLVSG04)
 PWR_K_IDLE_MIN_V = 2.65     # pwr_std PWR_K_IDLE_MIN
 # PWR-K node, worst case over VBUS 4.75-5.25 V, BAT43 Vf 0.15-0.35 V and the
@@ -588,9 +618,60 @@ PWR_K_FLT_V = (1.02, 1.60)
 PWR_K_CHG_V = (2.09, 2.46)
 ADC_12DB_ERR_V = 0.040      # ESP32-C6 DS v1.5 Tab. 5-6, total error at 12 dB
 ADC_6DB_MAX_V = 1.9         # ESP32-C6 ADC, 6 dB attenuation (Power-Standard PWR-7)
+R_TOL = 0.01                # metal film, 1 %
+PWR_K_R_TH = 60e3           # 100k || 150k, the ladder's source impedance
+PWR_K_LEAK_UA = 2.0         # reverse current of D20/D21 together, warm (audit O2)
+BAT43_VF_CLAMP = 0.20       # forward drop at a few uA
+GPIO_ABS_MAX_V = 3.6        # VDD + 0.3 V
+THREAD_TX_DBM = 20          # ESP-IDF default, see docs/THREAD.md
 TPS62A02_DROPOUT_V = 0.35   # FireBeetle buck at ~350 mA radio peaks, 100 % duty
 LED_VF = {"R": 1.8, "G": 2.9, "B": 2.9}     # minimum forward voltages
 PS1_EFF_MIN = 0.80
+BUCK_EFF = 0.90             # FireBeetle TPS62A02 at a few hundred mA
+C6_BROWNOUT_V = 2.92        # sdkconfig brown-out level 4
+C6_VDD_MIN = 3.00           # ESP32-C6 DS v1.5 Tab. 5-2
+C3_TOL = 0.20               # electrolytic, -20 %
+SEN62_C_LIMIT_UF = 33.0     # acceptance limit for the SEN62's input capacitance
+                            # (nowhere specified by Sensirion; measured in T-P3)
+
+
+def power_budget() -> dict[str, float]:
+    """Peak current per rail in mA, radio burst included.
+
+    Worst case, everything at once: the SEN62's 2 ms peak, a 802.15.4 transmit
+    burst, the Sunrise measuring, and the three LED branches.  The audit's A8
+    wants exactly these numbers (Elektronik-Audit PA-01).
+    """
+    sen = PARTS_BY_REF["U1"].i_max_ma                     # 190 mA, 2 ms pulse
+    pullups = 2 * 3.3 / 4.7 + 2 * 3.3 / 10.0              # SEN and CO2 bus
+    p3v3 = (sen + ESP_TX_PEAK_MA + PARTS_BY_REF["U2"].i_max_ma
+            + PARTS_BY_REF["U3"].i_max_ma + 2 * 3.3 / 4.7)
+    leds = sum((RAILS["VSYS"].vnom - LED_VF[c]) / r
+               for c, r in (("R", 1.0), ("G", 0.33), ("B", 0.33)))
+    vsys = (p3v3 * RAILS["+3V3"].vnom / (BUCK_EFF * RAILS["VSYS"].vmin)
+            + PARTS_BY_REF["U4"].i_max_ma + leds)
+    load = vsys * RAILS["+VREG"].vnom / (RAILS["LOAD"].vmin * PS1_EFF_MIN)
+    return {
+        "+3V3_SEN": sen + 2 * 3.3 / 4.7,
+        "CO2_VDDIO": 2 * 3.3 / 10.0,
+        "+3V3": p3v3,
+        "VSYS": vsys,
+        "+VREG": vsys,
+        "LOAD": load,
+        "VCELL": load,
+        "VBUS_EXT": 1100.0,      # BQ25185 IIN, SLUSF65B Tab. 5.4
+        "_pullups": pullups,
+    }
+
+
+def sen62_switch_on_v(c_sen_uf: float) -> float:
+    """Rail voltage right after SW1 closes, charge shared with C3 (NC-05).
+
+    Worst case: C3 at its lower tolerance, the FireBeetle's own output
+    capacitors ignored, the switch treated as ideal.
+    """
+    c3 = 470.0 * (1.0 - C3_TOL)
+    return RAILS["+3V3"].vnom * c3 / (c3 + c_sen_uf)
 
 
 # --------------------------------------------------------------------------
@@ -714,22 +795,54 @@ def run_erc() -> Erc:
             "the SEN62's rail can fall below its 3.15 V minimum")
 
     # 7. current: regulator, switch, charger input
-    load_ma = ((PARTS_BY_REF["U1"].i_max_ma + ESP_TX_PEAK_MA
-                + PARTS_BY_REF["U2"].i_max_ma) * 3.3 / (0.9 * 3.9)
-               + PARTS_BY_REF["U4"].i_max_ma + 3 * 3.0)
-    e.check(load_ma < PARTS_BY_REF["PS1"].i_max_ma * 0.6,
+    budget = power_budget()
+    load_ma = budget["VSYS"]
+    e.check(load_ma < PARTS_BY_REF["PS1"].i_max_ma * 0.8,
             f"worst-case regulator load {load_ma:.0f} mA leaves too little margin")
+    e.check(budget["+3V3"] < PARTS_BY_REF["M1"].i_max_ma,
+            f"+3V3 peak {budget['+3V3']:.0f} mA exceeds the FireBeetle's buck")
+    e.check(budget["+3V3_SEN"] < PARTS_BY_REF["SW1"].i_max_ma,
+            "SW1 cannot carry the SEN62's peak")
     # K8: peaks on LOAD from the cells at 3.0 V, through an 80 % regulator
-    peak_load_ma = load_ma * 3.9 / (RAILS["LOAD"].vmin * PS1_EFF_MIN)
+    peak_load_ma = budget["LOAD"]
     e.check(peak_load_ma <= 2000.0, f"LOAD peak {peak_load_ma:.0f} mA exceeds 2 A (PWR-7)")
     e.check(PARTS_BY_REF["SW1"].i_max_ma >= 2 * PARTS_BY_REF["U1"].i_max_ma,
             "SW1 must carry the SEN62's peaks with margin")
-    e.check(False, "SW1 has no soft start: the SEN62's switch-on step lands on the "
-                   "FireBeetle's 3.3 V buck - verify on the bench (TESTING T-P3)", warn=True)
+    # NC-05: SW1 has no soft start, and Sensirion specify no input capacitance
+    # for the SEN62, so C3 carries the switch-on step for any value up to the
+    # limit that T-P3 measures against
+    e.check(("C3", "1") in NETS["+3V3"] and _nets_of("C3", "2") == ["GND"],
+            "C3 must sit across +3V3 and GND (the SEN62's switch-on step)")
+    v_on = sen62_switch_on_v(SEN62_C_LIMIT_UF)
+    e.check(v_on >= C6_VDD_MIN,
+            f"+3V3 falls to {v_on:.2f} V when SW1 closes on {SEN62_C_LIMIT_UF:.0f} uF; "
+            f"the C6 needs {C6_VDD_MIN} V (brown-out at {C6_BROWNOUT_V} V)")
+    e.check(sen62_switch_on_v(4 * SEN62_C_LIMIT_UF) < C6_BROWNOUT_V,
+            "the acceptance limit for C(SEN62) is not the binding one - recheck T-P3")
 
     # 8. ADC ranges and GPIO levels (K6, K7)
-    v_vbat_s = RAILS["VCELL"].vmax / 2
-    e.check(v_vbat_s <= ADC_6DB_MAX_V, f"VBAT_S {v_vbat_s:.2f} V exceeds the 6 dB range")
+    # with the resistors' tolerance, not just the nominal ratio (audit NC-04)
+    v_vbat_s = (RAILS["VCELL"].vmax * (1 + R_TOL)) / ((1 - R_TOL) + (1 + R_TOL))
+    e.check(v_vbat_s <= ADC_6DB_MAX_V,
+            f"VBAT_S {v_vbat_s * 1000:.0f} mV (1 % resistors) exceeds the 6 dB range")
+    v_ladder_worst = (RAILS["VBUS_EXT"].vmax * 150e3 * (1 + R_TOL)
+                      / (100e3 * (1 - R_TOL) + 150e3 * (1 + R_TOL)))
+    e.check(v_ladder_worst <= ADC_12DB_MAX_V,
+            f"PWR-K {v_ladder_worst * 1000:.0f} mV (1 % resistors) exceeds the 12 dB range")
+    # the STAT pins idle at ~4.5 V, so D20/D21 leak into the node (audit O2)
+    v_ladder_leak = v_ladder_worst + PWR_K_LEAK_UA * 1e-6 * PWR_K_R_TH
+    e.check(v_ladder_leak <= GPIO_ABS_MAX_V,
+            f"PWR-K {v_ladder_leak * 1000:.0f} mV with {PWR_K_LEAK_UA} uA of diode "
+            f"leakage exceeds the pad's {GPIO_ABS_MAX_V} V")
+    # K16 (Power-Standard): a clamp holds the node whatever the leakage does
+    e.check(("D22", "A") in NETS["PWR_K"] and _nets_of("D22", "K") == ["+3V3"],
+            "K16: D22 must clamp the PWR-K node to +3V3 (anode at the node)")
+    v_clamp = RAILS["+3V3"].vmax + BAT43_VF_CLAMP
+    e.check(v_clamp <= GPIO_ABS_MAX_V,
+            f"the clamp lets GPIO4 reach {v_clamp:.2f} V, above the pad's "
+            f"{GPIO_ABS_MAX_V} V")
+    e.check(v_clamp > PWR_K_IDLE_MIN_V + 0.3,
+            "the clamp would cut into the 'idle' band")
     v_ladder = RAILS["VBUS_EXT"].vmax * 150e3 / (100e3 + 150e3)
     e.check(v_ladder <= 3.6, f"PWR-K node {v_ladder:.2f} V exceeds the pad's 3.6 V")
     # above ~2.9 V the 12 dB range clips; the highest threshold must sit below
@@ -1041,7 +1154,7 @@ def bom_markdown() -> str:
     w("| power | runtime, ECO, with margin |")
     w("|---|---|")
     w("| USB-C charger on J2 | unlimited; the cells are topped up about monthly |")
-    w("| the 1S4P LiFePO4 pack alone | 2.9 months (docs/BATTERY_LIFE.md) |")
+    w("| the 1S4P LiFePO4 pack alone | 2.8 months (docs/BATTERY_LIFE.md) |")
     w("")
     w("Figures from `tools/battery_calculator/model.py`.")
     w("")

@@ -227,6 +227,13 @@ D1_HOLES          = [[2.54, 7.62], [13.97, 7.62]];
 D1_X              = SW1_X;
 D1_Y              = SW1_Y + SW1_S + 3.0;
 MOD_Z             = FACE + 1.0;      // modules on 1 mm pads
+// C3, the bulk capacitor at SW1's VIN (EDR-22): Panasonic EEU-FR0J471,
+// 8 x 11.5 mm radial, standing, soldered straight onto the #2810's pins and
+// held by its own leads plus a strip of tape - no mount, but it needs room.
+C3_D              =   8.6;           // 8.0 mm body + sleeve and tolerance
+C3_H              =  11.5;
+C3_X              =  88.0;
+C3_Y              = 156.0;
 
 // ---------- USB-C power socket (Adafruit #6050, sunken) -----------------------
 // Board file: 20.32 x 13.97 mm, 2 x d2.5 plated holes at (2.286, 10.414) and

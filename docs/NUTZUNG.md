@@ -18,7 +18,7 @@ Kurzanleitung für den Alltag. Technische Hintergründe: [ENGINEERING_DECISIONS.
 
 - Typ: **LiFePO4 (Lithium-Eisenphosphat) 3,2 V**, 4 × Lithium Werks **AER18650m2A2**, parallel. Keine anderen
   Zellen!
-- Laufzeit ohne Kabel: etwa **2,9 Monate** im Normalbetrieb (ECO: Feinstaub stündlich, CO₂ alle 5 min),
+- Laufzeit ohne Kabel: etwa **2,8 Monate** im Normalbetrieb (ECO: Feinstaub stündlich, CO₂ alle 5 min),
   mit 25 % Reserve gerechnet. Häufigeres Messen verkürzt das deutlich (NORMAL etwa 4 Wochen).
 - Ladezeit aus leer: etwa **9 h**. Das Gerät nimmt sich während des Ladens selbst einen Teil des Stroms. Am
   Dauerkabel wird fast nie aus leer geladen.

@@ -139,6 +139,10 @@ esp_err_t ac_battery_init(void);
 esp_err_t ac_battery_read(float *vbat, float ladder_v[2], float *vsys, bool *usb_host);
 /* 0 release (charging allowed), 1 hold high (pause), 2 pulse high 150 ms */
 void      ac_battery_ce(int mode);
+/* One-point calibration of the cell measurement (audit NC-03).  Pass the
+ * voltage a multimeter reads at the cells; 0 restores the nominal ratio. */
+esp_err_t ac_battery_cal_set(float measured_v);
+float     ac_battery_cal_get(void);
 
 /* ---- status LED -------------------------------------------------------
  * Common anode on VSYS (3.90 V), cathodes sunk by

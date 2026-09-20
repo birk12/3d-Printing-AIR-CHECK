@@ -103,11 +103,11 @@ Every net is one or more wires. Solder, then heat-shrink every joint.
 | `CHG_R` | D20.A, R22.1 |
 | `FLT_R` | D21.A, R23.1 |
 | `VSYS` | D1.VOUT, J1.+, M1.BAT+, U4.2, LED1.A |
-| `+3V3` | M1.3V3, SW1.VIN, U2.3V3, U3.VCC |
+| `+3V3` | M1.3V3, SW1.VIN, U2.3V3, U3.VCC, C3.1, D22.K |
 | `+3V3_SEN` | SW1.VOUT, U1.1, U1.6, R3.1, R4.1 |
-| `GND` | U5.P-, U6.BATT-, U6.DCIN-, U6.LOAD-, TH1.2, R21.2, C2.2, PS1.GND, D1.GND, D1.VIN2, D1.ON, J2.GND, J1.-, M1.BAT-, M1.GND, SW1.GND, U1.2, U1.5, U2.GND, U3.GND, U4.1, U4.6, R2.2, C1.2, R7.2, SW2.2 |
+| `GND` | U5.P-, U6.BATT-, U6.DCIN-, U6.LOAD-, TH1.2, R21.2, C2.2, PS1.GND, D1.GND, D1.VIN2, D1.ON, J2.GND, J1.-, M1.BAT-, M1.GND, SW1.GND, U1.2, U1.5, U2.GND, U3.GND, U4.1, U4.6, R2.2, C1.2, R7.2, SW2.2, C3.2 |
 | `VBAT_S` | R1.2, R2.1, C1.1, M1.IO3 |
-| `PWR_K` | R20.2, R21.1, R22.2, R23.2, C2.1, M1.IO4 |
+| `PWR_K` | R20.2, R21.1, R22.2, R23.2, C2.1, M1.IO4, D22.A |
 | `CE` | M1.IO5, U6.!CE |
 | `SEN_EN` | M1.IO2, SW1.ON |
 | `CO2_EN` | M1.IO14, U4.9, R7.1 |
@@ -158,6 +158,11 @@ Every net is one or more wires. Solder, then heat-shrink every joint.
 
 | pin | why |
 |---|---|
+| M1.VIN (USB 5 V) | see M1 in the BOM |
+| M1.IO8 (GPIO8) | see M1 in the BOM |
+| M1.IO9 (GPIO9 / BOOT) | see M1 in the BOM |
+| M1.IO15 (GPIO15 / green LED) | see M1 in the BOM |
+| M1.RST (reset) | see M1 in the BOM |
 | U4.7 (nRDY) | see U4 in the BOM |
 | U4.8 (DVCC) | see U4 in the BOM |
 | U6.VS (VSET pad) | see U6 in the BOM |

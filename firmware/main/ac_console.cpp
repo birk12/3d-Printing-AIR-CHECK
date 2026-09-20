@@ -186,6 +186,30 @@ static int cmd_co2(int argc, char **argv)
     return 1;
 }
 
+static int cmd_cal(int argc, char **argv)
+{
+    if (argc >= 3 && !strcmp(argv[1], "battery")) {
+        float v = strtof(argv[2], nullptr);
+        esp_err_t err = ac_battery_cal_set(v);
+        if (err != ESP_OK) {
+            printf("calibration rejected (%s). Measure at the cells with the "
+                   "door open, cable unplugged, and type the voltage in volts.\n",
+                   esp_err_to_name(err));
+            return 1;
+        }
+        printf(v == 0.0f ? "calibration cleared, back to the nominal 470k/470k\n"
+                         : "calibrated, factor %.4f\n", (double)ac_battery_cal_get());
+        return 0;
+    }
+    if (argc >= 2 && !strcmp(argv[1], "show")) {
+        printf("cell measurement factor %.4f%s\n", (double)ac_battery_cal_get(),
+               ac_battery_cal_get() == 1.0f ? " (not calibrated)" : "");
+        return 0;
+    }
+    printf("usage: cal battery <volts at the cells> | cal battery 0 | cal show\n");
+    return 1;
+}
+
 static int cmd_events(int argc, char **argv)
 {
     (void)argc; (void)argv;
@@ -215,9 +239,11 @@ static int cmd_diag(int argc, char **argv)
            "%.1f C  %.0f %%RH\n", (double)e.last.pm1, (double)e.last.pm25,
            (double)e.last.pm10, (double)e.last.co2, (long)e.last.voc_index,
            (double)e.last.temperature, (double)e.last.humidity);
-    printf("LFP cells %.2f V, %.0f %%, %s, external power %s\n", (double)e.last.battery_v,
+    printf("LFP cells %.2f V, %.0f %%, %s, external power %s, measurement factor "
+           "%.4f%s\n", (double)e.last.battery_v,
            (double)e.last.battery_pct, e.charging ? "charging" : "not charging",
-           e.usb_present ? "yes" : "no");
+           e.usb_present ? "yes" : "no", (double)ac_battery_cal_get(),
+           ac_battery_cal_get() == 1.0f ? " (not calibrated)" : "");
     printf("health: SEN62 %s (%u), Sunrise %s (%u), SGP40 %s (%u), SHT40 %s (%u), "
            "battery %s\n",
            e.health.sen6x_ok ? "ok" : "DOWN", e.health.sen6x_errors,
@@ -255,6 +281,8 @@ void ac_console_start(const ac_console_ctx_t *ctx)
           .hint = nullptr, .func = cmd_baseline, .argtable = nullptr },
         { .command = "co2",      .help = "co2 frc <ppm> - fresh-air calibration, outdoors only",
           .hint = nullptr, .func = cmd_co2, .argtable = nullptr },
+        { .command = "cal",      .help = "cal battery <V> - one-point calibration of the cell measurement",
+          .hint = nullptr, .func = cmd_cal, .argtable = nullptr },
         { .command = "events",   .help = "events dump",
           .hint = nullptr, .func = cmd_events, .argtable = nullptr },
         { .command = "diag",     .help = "state, values, health",

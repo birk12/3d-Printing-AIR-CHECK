@@ -91,7 +91,7 @@ not a health assessment.
   measured on an assembled device**, because no device has been assembled.
   TESTING T-E0..T-E3 are the measurements that would settle it.
 * On USB-C the runtime is unlimited; the numbers below are for the cells
-  alone (ECO, 2.9 months with a 25 % margin, 3.6 nominal, 2.4 in the worst
+  alone (ECO, 2.8 months with a 25 % margin, 3.5 nominal, 2.4 in the worst
   case). The battery session's rougher estimate for general use is about 67
   days.
 * The least certain line is the cells' self-discharge: 3 %/month is an

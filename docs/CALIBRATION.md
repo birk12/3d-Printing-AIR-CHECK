@@ -136,6 +136,31 @@ After a reset the device adopts the current air immediately as its reference,
 and event detection is effectively disabled until a few samples have gone by -
 the detector refuses to fire without a valid baseline, on purpose.
 
+## The cell voltage - one point, once per device
+
+Not a sensor, but it is calibrated the same way and it is the one measurement
+that decides when the device warns and when it goes to sleep.
+
+The cells are read through a 470k/470k divider on GPIO3. Two errors add up:
+the resistors' 1 % and the ESP32-C6's own ADC error of +-23 mV at 6 dB
+attenuation (datasheet v1.5, Table 5-6), which the divider doubles into
++-46 mV on the cell. Together that is +-77 mV - more than the 50 mV
+hysteresis and more than half the distance from the warning level (3.20 V) to
+the critical one (3.10 V). Both terms are gains, so one measured point takes
+most of them out:
+
+```
+cal battery 3.28        # what a multimeter reads at the cells, in volts
+cal show                # the stored factor
+cal battery 0           # back to the nominal ratio
+```
+
+Do it during assembly, when the meter is on the cells anyway (test protocol
+PS-4.1, acceptance T-L1c). The factor survives a power cycle, is refused
+outside 0.95-1.05, and shows up in `diag`. This is the electronics audit's
+NC-03, and it is the reason the runtime figures and the Matter battery level
+can be trusted to about 20 mV instead of 77.
+
 ## What this device is not
 
 It is not a reference instrument and it is not a safety device. The SEN62

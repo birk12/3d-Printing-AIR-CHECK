@@ -4,7 +4,7 @@
 
 Prices are single-unit European retail including VAT, rounded, as of September 2026. Mouser prices are shown there without VAT and are converted (x 1.19). They drift; treat them as an order of magnitude, not a quotation.
 
-**Total: EUR 200.51** including the four LiFePO4 cells (EUR 23.60).
+**Total: EUR 201.06** including the four LiFePO4 cells (EUR 23.60).
 
 Nothing on this list is a custom circuit board. Every electronic part is a finished module or a through-hole resistor (EDR-19).
 
@@ -48,10 +48,12 @@ The Sunrise is the single most expensive part. It is also the reason the CO2 num
 | J2 | 1 | USB-C power socket, sunken breakout | `6050` | Adafruit / Mouser | 3.50 | The charging and power input, from any USB-C charger (18 W is plenty): the board's 5.1k resistors on CC ask for plain 5 V without negotiation. Power only; data lines open. Screwed to two posts. |
 | D20 | 1 | BAT43 Schottky, DO-35 | `BAT43` | Reichelt | 0.10 | PWR-K ladder: the charger's STAT2 (CHG_N) pulls the node down through it; the diode keeps the #6091's LED anode voltage off the GPIO. |
 | D21 | 1 | BAT43 Schottky, DO-35 | `BAT43` | Reichelt | 0.10 | PWR-K ladder: STAT1 (FLT_N), as D20. |
+| D22 | 1 | BAT43 Schottky, DO-35 | `BAT43` | Reichelt | 0.10 | Clamp at the PWR-K node (Power-Standard rule K16, from the electronics audit's observation O2): with both STAT pins high the board's LEDs hold them near 4.5 V, D20/D21 are reverse biased next to the warm charger, and their leakage lifts the node - 60 mV per microamp at the ladder's 60 k source impedance. The clamp takes everything above +3V3 plus its forward drop, so GPIO4 stays under its VDD + 0.3 V. Anode at the node, cathode on +3V3. |
 | J1 | 1 | JST PH 2-way pigtail, 100 mm | `PHR-2 with leads` | Berrybase | 0.50 | LM66200 output to the FireBeetle's battery socket. Check the polarity against the '+' on the FireBeetle before plugging in: JST PH leads are not standardised. |
 | SW1 | 1 | Pololu Mini MOSFET Switch LV | `2810` | Eckstein | 5.34 | Switches the SEN62's 3.3 V off completely between windows. The slide switch must stay in OFF so the ON pin has control. Its red LED draws ~0.7 mA only while the switch is on. No soft start: see the ERC note. |
 | C1 | 1 | 100 nF ceramic, THT | `C320C104K5R5TA` | Reichelt / Mouser | 0.10 | VBAT_S at GPIO3, directly at the pin (the lead is an antenna). |
 | C2 | 1 | 100 nF ceramic, THT | `C320C104K5R5TA` | Reichelt / Mouser | 0.10 | PWR-K node at GPIO4, directly at the pin. |
+| C3 | 1 | 470 uF, 6.3 V, low-ESR electrolytic, radial | `EEU-FR0J471` | Reichelt / Mouser | 0.45 | Buffers the SEN62's switch-on step on +3V3 (audit NC-05, EDR-22): the module's input capacitance is nowhere specified by Sensirion, so the rail carries enough charge for any value up to 47 uF, which T-P3 measures before assembly. It also keeps the 2 ms 190 mA peak inside Sensirion's 100 mV supply-ripple limit (SEN6x v0.92 Table 11). Low ESR (20 mOhm) so it damps rather than destabilises the FireBeetle's buck; 30 uA leakage at most (0.01CV), about 1 % of the ECO average. Soldered at SW1's VIN and GND pins with short leads. |
 | R1 | 1 | 470 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-470k` | Reichelt / Mouser | 0.10 | VBAT_S top: cell / 2, 3.65 V -> 1.83 V at GPIO3 (ADC 6 dB, 0-1.9 V). 3.5 uA from the cells. |
 | R2 | 1 | 470 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-470k` | Reichelt / Mouser | 0.10 | VBAT_S bottom. |
 | R20 | 1 | 100 k, 1 %, 0.25 W, metal film, THT | `MFR-25FBF52-100k` | Reichelt / Mouser | 0.10 | PWR-K: from USB 5 V to the node (EXT). |
@@ -75,7 +77,7 @@ The Sunrise is the single most expensive part. It is also the reason the CO2 num
 | X3 | 1 | silicone wire: 22 AWG (0.34 mm2) red/black + 26 AWG, 4 colours | `-` | local | 4.00 | 22 AWG for everything that carries the cells' or the charger's current (cells, fuses, BMS, #6091 BATT/LOAD/DCIN, regulator, LM66200, J1): Power-Standard checklist E9 asks >= 24 AWG up to 1 A. 26 AWG for signals and sensors. |
 | X6 | 1 | Kapton tape 10 mm | `-` | local | 3.00 | Insulates the NTC bead against the cell's mantle; the door's finger holds it in place (checklist E3). |
 | X5 | 1 | heat-shrink tubing assortment | `-` | local | 2.00 | Over every inline resistor, the fuse and every splice. |
-| | | | | | **200.51** | |
+| | | | | | **201.06** | |
 
 ## Optional but recommended
 
@@ -88,7 +90,7 @@ The Sunrise is the single most expensive part. It is also the reason the CO2 num
 | power | runtime, ECO, with margin |
 |---|---|
 | USB-C charger on J2 | unlimited; the cells are topped up about monthly |
-| the 1S4P LiFePO4 pack alone | 2.9 months (docs/BATTERY_LIFE.md) |
+| the 1S4P LiFePO4 pack alone | 2.8 months (docs/BATTERY_LIFE.md) |
 
 Figures from `tools/battery_calculator/model.py`.
 

@@ -59,6 +59,8 @@ SRC = {
     "tps62a02": "TI TPS62A02 datasheet, efficiency 3.8 V -> 3.3 V at 50..100 mA: ~90 %",
     "vbat_s": "Power-Standard PWR-K: cell voltage / 2 through 470 k + 470 k, permanently "
               "across the cells",
+    "c3": "Panasonic FR series (EEU-FR0J471): leakage <= 0.01CV = 30 uA after 2 min, "
+          "the worst case; C3 buffers the SEN62's switch-on step (audit NC-05)",
     "bq25185": "TI BQ25185 datasheet SLUSF65B: 4 uA from the battery with no input; "
                "BUVLO 3.0 V",
     "hy2112": "HY2112 datasheet: 3 uA typical; the eremit board's own figure is "
@@ -84,6 +86,7 @@ EFF_BUCK = 0.90       # TPS62A02 on the FireBeetle, src=tps62a02
 EFF_3V3 = EFF_REG * EFF_BUCK
 REG_IQ_MA = 0.2       # at the regulator input, src=pololu
 VBAT_S_OHM = 470_000 + 470_000      # src=vbat_s
+C3_LEAK_UA = 30.0     # src=c3
 CHARGER_IQ_UA = 4.0                 # src=bq25185
 BMS_IQ_UA = 3.0                     # src=hy2112
 
@@ -227,6 +230,7 @@ def budget(p: Profile, cell: Cell, worst: bool = False) -> Budget:
     b.lines["dashboard reads (multi-admin)"] = at3v3(
         DASH_READS_PER_DAY * DASH_POLLS_PER_READ * C6_POLL_CHARGE_UAS / 86400.0 * 3.3)
     b.lines["FireBeetle quiescent"] = at3v3(BOARD_QUIESCENT_UA * 3.3)
+    b.lines["C3 leakage (+3V3)"] = at3v3(C3_LEAK_UA * 3.3)
     b.lines["status LED"] = at4v0(
         LED_I_MA * 1000.0 * 3.9 * LED_FLASH_S * LED_FLASHES_PER_DAY / 86400.0)
 
@@ -357,6 +361,7 @@ def markdown(cell: Cell) -> str:
     w(f"| FireBeetle buck | {EFF_BUCK*100:.0f} % | {SRC['tps62a02']} |")
     w(f"| cell voltage divider | {VBAT_S_OHM/1e3:.0f} kOhm across the cells | {SRC['vbat_s']} |")
     w(f"| charger + BMS quiescent | {CHARGER_IQ_UA:.0f} + {BMS_IQ_UA:.0f} uA | {SRC['bq25185']}; {SRC['hy2112']} |")
+    w(f"| C3 bulk capacitor | {C3_LEAK_UA:.0f} uA leakage at 3.3 V | {SRC['c3']} |")
     c = CELLS[DEFAULT_CELL]
     w(f"| cell | AER18650m2A2, {c.mah:.0f} mAh min, {c.v_avg:.2f} V avg, "
       f"{c.usable*100:.0f} % usable | {SRC['aer18650']} |")

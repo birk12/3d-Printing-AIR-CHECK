@@ -878,8 +878,8 @@ Matter: the battery on endpoint 0 is now Rechargeable and Replaceable
 (LiFePO4, 18650, 4 cells, `BatChargeState`), and a second Power Source
 endpoint "USB-C" (Wired, DC) says whether the device runs from the charger.
 
-**Runtime on the cells** (`docs/BATTERY_LIFE.md`): ECO **2.9 months** with a
-25 % margin (3.6 nominal, 2.4 worst case). The battery session's rougher
+**Runtime on the cells** (`docs/BATTERY_LIFE.md`): ECO **2.8 months** with a
+25 % margin (3.5 nominal, 2.4 worst case). The battery session's rougher
 estimate for general use is about 67 days. With the 3 %/month self-discharge
 an assumption (no manufacturer figure), that is the least certain line.
 
@@ -891,3 +891,82 @@ screwed door, a label on the door. Unattended charging and permanent USB
 operation are explicitly allowed for module C (Power-Standard rule 6a).
 User guide: `docs/NUTZUNG.md`.
 
+
+## EDR-22: what the electronics audit changed (C3, tolerances, the ADC's own error)
+
+**Where this comes from.** The Elektronik-Audit of 2026-09-20 went over all
+four projects and raised twelve findings, four of them against AIR CHECK:
+NC-03 (VBAT_S measurement uncertainty), NC-05 (SW1 without a soft start),
+NC-04 (VBAT_S at the edge of the ADC range) and NC-12 (thermal distance to
+the charger). It also blocks the release until the schematic is handed in as
+a machine-checkable document (PA-01). Ours is generated, not written:
+`tools/audit/sp1_export.py` turns `design.py` into
+`Elektronik-Audit/einreichung/SP-1_air-check.toml`, so the submission cannot
+drift away from the source of truth - which is the very failure the audit was
+written against.
+
+**NC-05, the one that changed the hardware: C3, 470 uF at SW1's VIN.** The
+ERC has carried a warning since v1.3 that the #2810 switches the SEN62 on
+without a soft start. The audit put numbers on it: at 10 uF of input
+capacitance the rail falls to 2.44 V for 21 us, well under the 2.92 V
+brown-out. The catch is that **Sensirion document no input capacitance at
+all** - the word "capacitor" does not occur in the SEN6x datasheet v0.92,
+the application circuit shows only the two I2C pull-ups, and the design-in
+and assembly guidelines have no electrical chapter. We cannot measure it
+either: nothing is ordered. So instead of guessing a number, the rail now
+carries the charge: C3 (470 uF, low ESR, 20 mOhm) sits across SW1's VIN and
+GND, and the ERC computes what is left of +3V3 for the worst capacitance the
+module may have. At the acceptance limit of **33 uF** the rail dips to
+3.03 V, above the C6's 3.00 V VDD minimum and well above the brown-out.
+T-P3 measures C(SEN62) before assembly against that limit; above it, a
+second C3 goes in parallel. C3 also keeps the 2 ms 190 mA peak inside
+Sensirion's own 100 mV ripple limit. It costs 30 uA of leakage (0.01CV,
+worst case) - 3.1 mWh/day, about 1.6 % of ECO, and the runtime figure moves
+from 2.9 to 2.8 months. One open point goes to the bench: TI's tested output
+capacitor combinations for the TPS62A02 stop at 2 x 22 uF, so T-P3a checks
+the rail for ringing with a load step.
+
+**NC-04, the tolerance in the ERC.** Section 8 checked 3.75 / 2 = 1.875 V
+against the 6 dB range of 1.900 V - the nominal ratio, without the 1 %
+resistors. With them the node reaches 1894 mV, so 6 mV are left, not 25.
+The ERC now computes both dividers with their tolerance, and the submission
+carries the worst case as its own field. We keep the divider: the case only
+arises when the HY2112 cuts at 3.75 V in a charge fault, and a saturating
+ADC then reads "very high", which leads to the same decision.
+
+**NC-03 stays open in hardware, and is closed in firmware.** The ADC's own
+error (+-23 mV at 6 dB, ESP32-C6 DS v1.5 Table 5-6) doubles to +-46 mV on
+the cell voltage and, with the 1 % divider, reaches +-77 mV - more than the
+50 mV hysteresis and half the distance between the warning and critical
+levels. Better resistors do not fix that, because the larger half is the
+ADC. What fixes it is a one-point calibration per device: the multimeter
+reading from PS-4.1 goes into the device once, and the factor is stored.
+See `docs/CALIBRATION.md` and the console command `cal battery`.
+
+**NC-12 was already satisfied, just not pointed at.** Module C section 7 asks
+for 30 mm between the charger and a temperature/humidity sensor. The CAD has
+asserted that since v1.4 (`aircheck_case.scad`, E5): the charger sits
+70.7 mm from the SHT40, 54.5 from the SGP40, 92.6 from the Sunrise, each
+across the chamber wall. The numbers are now a field on those parts in SP-1.
+
+**Two more from the audit's second pass.** Its observation O1: the range we
+declared for the charger's TH pin (3650 mV, argued from the VBATREG path) is
+not in the datasheet - SLUSF65B section 5.1 gives 5.5 V for "all other pins",
+which is what the Power-Standard's own submissions carry, so both documents
+now say the same about the same pin. Observation O2 found a term neither side
+had modelled: with both STAT pins high the charger's board LEDs hold them near
+4.5 V, D20 and D21 are reverse biased, and their leakage flows into the PWR-K
+node - 60 mV per microamp at the ladder's 60 k source impedance, and the
+diodes sit at the charger's pads, which our own O3 lets reach 70 °C. Nothing
+functional depends on it (the top band is recognised by being above 2.65 V),
+but GPIO4 could pass VDD + 0.3 V. A bleeder does not help: 1 MOhm would move
+the idle point by 178 mV and catch only 195 mV. The Power-Standard turned it
+into rule **K16**, and D22 (a third BAT43, anode at the node, cathode on
++3V3) is now in the wiring list; T-L1b measures the node with a warm charger.
+
+**NC-02 came back from the Power-Standard as a correction to `pwr_std`**: the
+PWR-K bands had left out the STAT pins' own VOL (up to 0.4 V), so the
+threshold between "fault" and "charging" moved from 1.70 V to 1.85 V. The
+bands in NETLIST.md, in the ERC and in TESTING follow, and the ERC now reads
+the thresholds out of `pwr_std.h` and checks that they sit in the gaps with
+the ADC's error on top.

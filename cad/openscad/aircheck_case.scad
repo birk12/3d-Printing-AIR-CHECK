@@ -117,6 +117,7 @@ BODIES = [
     ["SW1 Pololu 2810", SW1_X, SW1_Y, MOD_Z, SW1_S, SW1_S, 5.0],
     ["PS1 Pololu S9V11E2A", PS1_X, PS1_Y, MOD_Z, PS1_W, PS1_L, PS1_T + 2.0],
     ["D1 LM66200", D1_X, D1_Y, MOD_Z + 3.0, D1_L, D1_W, 2.2 + 2.0],
+    ["C3 bulk capacitor", C3_X, C3_Y, MOD_Z, C3_D, C3_D, C3_H],
     ["J2 USB-C power socket", J2_X, J2_Y, J2_Z, J2_L, J2_W, J2_T],
     ["J2 socket", J2_X + J2_SOCKET_X0, J2_Y + J2_SOCKET_Y0, J2_Z + J2_T / 2 - J2_SOCKET_H / 2,
         J2_SOCKET_X1 - J2_SOCKET_X0, J2_W - J2_SOCKET_Y0, J2_SOCKET_H],
@@ -155,6 +156,7 @@ module mock_all() {
     mock("SW1 Pololu 2810", "Green");
     mock("PS1 Pololu S9V11E2A", "Green");
     mock("D1 LM66200", "MidnightBlue");
+    mock("C3 bulk capacitor", "DimGray");
     mock("J2 USB-C power socket", "Black");
     mock("J2 socket", "Silver");
     mock("LED holder", "Silver");
@@ -507,6 +509,7 @@ module group_sensors() {
 module group_electronics() {
     mock("FireBeetle", "RoyalBlue"); mock("SW1 Pololu 2810", "Green");
     mock("PS1 Pololu S9V11E2A", "Green"); mock("D1 LM66200", "MidnightBlue");
+    mock("C3 bulk capacitor", "DimGray");
     mock("J2 USB-C power socket", "Black"); mock("J2 socket", "Silver");
     mock("LED holder", "Silver"); mock("button", "Black");
 }
@@ -578,7 +581,7 @@ for (n = ["SHT40", "SGP40", "Sunrise", "Sunrise filter clearance"])
 for (b = BODIES) if (b[0] == "holder 1 + cells" || b[0] == "holder 2 + cells" || b[0] == "#6091 charger"
                      || b[0] == "BMS") assert(in_batc(b), str(b[0], " is not in the compartment"));
 for (n = ["FireBeetle", "SW1 Pololu 2810", "PS1 Pololu S9V11E2A", "D1 LM66200", "LED holder",
-          "button", "SEN62", "SEN62 plug keep-out",
+          "button", "SEN62", "SEN62 plug keep-out", "C3 bulk capacitor",
           "J2 USB-C power socket", "J2 socket"])
     for (b = BODIES) if (b[0] == n) assert(in_elec(b), str(n, " is not in the electronics zone"));
 // 3. posts against bodies

@@ -72,7 +72,7 @@ On the cells alone, with a **25 % engineering margin**:
 
 | mode | particles every | runtime |
 |---|---|---|
-| **ECO** (default) | 1 h | **2.9 months** (3.6 nominal, 2.4 worst case) |
+| **ECO** (default) | 1 h | **2.8 months** (3.5 nominal, 2.4 worst case) |
 | NORMAL | 15 min | about 4 weeks |
 | ACTIVE | 2 min | about 4 days (automatic, time-limited) |
 
@@ -149,7 +149,7 @@ AIR CHECK has been built. What *has* been done:
 | | |
 |---|---|
 | measurement core | 537 host checks plus the Power-Standard's `pwr_std` tests, run on every build |
-| electrical design | 748 automated rule checks over the wiring list, incl. fuse per cell → BMS → charger, P− = GND, the FireBeetle's charger blocked from the cells, SEN62 rail ≥ 3.15 V over the whole battery range, GPIO levels, firmware pin table = wiring |
+| electrical design | 777 automated rule checks over the wiring list, incl. fuse per cell → BMS → charger, P− = GND, the FireBeetle's charger blocked from the cells, SEN62 rail ≥ 3.15 V over the whole battery range, GPIO levels, firmware pin table = wiring |
 | enclosure | OpenSCAD asserts: every module against every other, every post, every zone; manifold check; fits a 250 × 210 bed |
 | firmware | full ESP-IDF + esp-matter build for esp32c6: 1.69 MB, 14 % OTA headroom |
 | Matter attribute IDs | checked against the Matter SDK's generated headers |
