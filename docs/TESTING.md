@@ -16,8 +16,10 @@ holder 2's outer cell measured), T-L7 (T/RH offset while charging,
 documented), T-L8 (NTC seated), T-L9 (critical sleep, no restart loop),
 PS-1.6a (CE < 0.4 V in reset), T-P3 (C(SEN62) measured, switch-on step),
 T-P3a (3.3 V stable with C3), T-L1b (PWR-K node with a warm charger), T-L1c
-(cell measurement calibrated), O1/O2 (quiescent current). The full protocol
-PS-1.1 to PS-4.7 comes before the first charge.
+(cell measurement calibrated, protocol step 4.1b), O1/O2 (quiescent
+current). The full protocol PS-1.1 to PS-4.7 comes before the first charge.
+The battery session keeps the same list; T-L1b and 4.1b are the two whose
+results go back into the Power-Standard rather than staying here.
 ## Status, honestly
 
 Three levels, and it matters which is which:
