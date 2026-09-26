@@ -21,6 +21,8 @@ Run:  python3 tools/battery_calculator/model.py                  # table
       python3 tools/battery_calculator/model.py --markdown       # BATTERY_LIFE.md body
       python3 tools/battery_calculator/model.py --json           # CI
       python3 tools/battery_calculator/model.py --cell 1s1p      # another pack
+      python3 tools/battery_calculator/model.py --r3-6091 fitted-unfavourable
+                                          # as if #6091-R3 had not been desoldered
 """
 
 from __future__ import annotations
@@ -73,6 +75,12 @@ SRC = {
                 "(Power-Standard README section 2)",
     "lfp_sd": "ASSUMPTION: LFP self-discharge 3 %/month - no manufacturer figure for the "
               "AER18650m2A2 (Power-Standard open point O5)",
+    "r3_6091": "Adafruit bq25185 Breakout rev B1.sch (commit e73b39b), traced by the "
+               "Power-Standard (README 2a, 2026-09-26): SYS - green VSYSOK LED - "
+               "#6091-R3 1 k - GND, no jumper. On the cells SYS is the cell voltage, "
+               "I = (V_cell - Vf) / 1 k with Vf undocumented; the standard's budget "
+               "values on the LFP plateau are 0.50 mA (Vf 2.7 V at 3.20 V) and 1.45 mA "
+               "(Vf 1.9 V at 3.35 V). Desoldered in this build (ASSEMBLY 4.1, EDR-24)",
 }
 
 # --------------------------------------------------------------------------
@@ -89,6 +97,23 @@ VBAT_S_OHM = 470_000 + 470_000      # src=vbat_s
 C3_LEAK_UA = 30.0     # src=c3
 CHARGER_IQ_UA = 4.0                 # src=bq25185
 BMS_IQ_UA = 3.0                     # src=hy2112
+
+# ---- #6091-R3: the charger board's green VSYSOK LED (EDR-24) ---------------
+# The LED and its 1 k series resistor R3 sit permanently between the #6091's
+# SYS (= LOAD+) and GND, with no jumper.  On the cells it draws straight from
+# them, upstream of the regulator, so no efficiency applies: I x V_cell.  This
+# build desolders #6091-R3 (ASSEMBLY 4.1, TESTING PS-1.9), so the default is
+# 0 mA; the two "fitted" states keep the cost of forgetting it visible.  They
+# are the Power-Standard's fixed budget currents for every project, not
+# (V_cell - Vf) / 1 k at v_avg - the same numbers in every project's budget.
+# src=r3_6091.  electronics/schematic/design.py checks that this default
+# matches the schematic (part R3_6091, declared removed).
+R3_6091_LED_MA = {
+    "removed": 0.0,                 # as built
+    "fitted-favourable": 0.50,      # Vf 2.7 V (InGaN green) at 3.20 V
+    "fitted-unfavourable": 1.45,    # Vf 1.9 V (GaP yellow-green) at 3.35 V
+}
+R3_6091_STATE = "removed"
 
 # ---- SEN62 (PM only, power-gated between windows) -------------------------
 SEN62_V = 3.3
@@ -192,8 +217,9 @@ class Budget:
         return sum(self.lines.values())
 
 
-def budget(p: Profile, cell: Cell, worst: bool = False) -> Budget:
+def budget(p: Profile, cell: Cell, worst: bool = False, r3: str | None = None) -> Budget:
     b = Budget(profile=p, cell=cell)
+    r3 = r3 or R3_6091_STATE
     eff_reg = EFF_REG_WORST if worst else EFF_REG
     eff_3v3 = eff_reg * EFF_BUCK
     v_pack = cell.v_avg
@@ -238,6 +264,8 @@ def budget(p: Profile, cell: Cell, worst: bool = False) -> Budget:
     b.lines["Pololu regulator quiescent"] = REG_IQ_MA * v_pack * 24.0
     b.lines["charger + BMS quiescent"] = (CHARGER_IQ_UA + BMS_IQ_UA) * v_pack * 24.0 / 1000.0
     b.lines["cell voltage divider (VBAT_S)"] = v_pack ** 2 / VBAT_S_OHM * 1000.0 * 24.0
+    # straight from the cells, no efficiency: src=r3_6091
+    b.lines["#6091-R3 VSYSOK LED"] = R3_6091_LED_MA[r3] * v_pack * 24.0
 
     # --- cells ------------------------------------------------------------
     b.lines["cell self-discharge"] = (pack_total_mwh(cell)
@@ -265,13 +293,13 @@ MARGIN = 0.25         # 25 % engineering margin, per the project requirement
 TARGET_MONTHS = 2.5   # ECO on 1S4P must clear this; ci/github-actions-ci.yml
 
 
-def table(cell: Cell) -> list[dict]:
+def table(cell: Cell, r3: str | None = None) -> list[dict]:
     rows = []
     for p in PROFILES:
-        b = budget(p, cell)
+        b = budget(p, cell, r3=r3)
         nominal = runtime_days(b)
         with_margin = runtime_days(b, MARGIN)
-        worst = runtime_days(budget(p, cell, worst=True), MARGIN)
+        worst = runtime_days(budget(p, cell, worst=True, r3=r3), MARGIN)
         rows.append({
             "profile": p.name,
             "pm_interval": ("continuous" if p.pm_interval_s == 0
@@ -289,20 +317,37 @@ def table(cell: Cell) -> list[dict]:
     return rows
 
 
-def eco_by_cell() -> list[dict]:
+def eco_by_cell(r3: str | None = None) -> list[dict]:
     eco = PROFILES[0]
     out = []
     for c in CELLS.values():
-        b = budget(eco, c)
+        b = budget(eco, c, r3=r3)
         out.append({
             "cell": c.name, "key": c.key, "recommended": c.recommended,
             "pack_wh": round(pack_usable_mwh(c) / 1000.0, 1),
             "months_nominal": round(runtime_days(b) / 30.44, 2),
             "months_with_margin": round(runtime_days(b, MARGIN) / 30.44, 2),
             "months_worst_case": round(
-                runtime_days(budget(eco, c, worst=True), MARGIN) / 30.44, 2),
+                runtime_days(budget(eco, c, worst=True, r3=r3), MARGIN) / 30.44, 2),
         })
     return out
+
+
+def r3_comparison(cell: Cell) -> list[dict]:
+    """Every profile with #6091-R3 removed (as built) and still fitted (EDR-24)."""
+    rows = []
+    for p in PROFILES:
+        for state, ma in R3_6091_LED_MA.items():
+            b = budget(p, cell, r3=state)
+            rows.append({
+                "profile": p.name, "r3_6091": state, "led_ma": ma,
+                "mwh_per_day": round(b.total_mwh_day, 1),
+                "days_nominal": round(runtime_days(b), 1),
+                "days_with_margin": round(runtime_days(b, MARGIN), 1),
+                "days_worst_case": round(
+                    runtime_days(budget(p, cell, worst=True, r3=state), MARGIN), 1),
+            })
+    return rows
 
 
 def _fmt_days(d: float) -> str:
@@ -313,31 +358,50 @@ def _fmt_days(d: float) -> str:
     return f"{d/30.44:.1f} months"
 
 
-def print_table(cell: Cell) -> None:
+R3_LABEL = {
+    "removed": "removed (as built)",
+    "fitted-favourable": "fitted, Vf 2.7 V",
+    "fitted-unfavourable": "fitted, Vf 1.9 V",
+}
+
+
+def print_table(cell: Cell, r3: str | None = None) -> None:
+    r3 = r3 or R3_6091_STATE
     print(f"Pack: {cell.name}, {pack_usable_mwh(cell)/1000:.1f} Wh usable")
-    print(f"Engineering margin applied: {MARGIN*100:.0f} %\n")
+    print(f"Engineering margin applied: {MARGIN*100:.0f} %")
+    print(f"#6091-R3 (VSYSOK LED): {R3_LABEL[r3]}, {R3_6091_LED_MA[r3]:.2f} mA from the cells\n")
     hdr = (f"{'profile':<12}{'PM every':>12}{'CO2 every':>11}{'mWh/day':>10}"
            f"{'nominal':>13}{'w/ margin':>13}{'worst case':>13}")
     print(hdr)
     print("-" * len(hdr))
-    for r in table(cell):
+    for r in table(cell, r3):
         print(f"{r['profile']:<12}{r['pm_interval']:>12}{r['co2_interval']:>11}"
               f"{r['mwh_per_day']:>10.1f}{_fmt_days(r['days_nominal']):>13}"
               f"{_fmt_days(r['days_with_margin']):>13}{_fmt_days(r['days_worst_case']):>13}")
     print("\nECO by pack (with margin):")
-    for r in eco_by_cell():
+    for r in eco_by_cell(r3):
         print(f"  {r['cell']:<34}{r['pack_wh']:>6.1f} Wh {r['months_with_margin']:>6.2f} months"
               f"{'' if r['recommended'] else '   (for comparison)'}")
+    print(f"\n#6091-R3 removed vs. still fitted, {cell.name} (EDR-24):")
+    hdr = (f"  {'profile':<12}{'#6091-R3':<20}{'LED mA':>7}{'mWh/day':>10}"
+           f"{'nominal':>13}{'w/ margin':>13}{'worst case':>13}")
+    print(hdr)
+    print("  " + "-" * (len(hdr) - 2))
+    for r in r3_comparison(cell):
+        print(f"  {r['profile']:<12}{R3_LABEL[r['r3_6091']]:<20}{r['led_ma']:>7.2f}"
+              f"{r['mwh_per_day']:>10.1f}{_fmt_days(r['days_nominal']):>13}"
+              f"{_fmt_days(r['days_with_margin']):>13}{_fmt_days(r['days_worst_case']):>13}")
     print("\nPer-profile breakdown (mWh/day):")
-    for r in table(cell):
+    for r in table(cell, r3):
         print(f"\n  {r['profile']}")
         for k, v in sorted(r["lines"].items(), key=lambda kv: -kv[1]):
             print(f"    {k:<34}{v:>8.2f}")
 
 
-def markdown(cell: Cell) -> str:
+def markdown(cell: Cell, r3: str | None = None) -> str:
     """The generated part of docs/BATTERY_LIFE.md."""
-    rows = table(cell)
+    r3 = r3 or R3_6091_STATE
+    rows = table(cell, r3)
     out = []
     w = out.append
     w("<!-- GENERATED by tools/battery_calculator/model.py - do not edit by hand. -->")
@@ -362,6 +426,9 @@ def markdown(cell: Cell) -> str:
     w(f"| cell voltage divider | {VBAT_S_OHM/1e3:.0f} kOhm across the cells | {SRC['vbat_s']} |")
     w(f"| charger + BMS quiescent | {CHARGER_IQ_UA:.0f} + {BMS_IQ_UA:.0f} uA | {SRC['bq25185']}; {SRC['hy2112']} |")
     w(f"| C3 bulk capacitor | {C3_LEAK_UA:.0f} uA leakage at 3.3 V | {SRC['c3']} |")
+    w(f"| #6091-R3 (VSYSOK LED) | {R3_LABEL[r3]}: {R3_6091_LED_MA[r3]:.2f} mA from the cells "
+      f"(fitted: {R3_6091_LED_MA['fitted-favourable']:.2f}-"
+      f"{R3_6091_LED_MA['fitted-unfavourable']:.2f} mA) | {SRC['r3_6091']} |")
     c = CELLS[DEFAULT_CELL]
     w(f"| cell | AER18650m2A2, {c.mah:.0f} mAh min, {c.v_avg:.2f} V avg, "
       f"{c.usable*100:.0f} % usable | {SRC['aer18650']} |")
@@ -383,7 +450,7 @@ def markdown(cell: Cell) -> str:
     w("")
     w("| pack | usable energy | nominal | with margin | worst case, with margin |")
     w("|---|---|---|---|---|")
-    for r in eco_by_cell():
+    for r in eco_by_cell(r3):
         name = r["cell"] + (" - **fitted**" if r["recommended"] else " - for comparison")
         w(f"| {name} | {r['pack_wh']:.1f} Wh | {r['months_nominal']:.1f} months | "
           f"**{r['months_with_margin']:.1f} months** | {r['months_worst_case']:.1f} months |")
@@ -404,6 +471,25 @@ def markdown(cell: Cell) -> str:
     w("|---|---|---|---|---|---|---|")
     for r in rows:
         w(f"| {r['profile']} | {r['pm_interval']} | {r['co2_interval']} | "
+          f"{r['mwh_per_day']:.0f} | {_fmt_days(r['days_nominal'])} | "
+          f"**{_fmt_days(r['days_with_margin'])}** | {_fmt_days(r['days_worst_case'])} |")
+    w("")
+    w("## If #6091-R3 is still fitted")
+    w("")
+    w("The #6091's green VSYSOK LED and its 1 k resistor R3 hang permanently "
+      "between SYS and GND. On the cells they draw from them directly, ahead of "
+      "the regulator, so the current counts at the cell voltage with no "
+      "efficiency on top. This build desolders #6091-R3 (ASSEMBLY 4.1, TESTING "
+      "PS-1.9, EDR-24); the rows below show what forgetting it costs, with the "
+      "Power-Standard's budget currents for the two forward voltages the LED "
+      "may have.")
+    w("")
+    w(f"| profile | #6091-R3 | LED current | mWh/day | nominal | with margin | "
+      f"worst case, with margin |")
+    w("|---|---|---|---|---|---|---|")
+    for r in r3_comparison(cell):
+        mark = "**" if r["r3_6091"] == "removed" else ""
+        w(f"| {r['profile']} | {mark}{R3_LABEL[r['r3_6091']]}{mark} | {r['led_ma']:.2f} mA | "
           f"{r['mwh_per_day']:.0f} | {_fmt_days(r['days_nominal'])} | "
           f"**{_fmt_days(r['days_with_margin'])}** | {_fmt_days(r['days_worst_case'])} |")
     w("")
@@ -429,16 +515,22 @@ def main() -> int:
     ap.add_argument("--cell", choices=sorted(CELLS), default=DEFAULT_CELL)
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--markdown", action="store_true")
+    ap.add_argument("--r3-6091", choices=list(R3_6091_LED_MA), default=R3_6091_STATE,
+                    help="state of the #6091's VSYSOK LED resistor (EDR-24); "
+                         "as built: removed")
     a = ap.parse_args()
     cell = CELLS[a.cell]
+    r3 = a.r3_6091
     if a.json:
         print(json.dumps({"cell": cell.name, "cells": cell.parallel, "margin": MARGIN,
-                          "profiles": table(cell), "eco_by_cell": eco_by_cell()},
+                          "r3_6091": r3, "r3_6091_led_ma": R3_6091_LED_MA[r3],
+                          "profiles": table(cell, r3), "eco_by_cell": eco_by_cell(r3),
+                          "r3_6091_comparison": r3_comparison(cell)},
                          indent=2))
     elif a.markdown:
-        print(markdown(cell))
+        print(markdown(cell, r3))
     else:
-        print_table(cell)
+        print_table(cell, r3)
     return 0
 
 

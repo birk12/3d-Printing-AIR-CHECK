@@ -42,7 +42,7 @@ The Sunrise is the single most expensive part. It is also the reason the CO2 num
 | FU4 | 1 | PICO II fuse 2 A fast, axial (cell 2B) | `0251002.MAT1L (Reichelt LITT 0251002.MAT)` | Reichelt | 0.82 | As FU1. |
 | U5 | 1 | LiFePO4 1S BMS 2.5 A (HY2112 + 8205A) | `LiFePO4 1S 3,2V Schutzschaltung BMS 2,5A` | eremit.de | 1.79 | Over-charge 3.75 V, over-discharge 2.1 V, over-current - for LFP. Not a DW01/FS312F/HY2113 board: those only cut at >= 4.25 V. It switches the minus side, so P- is the ground of the whole device and B- goes nowhere else. |
 | TH1 | 1 | NTC 10 k, B = 3435 K | `103AT-2` | Mouser | 1.50 | On BH2's outer cell (2B), the one next to the charger chamber and so the warmest, held by a finger on the battery door, Kapton between: the BQ25185 charges only between 0 and 60 C with it. The #6091's TH jumper is opened for it - with the jumper closed there is no temperature protection at all. |
-| U6 | 1 | Adafruit bq25185 charger, set to LFP 3.65 V, 1 A | `6091` | Adafruit / Berrybase / Mouser | 6.90 | The Power-Standard's core (TI BQ25185): LFP charge voltage set by resistor (jumper VS = 3.65 V; it cannot fall back to 4.2 V in software), power path (USB-C feeds the device, the rest charges), BUVLO 3.0 V, 6 h timer, NTC window 0-60 C, 4 uA from the cells, input OVP 18.5 V. Jumpers (board file, rev B1): cut VS (top) and bridge 3.65V (bottom); bridge 1 Amp (bottom) - the factory setting is 500 mA, whatever the product page says (Adafruit issue #2); cut TH (top) for the NTC. The VS and IS header pads stay open (EDR-21). |
+| U6 | 1 | Adafruit bq25185 charger, set to LFP 3.65 V, 1 A | `6091` | Adafruit / Berrybase / Mouser | 6.90 | The Power-Standard's core (TI BQ25185): LFP charge voltage set by resistor (jumper VS = 3.65 V; it cannot fall back to 4.2 V in software), power path (USB-C feeds the device, the rest charges), BUVLO 3.0 V, 6 h timer, NTC window 0-60 C, 4 uA from the cells, input OVP 18.5 V. Jumpers (board file, rev B1): cut VS (top) and bridge 3.65V (bottom); bridge 1 Amp (bottom) - the factory setting is 500 mA, whatever the product page says (Adafruit issue #2); cut TH (top) for the NTC. The VS and IS header pads stay open (EDR-21). Desolder #6091-R3, the green VSYSOK LED's resistor (R3_6091, EDR-24). |
 | PS1 | 1 | Pololu S9V11E2A buck-boost, set to 3.90 V | `5719` | Eckstein / Pololu | 6.50 | Turns LOAD (3.0-3.65 V on the cells, 4.5 V on USB-C) into a steady 3.90 V for the FireBeetle's battery input: without it the FireBeetle's 3.3 V rail would sag below the SEN62's 3.15 V minimum on the cells. Starts from ~3 V, which the BQ25185 guarantees (BUVLO release 3.15 V). EN open. Set the trimpot before connecting anything (ASSEMBLY). |
 | D1 | 1 | Adafruit LM66200 ideal diode breakout | `5830` | Adafruit / Berrybase | 3.50 | Feeds +VREG into the FireBeetle's battery input and blocks every current the other way: with a computer on the FireBeetle's USB-C its Li-ion charger (CN3165) holds its battery input at 4.2 V, 0.2 V above +VREG, past the 70 mV reverse-blocking threshold (TI SLVSG04) - so the FireBeetle's charger never reaches the LFP cells. VIN2 and ON to GND. 1.3 uA quiescent. ST unused. |
 | J2 | 1 | USB-C power socket, sunken breakout | `6050` | Adafruit / Mouser | 3.50 | The charging and power input, from any USB-C charger (18 W is plenty): the board's 5.1k resistors on CC ask for plain 5 V without negotiation. Power only; data lines open. Screwed to two posts. |
@@ -79,6 +79,14 @@ The Sunrise is the single most expensive part. It is also the reason the CO2 num
 | X5 | 1 | heat-shrink tubing assortment | `-` | local | 2.00 | Over every inline resistor, the fuse and every splice. |
 | | | | | | **201.06** | |
 
+## Removed from bought modules - mandatory
+
+Nothing to buy: these come on a module above and are **desoldered** before it is wired (ASSEMBLY step 4.1).
+
+| ref | on | part | what to take off, and where | why |
+|---|---|---|---|---|
+| R3_6091 | `Adafruit 6091, R3 (0603)` | 1 k series resistor of the #6091's green VSYSOK LED - REMOVED | R3 on the #6091 (0603, 1 k), top side: with the USB-C socket at the top, the 0603 right of the green LED, between it and the right-hand pad row (LOAD/DCIN), level with the charger IC - x 23.26 / y 13.75 mm from the bottom-left corner of the 31.75 x 25.40 mm board. Not R2 (top right, at the red FAULT LED) and not R1 (orange CHG LED). Soldering iron, both pads at once, or tweezers; then USB-C on: the green LED stays dark (PS-1.9, photo). | On the #6091 the green VSYSOK LED and this 1 k resistor sit permanently between SYS (= LOAD+) and GND, with no jumper. On the cells SYS is the cell voltage, so the LED would draw 0.50-1.45 mA (its Vf is not documented: 2.7-1.9 V) straight from them, ahead of the regulator: 12-35 mAh a day, 40 to 120 times the rest of the module, and ECO would fall from 2.8 to 1.8-2.4 months with margin. Desoldered before the module is wired (ASSEMBLY 4.1, TESTING PS-1.9, EDR-24). Not R1 or R2: the orange CHG and red FAULT LEDs hang on the open-drain STAT pins, light only on USB-C, and stay. Called #6091-R3 because this schematic has its own R3. |
+
 ## Optional but recommended
 
 | part | MPN | EUR | why |
@@ -90,7 +98,8 @@ The Sunrise is the single most expensive part. It is also the reason the CO2 num
 | power | runtime, ECO, with margin |
 |---|---|
 | USB-C charger on J2 | unlimited; the cells are topped up about monthly |
-| the 1S4P LiFePO4 pack alone | 2.8 months (docs/BATTERY_LIFE.md) |
+| the 1S4P LiFePO4 pack alone, #6091-R3 desoldered | 2.8 months (docs/BATTERY_LIFE.md) |
+| the same with #6091-R3 still fitted | 7.8 weeks - 2.4 months, depending on the LED |
 
 Figures from `tools/battery_calculator/model.py`.
 

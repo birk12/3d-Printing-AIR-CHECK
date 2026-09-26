@@ -107,6 +107,11 @@ not a health assessment.
   (29 uA). At 150 uA ECO falls to 2.7 months.
 * The eremit BMS board's own quiescent current is unverified (Power-Standard
   open point O1); the model uses the HY2112's 3 uA.
+* The #6091's green VSYSOK LED is not in the budget because **#6091-R3 is
+  desoldered** (EDR-24). Left on, it draws 0.50–1.45 mA from the cells and
+  ECO falls to 2.4 months or 7.8 weeks with margin, depending on the LED's
+  undocumented forward voltage. ASSEMBLY 4.2 / TESTING PS-1.9 (green LED
+  dark with USB-C) and PS-2.11 (≤ 15 µA at the cells) catch it.
 * The Thread radio figure is an independent PPK2 measurement of an ESP32-C6
   ICD. A different Thread network, a weaker link or more retries all cost
   more than that trace shows.

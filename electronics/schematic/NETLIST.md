@@ -10,6 +10,8 @@
 USB-C socket J2 (5 V) --> #6091 DCIN+ (TI BQ25185: LFP 3.65 V, 1 A, NTC, 6 h timer)
 VCELL <--> #6091 BATT+        NTC 103AT-2 on the middle cell --> #6091 TH
 #6091 LOAD (3.0-3.65 V on the cells, 4.5 V on USB-C) --> PS1 S9V11E2A --> +VREG 3.90 V
+#6091 SYS --green VSYSOK LED--#6091-R3 1k-- GND: R3 DESOLDERED (else 0.50-1.45 mA
+          from the cells, EDR-24); the orange CHG and red FAULT LEDs stay
 +VREG --> D1 LM66200 VIN1 (VIN2, ON at GND) --> VSYS --> FireBeetle BAT (J1)
 VCELL --R1 470k--+--R2 470k-- GND      VBAT_S on GPIO3 (C1 100 nF)
 VBUS --R20 10k--+--R21 15k-- GND      PWR_K on GPIO4 (C2 100 nF)
@@ -154,6 +156,14 @@ Every net is one or more wires. Solder, then heat-shrink every joint.
 | R9 | 330, 1 %, 0.25 W, metal film, THT | on the LED's green lead |
 | R10 | 330, 1 %, 0.25 W, metal film, THT | on the LED's blue lead |
 
+## Removed from bought modules
+
+Parts that come on a module and are desoldered before it is wired. They stay in the netlist with every pin open, so the removal is part of the design and the ERC checks it.
+
+| ref | part | what to take off, and where |
+|---|---|---|
+| R3_6091 | 1 k series resistor of the #6091's green VSYSOK LED - REMOVED | R3 on the #6091 (0603, 1 k), top side: with the USB-C socket at the top, the 0603 right of the green LED, between it and the right-hand pad row (LOAD/DCIN), level with the charger IC - x 23.26 / y 13.75 mm from the bottom-left corner of the 31.75 x 25.40 mm board. Not R2 (top right, at the red FAULT LED) and not R1 (orange CHG LED). Soldering iron, both pads at once, or tweezers; then USB-C on: the green LED stays dark (PS-1.9, photo). |
+
 ## Pins deliberately left open
 
 | pin | why |
@@ -167,6 +177,8 @@ Every net is one or more wires. Solder, then heat-shrink every joint.
 | U4.8 (DVCC) | see U4 in the BOM |
 | U6.VS (VSET pad) | see U6 in the BOM |
 | U6.IS (ISET pad) | see U6 in the BOM |
+| R3_6091.1 (VSYSOK LED cathode (its anode is on SYS = LOAD+)) | desoldered, see 'Removed from bought modules' |
+| R3_6091.2 (GND) | desoldered, see 'Removed from bought modules' |
 | PS1.EN (enable, 100k pull-up to VIN) | see PS1 in the BOM |
 | D1.ST (status, open drain) | see D1 in the BOM |
 | J2.D+ (data) | see J2 in the BOM |

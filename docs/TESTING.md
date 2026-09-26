@@ -7,9 +7,11 @@ checklist and released it for ordering, printing and flashing. The
 electronics audit then blocked every release across all projects until each
 one hands in a machine-checkable schematic (PA-01). **Ours is in and
 accepted:** `Elektronik-Audit/einreichung/SP-1_air-check.toml`, generated
-from `design.py` by `tools/audit/sp1_export.py`, 45 parts, 38 nets, 0 errors
-against A1-A12. The user has decided that the block stands until the other
-documents are through, so nothing is ordered, printed or flashed yet.
+from `design.py` by `tools/audit/sp1_export.py`, 47 parts (since EDR-24
+including `R3_6091`, the desoldered #6091-R3, with both pins open), 38 nets,
+0 errors against A1-A12. The user has decided that the block stands until
+the other documents are through, so nothing is ordered, printed or flashed
+yet.
 
 Conditions for *use*, all on the first unit: PS-2.13 / O3 (IC < 70 °C,
 holder 2's outer cell measured), T-L7 (T/RH offset while charging,
@@ -18,7 +20,8 @@ PS-1.6a (CE < 0.4 V in reset), T-P3 (C(SEN62) measured, switch-on step),
 T-P3a (3.3 V stable with C3), T-L9b (this unit's BUVLO and the BAT pin in a
 burst), T-L1b (PWR-K node with a warm charger), T-L1c
 (cell measurement calibrated, protocol step 4.1b), O1/O2 (quiescent
-current). The full protocol PS-1.1 to PS-4.7 comes before the first charge.
+current - only meaningful with #6091-R3 desoldered, PS-1.9). The full
+protocol PS-1.1 to PS-4.7 comes before the first charge.
 The battery session keeps the same list; T-L1b and 4.1b are the two whose
 results go back into the Power-Standard rather than staying here.
 ## Status, honestly
@@ -42,7 +45,7 @@ believed.
 | status LED logic | SIMULATED | part of the 537; every pattern and its timing |
 | LFP power module (`ac_power` over `pwr_std`) | SIMULATED | part of the 537, plus `firmware/test/host/test_pwr_std.c`: PWR-K decoding, charge pause, safety-timer restart, voltage levels, Matter's charge states |
 | energy model | BUILD-VERIFIED | `tools/battery_calculator/model.py`, inputs traced to datasheets |
-| electrical design | BUILD-VERIFIED | 784 rule checks in `electronics/schematic/design.py`, 0 warnings; the same wiring as `Elektronik-Audit/einreichung/SP-1_air-check.toml` (A1-A12, 0 errors) |
+| electrical design | BUILD-VERIFIED | 790 rule checks in `electronics/schematic/design.py`, 0 warnings; the same wiring as `Elektronik-Audit/einreichung/SP-1_air-check.toml` (A1-A12, 0 errors) |
 | enclosure | BUILD-VERIFIED | OpenSCAD asserts over every module, post and zone, and `tools/diagnostics/stl_check.py`: all four parts manifold, 1.2 % overhang on the front shell |
 | firmware build | BUILD-VERIFIED | full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6: 1.69 MB image (14 % free in the OTA slot), 210 kB DIRAM (46.5 %) |
 | sensor drivers | **untested** | register addresses and timings read from datasheets |
@@ -91,10 +94,10 @@ python3 electronics/schematic/design.py
 ```
 
 ```
-ERC: 784 checks, 0 error(s), 0 warning(s)
+ERC: 790 checks, 0 error(s), 0 warning(s)
 ```
 
-What the 784 cover: every pin exists on its part and every pin of every part
+What the 790 cover: every pin exists on its part and every pin of every part
 is connected or declared open, no net has one connection, no pin is on two
 nets, every supply is within its part's range and the part really sits on
 that rail; **the cell chain** (Power-Standard checklist K1/K2): each cell's +
@@ -118,7 +121,10 @@ shares GPIO18 with its pull-ups, COMSEL is grounded and EN has its pull-down,
 the LP bus is on GPIO6/7, no strapping pin is used except GPIO4/5 (SDIO
 timing only, approved), only an LED sits on GPIO16, the net list, the GPIO
 map and the firmware's `AC_PIN_` table agree, and no LED glows with its GPIO
-high.
+high; **#6091-R3** (EDR-24) is declared removed with both pins open, the cells'
+quiescent current as PS-2.11 measures it stays within 15 µA at 3.75 V (it
+would be about 1.9 mA with the VSYSOK LED still on SYS), and the energy model
+assumes the same state as the schematic.
 
 The #2810 still has no soft start, but since v1.4.1 that is a calculation
 instead of a warning: C3 (470 uF at SW1's VIN) carries the switch-on step, and
@@ -133,7 +139,9 @@ What the ERC cannot catch is a module that differs from what was fed into it
 only its schematic showed otherwise). Every module is modelled from its
 vendor's drawings and board files; the Grove SHT40 and the Sunrise's pin
 rows are not published and are measured before printing (T-M1, T-M2). The
-#6091's jumper defaults are checked on the board itself (PS-1.1, PS-1.2).
+#6091's jumper defaults are checked on the board itself (PS-1.1, PS-1.2),
+and so is #6091-R3's removal (PS-1.9): the ERC only knows what `design.py`
+says, the green LED shows what is on the board.
 
 ### Enclosure
 
@@ -255,6 +263,7 @@ meter (PPK2 or µCurrent), a lab supply, freeze spray, a 33 kΩ resistor.
 | PS-1.6a | CE through a reset: hold the FireBeetle in reset (EN / RST low) with USB-C in J2 and measure the #6091's CE pad | < 0.4 V (charging allowed; nothing on GPIO5 pulls it up) |
 | PS-1.7 | DCIN+ carries USB 5 V (R20 taps the PWR-K ladder there) | ≈ 5 V |
 | PS-1.8 | the board is labelled **"LFP 3,65 V"** | yes |
+| PS-1.9 | **#6091-R3 desoldered** (ASSEMBLY 4.1): the 0603 right of the green LED, not R2 at the red LED - photo. Then USB-C in J2: the **green LED stays dark**, the orange CHG LED still lights (with no cells it flickers, PS-1.5a) | dark (photo) |
 
 **2. The cells** (four in parallel, holders, fuses, BMS):
 
@@ -270,7 +279,7 @@ meter (PPK2 or µCurrent), a lab supply, freeze spray, a 33 kΩ resistor.
 | PS-2.8 | charge current into flat cells, ammeter between BMS P+ and #6091 BATT+, PS1 disconnected. With the device running, its own draw comes out of the 1.1 A input limit (about 0.8 A left for the cells, EDR-21) | 1000 mA ± 10 % |
 | PS-2.9 | end of charge: cell voltage at the end, CHG_N goes high (log `full`, then `charge paused`) | 3.60–3.70 V |
 | PS-2.10 | pull USB-C during a SEN62 window (fan running) | no reset: uptime continues, the window completes, the log shows `power: cells` |
-| PS-2.11 | the cells' quiescent current without USB-C, PS1's input disconnected, µA meter in the BMS P+ lead (charger, BMS and the 470k/470k VBAT_S divider) → open points O1/O2 | ≤ 15 µA |
+| PS-2.11 | the cells' quiescent current without USB-C, PS1's input disconnected, µA meter in the BMS P+ lead (charger, BMS and the 470k/470k VBAT_S divider) → open points O1/O2. **Can only pass with #6091-R3 desoldered (PS-1.9)**: 0.3–1.75 mA means it is still on the board | ≤ 15 µA |
 | PS-2.12 | short-circuit test at the BMS output (through 1 Ω, briefly): the BMS switches off | yes |
 | PS-2.13 | **thermocouples on the #6091's IC and on holder 2's outer cell** (the one next to the chamber, where the NTC sits), device upright, closed case, 30 min charging at 1 A from half-empty cells → open point O3. Note both temperatures and the NTC cell against holder 1's cells | IC < 70 °C (release for use only then); the NTC's cell is the warmest of the four |
 
@@ -353,7 +362,7 @@ cells deliver (T-E0).
 
 | # | test | model | pass |
 |---|---|---|---|
-| T-E0 | **quiescent at the cells**: PS1's 3.9 V output disconnected, the µA meter in the BMS P+ lead (it then sees the regulator, the charger and the BMS, and the 940 kΩ VBAT_S divider) | < 0.2 mA for the regulator (Pololu), 4 + 3 µA charger and BMS, ~3.5 µA divider | recorded; above 0.2 mA for the regulator the ECO runtime drops as in BATTERY_LIFE.md "What would change these numbers" |
+| T-E0 | **quiescent at the cells**: PS1's 3.9 V output disconnected, the µA meter in the BMS P+ lead (it then sees the regulator, the charger and the BMS, and the 940 kΩ VBAT_S divider) | < 0.2 mA for the regulator (Pololu), 4 + 3 µA charger and BMS, ~3.5 µA divider, 0 for the #6091's VSYSOK LED (#6091-R3 desoldered; 0.3–1.75 mA if not) | recorded; above 0.2 mA for the regulator the ECO runtime drops as in BATTERY_LIFE.md "What would change these numbers" |
 | T-E1 | **idle floor**: SEN62 off, averaged between two windows (VOC samples, Sunrise shots and Thread polls included) | about 2.6 mW at the cells | recorded, and fed back into `model.py`. Well above the model: look for the #2810's slide switch in ON, the SparkFun LED jumper not cut, the FireBeetle's green LED (GPIO15), or a pin back-feeding an unpowered sensor |
 | T-E2 | **one full ECO hour**, SEN62 window included | 8.3 mWh at the cells | recorded; this is the number the 2.8 months rest on |
 | T-E3 | **one SEN62 window** on its own | 5.5 mWh at the cells | recorded; replaces the datasheet figure |

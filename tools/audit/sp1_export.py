@@ -121,6 +121,14 @@ NC_REASONS: dict[str, dict[str, str]] = {
         "SW": "Kontakt des Schiebeschalters bleibt offen (Schalter in Stellung OFF), "
               "damit allein der ON-Pin schaltet",
     },
+    "R3_6091": {
+        "1": "entfernt: #6091-R3 wird ausgeloetet - die gruene VSYSOK-LED haengt mit "
+             "ihm ohne Jumper zwischen SYS (= LOAD+) und GND und zoege im Akkubetrieb "
+             "0,50-1,45 mA direkt aus den Zellen (12-35 mAh/Tag; PS-2.11 erlaubt 15 uA "
+             "Ruhestrom). Pruefung PS-1.9 (USB an, gruene LED bleibt dunkel, Foto); "
+             "EDR-24, Power-Standard README 2a",
+        "2": "entfernt: siehe oben",
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -562,16 +570,21 @@ def extra_parts_toml() -> list[str]:
     return out
 
 
-HEADER = """# SP-1 - AIR CHECK v1.4, Gesamtschaltung
+ERC = d.run_erc()
+
+HEADER = f"""# SP-1 - AIR CHECK v1.4, Gesamtschaltung
 #
 # ERZEUGT von tools/audit/sp1_export.py aus electronics/schematic/design.py.
 # Nicht von Hand aendern: die Quelle ist design.py, dort laeuft auch die eigene
-# ERC (764 Pruefungen).  Was hier zusaetzlich steht - Pinrichtungen, Gruende fuer
+# ERC ({ERC.checks} Pruefungen).  Was hier zusaetzlich steht - Pinrichtungen, Gruende fuer
 # offene Pins, Versorgungsgrenzen, Spitzenstroeme, Toleranzen - steht in
 # tools/audit/sp1_export.py und ist mit Quelle belegt.
 #
 # Nicht enthalten, weil sie keine elektrischen Knoten haben: die Kabel W1-W3
 # (JST GH, Qwiic, Grove), die Mechanik X1-X7 und der optionale Messadapter X4.
+# Enthalten, obwohl ohne Knoten: R3_6091, der vom #6091 ausgeloetete #6091-R3
+# (Vorwiderstand der gruenen VSYSOK-LED) - beide Pins unter [part.nc], wie R10
+# in SP-2.
 """
 
 
@@ -590,8 +603,8 @@ def main() -> int:
              'revision = "v1.4"',
              'autor    = "AIR CHECK (Claude-Sitzung 3d-Printing-AIR-CHECK)"',
              f'datum    = "{d.__dict__.get("SP1_DATE", "2026-09-20")}"',
-             'quelle   = "electronics/schematic/design.py (ERC 764 Pruefungen, '
-             '0 Fehler), erzeugt mit tools/audit/sp1_export.py; Grenzwerte aus den '
+             f'quelle   = "electronics/schematic/design.py (ERC {ERC.checks} Pruefungen, '
+             f'{len(ERC.errors)} Fehler), erzeugt mit tools/audit/sp1_export.py; Grenzwerte aus den '
              'in docs/BOM.md genannten Datenblaettern"',
              ""]
     lines += parts_toml(nodes_by_part)

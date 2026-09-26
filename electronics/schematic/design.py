@@ -82,6 +82,10 @@ class Part:
     supplier: str = ""
     required: bool = True
     nc: tuple = ()      # pins deliberately left unconnected, with the reason in `why`
+    # A part that comes on a bought module and has to be desoldered from it:
+    # what to take off and where.  All its pins are then in `nc`; it is not
+    # bought, so it stays out of the BOM's parts list and gets its own section.
+    removed: str = ""
     vsupply_min: float | None = None
     vsupply_max: float | None = None
     i_typ_ma: float | None = None
@@ -267,11 +271,42 @@ PARTS: list[Part] = [
             "input OVP 18.5 V. Jumpers (board file, rev B1): cut VS (top) and "
             "bridge 3.65V (bottom); bridge 1 Amp (bottom) - the factory setting is "
             "500 mA, whatever the product page says (Adafruit issue #2); cut TH "
-            "(top) for the NTC. The VS and IS header pads stay open (EDR-21).",
+            "(top) for the NTC. The VS and IS header pads stay open (EDR-21). "
+            "Desolder #6091-R3, the green VSYSOK LED's resistor (R3_6091, EDR-24).",
         price_eur=6.90, supplier="Adafruit / Berrybase / Mouser",
         nc=("VS", "IS"),
         vsupply_min=4.35, vsupply_max=18.5, i_max_ma=1000.0,
         datasheet="TI SLUSF65B; learn.adafruit.com bq25185 guide",
+    ),
+    Part(
+        ref="R3_6091",
+        value="1 k series resistor of the #6091's green VSYSOK LED - REMOVED",
+        mfr="Adafruit", mpn="6091, R3 (0603)",
+        footprint="0603, top side, x 23.26 / y 13.75 mm from the bottom-left corner "
+                  "(USB-C at the top): right of the green LED, left of the LOAD/DCIN "
+                  "pads, level with the charger IC",
+        pins={"1": "VSYSOK LED cathode (its anode is on SYS = LOAD+)", "2": "GND"},
+        why="On the #6091 the green VSYSOK LED and this 1 k resistor sit permanently "
+            "between SYS (= LOAD+) and GND, with no jumper. On the cells SYS is the "
+            "cell voltage, so the LED would draw 0.50-1.45 mA (its Vf is not "
+            "documented: 2.7-1.9 V) straight from them, ahead of the regulator: "
+            "12-35 mAh a day, 40 to 120 times the rest of the module, and ECO would "
+            "fall from 2.8 to 1.8-2.4 months with margin. Desoldered before the "
+            "module is wired (ASSEMBLY 4.1, TESTING PS-1.9, EDR-24). Not R1 or R2: "
+            "the orange CHG and red FAULT LEDs hang on the open-drain STAT pins, "
+            "light only on USB-C, and stay. Called #6091-R3 because this schematic "
+            "has its own R3.",
+        price_eur=0.0, supplier="- (part of U6)",
+        nc=("1", "2"),
+        removed="R3 on the #6091 (0603, 1 k), top side: with the USB-C socket at the "
+                "top, the 0603 right of the green LED, between it and the right-hand "
+                "pad row (LOAD/DCIN), level with the charger IC - x 23.26 / y 13.75 mm "
+                "from the bottom-left corner of the 31.75 x 25.40 mm board. Not R2 (top "
+                "right, at the red FAULT LED) and not R1 (orange CHG LED). Soldering "
+                "iron, both pads at once, or tweezers; then USB-C on: the green LED "
+                "stays dark (PS-1.9, photo).",
+        datasheet="Adafruit bq25185 Breakout rev B1.sch (commit e73b39b): "
+                  "5.0V/VSYS - LED VSYSOK - R3 1k - GND",
     ),
     Part(
         ref="PS1", value="Pololu S9V11E2A buck-boost, set to 3.90 V", mfr="Pololu",
@@ -671,6 +706,46 @@ C6_VDD_MIN = 3.00           # ESP32-C6 DS v1.5 Tab. 5-2
 C3_TOL = 0.20               # electrolytic, -20 %
 SEN62_C_LIMIT_UF = 33.0     # acceptance limit for the SEN62's input capacitance
                             # (nowhere specified by Sensirion; measured in T-P3)
+# #6091-R3 (EDR-24): the #6091's green VSYSOK LED hangs on SYS through its own
+# 1 k, and on the cells SYS is the cell voltage.  Its Vf is not documented
+# (Adafruit: "GREEN 0805", no part number); the Power-Standard bounds it with
+# 2.7 V (InGaN) and 1.9 V (GaP) - the lower one is the worst case here.
+VSYSOK_VF_MIN = 1.9
+R3_6091_OHM = 1000.0
+# TESTING PS-2.11 (Power-Standard PRUEFPROTOKOLL 2.11, open points O1/O2): the
+# cells' quiescent current with no USB-C and PS1's input disconnected.
+PS_2_11_MAX_UA = 15.0
+
+# Date of the last change to what tools/audit/sp1_export.py hands in as SP-1.
+SP1_DATE = "2026-09-26"
+
+
+def _energy_model():
+    """tools/battery_calculator/model.py, for the constants both files share."""
+    import importlib.util
+    path = os.path.join(ROOT, "tools", "battery_calculator", "model.py")
+    spec = importlib.util.spec_from_file_location("aircheck_energy_model", path)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules["aircheck_energy_model"] = mod      # dataclasses need the module
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def cell_quiescent_ua(v_cell: float) -> float:
+    """What PS-2.11 reads in the BMS P+ lead: no USB-C, PS1's input open.
+
+    The charger and the BMS (the energy model's figures), the 470k/470k VBAT_S
+    divider - and the #6091's VSYSOK LED at its worst-case Vf unless R3_6091
+    is declared removed.  PS1 is not in it: its input is disconnected for the
+    measurement.
+    """
+    m = _energy_model()
+    ua = m.CHARGER_IQ_UA + m.BMS_IQ_UA + v_cell / m.VBAT_S_OHM * 1e6
+    r3 = PARTS_BY_REF.get("R3_6091")
+    if r3 is None or not r3.removed:
+        ua += max(0.0, v_cell - VSYSOK_VF_MIN) / R3_6091_OHM * 1e6
+    return ua
 
 
 def power_budget() -> dict[str, float]:
@@ -1034,6 +1109,29 @@ def run_erc() -> Erc:
         e.check(RAILS["VSYS"].vmax - RAILS["+3V3"].vmin < LED_VF[c],
                 f"LED {c} would glow with its GPIO high")
 
+    # 12. #6091-R3 (EDR-24, Power-Standard 2a and checklist K3/K19): the
+    #     charger board's green VSYSOK LED hangs on SYS with no jumper and on
+    #     the cells drains 0.50-1.45 mA from them.  It has to be desoldered,
+    #     the cells' quiescent current has to fit PS-2.11, and the energy
+    #     model has to assume the same state as this file.
+    r3 = PARTS_BY_REF.get("R3_6091")
+    e.check(r3 is not None and bool(r3.removed),
+            "#6091-R3 (the VSYSOK LED's 1 k on the charger board) must be declared "
+            "removed: fitted, the LED drains 0.50-1.45 mA from the cells (EDR-24)")
+    e.check(r3 is not None and set(r3.nc) == set(r3.pins)
+            and not any(_nets_of("R3_6091", p) for p in r3.pins),
+            "R3_6091 is desoldered: both its pins must be NC and on no net")
+    iq = cell_quiescent_ua(RAILS["VCELL"].vmax)
+    e.check(iq <= PS_2_11_MAX_UA,
+            f"the cells' quiescent current is {iq:.0f} uA at {RAILS['VCELL'].vmax} V, "
+            f"PS-2.11 allows {PS_2_11_MAX_UA:.0f} uA - is #6091-R3 still fitted?")
+    m = _energy_model()
+    model_ma = m.R3_6091_LED_MA[m.R3_6091_STATE]
+    e.check((model_ma == 0.0) == (r3 is not None and bool(r3.removed)),
+            f"tools/battery_calculator/model.py assumes #6091-R3 '{m.R3_6091_STATE}' "
+            f"({model_ma} mA), the schematic says "
+            f"{'removed' if r3 is not None and r3.removed else 'fitted'}")
+
     return e
 
 
@@ -1079,6 +1177,8 @@ def netlist_markdown() -> str:
     w("USB-C socket J2 (5 V) --> #6091 DCIN+ (TI BQ25185: LFP 3.65 V, 1 A, NTC, 6 h timer)")
     w("VCELL <--> #6091 BATT+        NTC 103AT-2 on the middle cell --> #6091 TH")
     w("#6091 LOAD (3.0-3.65 V on the cells, 4.5 V on USB-C) --> PS1 S9V11E2A --> +VREG 3.90 V")
+    w("#6091 SYS --green VSYSOK LED--#6091-R3 1k-- GND: R3 DESOLDERED (else 0.50-1.45 mA")
+    w("          from the cells, EDR-24); the orange CHG and red FAULT LEDs stay")
     w("+VREG --> D1 LM66200 VIN1 (VIN2, ON at GND) --> VSYS --> FireBeetle BAT (J1)")
     w("VCELL --R1 470k--+--R2 470k-- GND      VBAT_S on GPIO3 (C1 100 nF)")
     w("VBUS --R20 10k--+--R21 15k-- GND      PWR_K on GPIO4 (C2 100 nF)")
@@ -1145,13 +1245,27 @@ def netlist_markdown() -> str:
     for ref, where in SOLDER_AT.items():
         w(f"| {ref} | {PARTS_BY_REF[ref].value} | {where} |")
     w("")
+    w("## Removed from bought modules")
+    w("")
+    w("Parts that come on a module and are desoldered before it is wired. They "
+      "stay in the netlist with every pin open, so the removal is part of the "
+      "design and the ERC checks it.")
+    w("")
+    w("| ref | part | what to take off, and where |")
+    w("|---|---|---|")
+    for p in PARTS:
+        if p.removed:
+            w(f"| {p.ref} | {p.value} | {p.removed} |")
+    w("")
     w("## Pins deliberately left open")
     w("")
     w("| pin | why |")
     w("|---|---|")
     for p in PARTS:
         for pin in p.nc:
-            w(f"| {p.ref}.{pin} ({p.pins[pin]}) | see {p.ref} in the BOM |")
+            where = ("desoldered, see 'Removed from bought modules'" if p.removed
+                     else f"see {p.ref} in the BOM")
+            w(f"| {p.ref}.{pin} ({p.pins[pin]}) | {where} |")
     w("")
     return "\n".join(o)
 
@@ -1159,7 +1273,7 @@ def netlist_markdown() -> str:
 def bom_rows(include_optional: bool = True) -> list[dict]:
     rows = []
     for p in PARTS:
-        if not include_optional and not p.required:
+        if p.removed or (not include_optional and not p.required):
             continue
         rows.append({
             "ref": p.ref, "qty": p.qty, "value": p.value,
@@ -1174,7 +1288,8 @@ def bom_rows(include_optional: bool = True) -> list[dict]:
 
 
 def total_cost(required_only: bool = True) -> float:
-    return sum(p.price_eur * p.qty for p in PARTS if p.required or not required_only)
+    return sum(p.price_eur * p.qty for p in PARTS
+               if not p.removed and (p.required or not required_only))
 
 
 def bom_markdown() -> str:
@@ -1225,10 +1340,21 @@ def bom_markdown() -> str:
     w("| ref | qty | part | MPN | supplier | EUR | why this part |")
     w("|---|---|---|---|---|---|---|")
     for p in PARTS:
-        if p.required:
+        if p.required and not p.removed:
             w(f"| {p.ref} | {p.qty} | {p.value} | `{p.mpn}` | {p.supplier} | "
               f"{p.price_eur:.2f} | {p.why} |")
     w(f"| | | | | | **{total_cost(True):.2f}** | |")
+    w("")
+    w("## Removed from bought modules - mandatory")
+    w("")
+    w("Nothing to buy: these come on a module above and are **desoldered** before "
+      "it is wired (ASSEMBLY step 4.1).")
+    w("")
+    w("| ref | on | part | what to take off, and where | why |")
+    w("|---|---|---|---|---|")
+    for p in PARTS:
+        if p.removed:
+            w(f"| {p.ref} | `{p.mfr} {p.mpn}` | {p.value} | {p.removed} | {p.why} |")
     w("")
     w("## Optional but recommended")
     w("")
@@ -1243,7 +1369,8 @@ def bom_markdown() -> str:
     w("| power | runtime, ECO, with margin |")
     w("|---|---|")
     w("| USB-C charger on J2 | unlimited; the cells are topped up about monthly |")
-    w("| the 1S4P LiFePO4 pack alone | 2.8 months (docs/BATTERY_LIFE.md) |")
+    w("| the 1S4P LiFePO4 pack alone, #6091-R3 desoldered | 2.8 months (docs/BATTERY_LIFE.md) |")
+    w("| the same with #6091-R3 still fitted | 7.8 weeks - 2.4 months, depending on the LED |")
     w("")
     w("Figures from `tools/battery_calculator/model.py`.")
     w("")

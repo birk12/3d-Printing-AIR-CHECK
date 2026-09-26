@@ -269,7 +269,11 @@ of likelihood:
    lead. The usual suspects above that: the #2810's slide switch in ON (the
    SEN62 then never switches off, and the #2810's red LED stays lit), the
    SparkFun PWR jumper not cut, the FireBeetle's green LED on GPIO15 being
-   driven, or a pin back-feeding an unpowered sensor.
+   driven, or a pin back-feeding an unpowered sensor. In the BMS P+ lead
+   (PS-2.11, PS1's input open) 0.3–1.75 mA instead of about 11 µA means
+   **#6091-R3 is still on the charger board** - with USB-C in J2 its green
+   LED lights. Desolder it (ASSEMBLY 4.1, EDR-24); the PPK2 in the 3.9 V line
+   does not see this one, it draws ahead of PS1.
 4. **The cells.** Cells that lose capacity are replaced all four at once, one
    type and batch, charged together first (`ASSEMBLY.md`, "Changing cells").
 

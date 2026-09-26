@@ -114,6 +114,10 @@ VSYS ─ 1M/1M (on the FireBeetle) ─► GPIO0      sanity only
   pull-ups) low, so nothing reaches its I/O while it is disabled.
 * SGP40 and SHT40 are powered permanently. Neither breakout has a regulator;
   the SparkFun power LED is cut at its jumper.
+* The #6091's green VSYSOK LED sits on SYS through its own 1 k with no
+  jumper, so on the cells it would draw 0.50–1.45 mA from them: **#6091-R3
+  is desoldered** (EDR-24). The orange CHG and red FAULT LEDs on the STAT
+  pins stay; they only light on USB-C.
 * External power is USB-C in J2 (the PWR-K node above 0.6 V) or an
   enumerated USB host on the FireBeetle (USB Serial/JTAG). It means
   CONTINUOUS mode and no low/critical battery state. On the cells, low

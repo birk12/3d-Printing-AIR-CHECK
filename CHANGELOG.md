@@ -3,6 +3,46 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The Power-Standard found - from the Smart-Kerze, then confirmed against
+Adafruit's board files - that the #6091's green VSYSOK LED hangs on SYS
+through its 1 k resistor R3 with no jumper. On the cells it draws 0.50-1.45 mA
+straight from them, 12-35 mAh a day. No project's budget had it, ours
+included (EDR-24).
+
+### Changed
+
+- **#6091-R3 is desoldered** in ASSEMBLY step 4.1, beside the jumpers: the
+  0603 right of the green LED, not R2 at the red one. Step 4.2 and the new
+  **PS-1.9** check it: a photo, then USB-C in J2 - the green LED stays dark,
+  the orange CHG LED still lights. PS-2.11 (≤ 15 µA) now says it can only
+  pass with #6091-R3 out, and T-E0 counts 0 for the LED.
+- The runtimes are unchanged, because they already assumed nothing hangs on
+  SYS: ECO 2.8 months with margin. With #6091-R3 left on it would be 2.4
+  months (LED Vf 2.7 V) or 7.8 weeks (Vf 1.9 V) - both below the 2.5 months
+  the CI asserts.
+- The ERC's check count in `README.md`, `ci/`, `docs/ASSEMBLY.md`,
+  `docs/TESTING.md` and `electronics/pcb/README.md` is 790 everywhere (it was
+  784 in some places and 780 in others). The SP-1 exporter writes the count
+  from the ERC itself instead of a stale 764, and dates SP-1 2026-09-26.
+
+### Added
+
+- **`R3_6091`** in `design.py`: a part with both pins open and a new
+  `removed` field (what to take off, and where). NETLIST.md and BOM.md list
+  it under "Removed from bought modules", not among the parts to buy; SP-1
+  carries it as a `[[part]]` with both pins under `[part.nc]` ("entfernt:
+  ...", the pattern of R10 in SP-2): 47 parts, 38 nets, 0 errors.
+- **ERC section 12**, four checks: R3_6091 declared removed, its pins open
+  and on no net, the cells' quiescent current as PS-2.11 measures it within
+  15 µA (about 1.9 mA with the LED), and the energy model assuming the same
+  state. 790 checks. Gegenprobe (K14): with the flag cleared 3 errors, with
+  R3_6091 wired in 5, with only the model set to "fitted" 1.
+- **Energy model**: a "#6091-R3 VSYSOK LED" line at the cell voltage,
+  `R3_6091_LED_MA` (default "removed"), `--r3-6091`, and a table "If #6091-R3
+  is still fitted" in BATTERY_LIFE.md for every profile.
+
 ## [1.5.0] - 2026-09-26
 
 The Sleeper Frame, re-checking its own rail, found that ESP-IDF sends at the

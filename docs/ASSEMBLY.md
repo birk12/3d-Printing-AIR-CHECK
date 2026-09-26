@@ -14,7 +14,7 @@ PARTS -> PRINT + BAKE -> SET UP THE POWER MODULE -> WIRE -> FLASH -> INTO THE CA
 
 The wiring list, the pin map and where each inline part goes are in
 [`electronics/schematic/NETLIST.md`](../electronics/schematic/NETLIST.md).
-That file is generated from `design.py` and checked by 784 rules; if this
+That file is generated from `design.py` and checked by 790 rules; if this
 guide and the netlist ever disagree, the netlist wins.
 
 The power system is the Power-Standard's **module C** (EDR-21): LiFePO4
@@ -90,7 +90,7 @@ Everything here happens on the bench, with no cell anywhere near the
 #6091. The Power-Standard's inspection protocol, adapted to AIR CHECK, is in
 [`TESTING.md`](TESTING.md) (PS-1.1 .. PS-4.7); fill it in as you go.
 
-**4.1 The #6091's jumpers** (board file rev B1):
+**4.1 The #6091's jumpers, and #6091-R3** (board file rev B1):
 
 | jumper | side | do | why |
 |---|---|---|---|
@@ -98,8 +98,22 @@ Everything here happens on the bench, with no cell anywhere near the
 | 3.65V | bottom | **bridge** | charge voltage 3.65 V, set by resistor |
 | 1 Amp | bottom | **bridge** | the factory default is 500 mA, whatever the product page says (Adafruit issue #2) |
 | TH | top | **cut** | for the NTC; with TH closed there is no temperature protection at all |
+| **#6091-R3** (a 0603 resistor, not a jumper) | top | **desolder** | the green VSYSOK LED hangs on SYS through it with no jumper; on the cells it would draw 0.50–1.45 mA straight from them (EDR-24) |
 
 The VS and IS header pads stay open. Write **"LFP 3,65 V"** on the board.
+
+**Desolder #6091-R3** - mandatory. With the board's USB-C socket at the
+top, it is the 0603 **right of the green LED**, between the LED and the
+right-hand pad row (LOAD/DCIN), level with the charger IC (x 23.26 / y 13.75 mm
+from the bottom-left corner in Adafruit's layout). **Not R2**, the 1 k at the
+top right beside the red FAULT LED, and not R1 at the orange CHG LED: those
+two LEDs hang on the charger's STAT pins, light only on USB-C, and stay.
+Soldering iron with both pads heated at once, or hot tweezers. Take a photo
+(PS-1.9); in step 4.2 the green LED must stay dark. Left in, the LED costs
+12–35 mAh a day - ECO drops from 2.8 months to between 7.8 weeks and 2.4
+months ([`BATTERY_LIFE.md`](BATTERY_LIFE.md)) - and the quiescent-current test
+PS-2.11 cannot pass. It is called **#6091-R3** because the wiring has its own
+R3 (the SEN62's SDA pull-up); in the netlist it is `R3_6091`.
 
 **4.2 Measure without a cell.** J2 VBUS to #6091 DCIN+, J2 GND to DCIN−, a
 USB-C charger into J2:
@@ -108,6 +122,9 @@ USB-C charger into J2:
    **4.1–4.25 V: stop** - a jumper is wrong. Never fit cells to a board that
    has not passed this.
 2. LOAD+ to LOAD−, nothing connected: **4.41–4.59 V**.
+3. The **green LED stays dark** while the charger is plugged in (#6091-R3 is
+   out); the orange CHG LED still lights or flickers (with no cell the
+   charger toggles its STAT pin). Green lit: #6091-R3 is still there.
 
 **4.3 PS1, the regulator: 3.90 V.** PS1 VIN to #6091 LOAD+, PS1 GND to
 LOAD−, still with the charger in J2 and no cell. Turn the trimpot until VOUT

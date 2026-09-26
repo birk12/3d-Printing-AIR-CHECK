@@ -787,7 +787,8 @@ USB-C socket (Adafruit #6050) -> Adafruit #6091 (TI BQ25185) DC input
 
 * **#6091 settings:** VS jumper to **3.65 V** (LFP; the factory setting is
   4.2 V - measure before the first cell goes in), IS **1 A**, TH jumper
-  opened and the NTC fitted.
+  opened and the NTC fitted. Since EDR-24 also **#6091-R3 desoldered** (the
+  green VSYSOK LED on SYS).
 * **Why the S9V11E2A stays:** LOAD is 3.0-3.65 V on the cells (4.5 V on
   USB-C); on the plateau 3.0-3.35 V. The
   FireBeetle's buck would then leave its 3.3 V rail below the SEN62's
@@ -1067,3 +1068,84 @@ and the path is a design figure. Both become measurements on the first unit:
 watches the pad during a burst with the cells near 3.10 V. `design.py`
 carries the calculation (`bat_pin_v`) so the numbers move together with the
 design.
+
+## EDR-24: #6091-R3 comes off the charger board
+
+**Where this comes from.** The Power-Standard (v1.2, 2026-09-26, its README
+section 2a), after the Smart-Kerze ran into it, checked Adafruit's own board
+files (commit e73b39b, "Adafruit bq25185 Breakout rev B1" .sch and .brd,
+nets traced by script): on the #6091 the green **VSYSOK** LED and its series
+resistor **R3 (1 kΩ, 0603)** sit between SYS - the net that is LOAD+ - and
+GND. No jumper, no switch. On the cells SYS is the cell voltage, so the LED
+draws I = (V_cell − Vf) / 1 kΩ straight from them, ahead of every converter.
+Adafruit give no part number, only "GREEN 0805", so Vf is bounded: 2.7 V
+(InGaN) to 1.9 V (GaP). On the LFP plateau that is **0.50 to 1.45 mA, 12.0 to
+34.8 mAh a day** - against about 12 µA for the rest of the module.
+
+**Why it was not in our numbers.** EDR-14 is this very lesson - read the
+breakout's schematic, not its product page - and it was applied to the
+SparkFun SGP40's power LED (jumper cut) and the FireBeetle's LED on GPIO15,
+but not to the power core, which came from the Power-Standard as a finished
+block. The energy model's "charger + BMS quiescent" took TI's 4 µA for the
+IC and nothing for the board around it, and the ERC could only check what
+`design.py` said, which did not know the LED existed. The standard now asks
+for every permanent load on a bought board from its vendor schematic
+(checklist K19).
+
+**What it would have cost** (`tools/battery_calculator/model.py`, 1S4P,
+25 % margin):
+
+| profile | #6091-R3 removed | fitted, Vf 2.7 V (0.50 mA) | fitted, Vf 1.9 V (1.45 mA) |
+|---|---|---|---|
+| ECO | **2.8 months** (3.5 nominal, 2.4 worst case) | 2.4 months (2.9, 2.0) | 7.8 weeks (2.2 months, 6.9 weeks) |
+| NORMAL | **4.1 weeks** | 3.8 weeks | 3.4 weeks |
+| ACTIVE | **4.2 d** | 4.1 d | 4.1 d |
+| POST_PRINT | **10.1 d** | 9.9 d | 9.5 d |
+| CONTINUOUS | **2.1 d** | 2.1 d | 2.1 d |
+
+Both fitted cases miss the 2.5 months the CI asserts, and PS-2.11 (the
+cells' quiescent current, ≤ 15 µA) would have read 0.3-1.75 mA on the bench
+with nothing in this repository to explain it.
+
+**Decision.** **#6091-R3 is desoldered** in ASSEMBLY step 4.1, beside the
+jumpers, before the module is wired, and PS-1.9 checks it: a photo, then
+USB-C in J2 - the green LED stays dark, the orange CHG LED still lights. Not
+R1 or R2: the orange CHG and red FAULT LEDs hang on the open-drain STAT pins,
+draw only on USB-C, and are what holds those pins near 4.5 V when idle
+(D20-D22, EDR-22); they stay. The name is always **#6091-R3**, because this
+wiring has its own R3 (the SEN62's SDA pull-up) and the PWR-7 adapter
+another.
+
+**How the schematic carries it.** `design.py` has a part `R3_6091` with both
+pins open and a new field `removed` (what to take off, and where). NETLIST.md
+and BOM.md list it in a section of its own, "Removed from bought modules",
+not among the parts to buy; SP-1 carries it as a `[[part]]` with both pins
+under `[part.nc]`, "entfernt: ...", the pattern of R10 in SP-2 - 47 parts,
+0 errors. ERC section 12 adds four checks: R3_6091 is declared removed; both
+its pins are open and on no net; the cells' quiescent current as PS-2.11
+measures it - charger, BMS and VBAT_S divider, plus the LED at Vf 1.9 V
+unless R3_6091 is removed - stays within 15 µA at 3.75 V (11 µA as built,
+about 1.9 mA with the LED); and the energy model assumes the same state as
+the schematic. With the NC checks on its two pins the ERC goes from 784 to
+**790 checks**.
+
+**Gegenprobe (checklist K14).** Removal flag cleared in `design.py`: 3
+errors (not declared removed, 1861 µA against 15 µA, model and schematic
+disagree). R3_6091 wired from LOAD to GND instead, as fitted: 5 errors (the
+same three, its pins no longer open, and "LOAD feeds the regulator and
+nothing else"). The model alone set to "fitted": 1 error in the ERC, and the
+CI's energy assertion fails at 1.79 months. All reverted; 790 checks, 0
+errors.
+
+**The energy model.** A line "#6091-R3 VSYSOK LED" at the cell voltage, no
+efficiency on top; `R3_6091_LED_MA` with the default "removed" (0 mA), so
+every number in BATTERY_LIFE.md is unchanged. The two "fitted" states are the
+Power-Standard's fixed budget currents, 0.50 and 1.45 mA, rather than
+(V_cell − Vf) / 1 kΩ at the model's 3.25 V average (0.55 and 1.35 mA): the
+same figures in every project's budget. `--r3-6091` runs the model in either
+state; BATTERY_LIFE.md carries the comparison for every profile.
+
+**Side effects.** The green LED no longer shows through the charger
+chamber's vents. On USB-C nothing changes for the cells (SYS then comes from
+the charger). The firmware assumes no quiescent current anywhere, so nothing
+there changes.
