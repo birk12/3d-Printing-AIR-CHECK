@@ -57,3 +57,11 @@ ac_power_out_t ac_power_update(ac_power_t *p, float vbat, const float ladder_v[2
     }
     return o;
 }
+
+int8_t ac_power_tx_dbm(const ac_power_out_t *o)
+{
+    if (!o) return AC_TX_DBM_LOW;
+    /* On the cable, or with no cells at all, the cells cannot sag. */
+    if (o->ext || o->st.src != PWR_SRC_BATTERY) return AC_TX_DBM_FULL;
+    return o->st.lvl == PWR_LVL_OK ? AC_TX_DBM_FULL : AC_TX_DBM_LOW;
+}

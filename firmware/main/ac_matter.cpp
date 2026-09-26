@@ -11,6 +11,9 @@
 
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
 #include <esp_openthread_types.h>
+#include <esp_openthread.h>
+#include <esp_openthread_lock.h>
+#include <openthread/platform/radio.h>
 #include <platform/ESP32/OpenthreadLauncher.h>
 #include <platform/ThreadStackManager.h>
 
@@ -512,6 +515,30 @@ esp_err_t ac_matter_set_label(const char *label)
 bool ac_matter_is_commissioned(void)
 {
     return chip::Server::GetInstance().GetFabricTable().FabricCount() > 0;
+}
+
+esp_err_t ac_matter_set_tx_power(int8_t dbm)
+{
+#if CHIP_DEVICE_CONFIG_ENABLE_THREAD
+    static int8_t s_dbm = 0;            /* 0: nothing asked for yet */
+    if (dbm == s_dbm) return ESP_OK;
+    if (!esp_openthread_lock_acquire(pdMS_TO_TICKS(100))) {
+        ESP_LOGW(TAG, "tx power %d dBm: OpenThread busy, will retry", (int)dbm);
+        return ESP_ERR_TIMEOUT;         /* the next battery read tries again */
+    }
+    otError err = otPlatRadioSetTransmitPower(esp_openthread_get_instance(), dbm);
+    esp_openthread_lock_release();
+    if (err != OT_ERROR_NONE) {
+        ESP_LOGW(TAG, "tx power %d dBm: %d", (int)dbm, (int)err);
+        return ESP_FAIL;
+    }
+    s_dbm = dbm;
+    ESP_LOGI(TAG, "802.15.4 transmit power %d dBm", (int)dbm);
+    return ESP_OK;
+#else
+    (void)dbm;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
 }
 
 bool ac_matter_thread_attached(void)

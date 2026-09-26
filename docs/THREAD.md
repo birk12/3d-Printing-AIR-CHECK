@@ -63,22 +63,40 @@ T-P2 checks the SEN62's rail with radio peaks at that voltage. The
 SEN62's switch (Pololu #2810) has no soft start, so its switch-on step also
 lands on the 3.3 V buck - verify that on the bench (TESTING T-P3).
 
-## Reducing TX power
+## Transmit power: set, not inherited
 
-20 dBm is the default and is more than a device in the same room as its border
-router needs. Dropping to 14 dBm saves some radio energy - but the whole
-ESP32-C6 + Thread line is only about 6 % of the ECO budget
-(`docs/BATTERY_LIFE.md`), so expect a small gain:
+ESP-IDF does not pick a modest default. `esp_ieee802154_pib.c` fills the
+power table with `IEEE802154_TXPOWER_VALUE_MAX()`, the maximum the chip
+reports - **+20 dBm**, a 305 mA peak (ESP32-C6 datasheet v1.5, Table 5-9).
+A build that never calls the API sends at full power without saying so
+anywhere. The Sleeper Frame found this while chasing its own rail; here it
+matters for a different reason.
 
-```
-idf.py menuconfig
-  -> Component config -> OpenThread -> Thread Core Features
-     -> Thread Radio TX power
-```
+The regulator turns the burst into a **constant-power** draw on the cells:
+the emptier the pack, the more current, and the BQ25185 disconnects the
+battery when its BAT pin stays below BUVLO for 60 us. BUVLO is 3.0 V
+*typical* in SLUSF65B, with no minimum or maximum - so the margin has to come
+from the design, not from the datasheet.
 
-Check the link quality in the serial log afterwards. Below about
--85 dBm you are trading reliability for a fraction of a percent of runtime,
-which is a bad trade.
+So the firmware asks for what it wants (EDR-23):
+
+| cells | transmit power | why |
+|---|---|---|
+| level OK, on USB-C, or no cells at all | **+20 dBm** | full range, nothing to protect |
+| level warning or critical on the cells | **+12 dBm** (187 mA) | the last reports before the deep sleep are the ones that would pull the BAT pin under BUVLO |
+
+`ac_power_tx_dbm()` makes that decision from pwr_std's level, so it inherits
+the hysteresis and cannot chatter at a threshold;
+`ac_matter_set_tx_power()` applies it and does nothing when the value has not
+changed. `design.py` computes what is left at the BAT pin in both cases, and
+T-L9b measures this unit's own BUVLO.
+
+Lowering the power further is possible in menuconfig
+(Component config -> OpenThread -> Thread Core Features -> Thread Radio TX
+power), but the firmware sets the value at runtime and wins. Check the link
+quality in the serial log after any change: below about -85 dBm you are
+trading reliability for a fraction of a percent of runtime, which is a bad
+trade.
 
 ## Joining, and re-joining
 

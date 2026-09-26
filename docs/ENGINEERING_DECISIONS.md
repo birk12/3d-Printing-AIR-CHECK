@@ -986,3 +986,58 @@ threshold between "fault" and "charging" moved from 1.70 V to 1.85 V. The
 bands in NETLIST.md, in the ERC and in TESTING follow, and the ERC now reads
 the thresholds out of `pwr_std.h` and checks that they sit in the gaps with
 the ADC's error on top.
+
+## EDR-23: the radio's transmit power is set, not inherited
+
+**Where this comes from.** The Sleeper Frame, re-checking its own rail after
+the audit, found that ESP-IDF does not choose a modest default for 802.15.4:
+`esp_ieee802154_pib.c` fills the power table with the chip's maximum, **+20
+dBm**, which the ESP32-C6 datasheet (v1.5, Table 5-9) puts at a 305 mA peak.
+A build that never calls the API transmits at full power, and nothing in the
+project says so. That is worth knowing on its own; here it has a consequence
+we had not modelled.
+
+**The mechanism.** The S9V11E2A turns the burst into a constant-power draw on
+the cells: the emptier the pack, the more current. The BQ25185 disconnects
+the battery when its BAT pin stays below BUVLO for 60 us, and SLUSF65B gives
+BUVLO as **3.0 V typical with no minimum or maximum**. So the question is not
+whether the 3.3 V rail holds - it does, that was EDR-21's whole point - but
+whether the BAT pin does. With the audit's figure for the cell chain
+(0.11 Ohm: four cells with their fuses in parallel, the BMS's two FETs, about
+15 cm of 22 AWG - the BATFET's own 0.14 Ohm sits *after* this point):
+
+| cells | transmit power | SEN62 window | BAT pin | over BUVLO |
+|---|---|---|---|---|
+| 3.20 V (warning) | +20 dBm | running | 3.110 V | 110 mV |
+| 3.10 V (critical, the last report) | +20 dBm | running | **3.007 V** | **7 mV** |
+| 3.10 V | +12 dBm | running | 3.031 V | 31 mV |
+| 3.10 V | +12 dBm | off | 3.063 V | 63 mV |
+
+At full power the last report before the deep sleep sits inside the
+uncertainty of a parameter that has no tolerance band at all. That is not a
+margin, it is a coin toss - and the failure is not gentle: the charger drops
+the battery, so the device does not go to sleep in an orderly way, it goes
+dark, and the report that says "critical" may never arrive.
+
+**Decision.** `ac_power_tx_dbm()` asks for **+20 dBm while the level is OK,
+on USB-C, or with no cells at all, and +12 dBm (187 mA) as soon as the level
+leaves OK**. The level comes from pwr_std, so the hysteresis is inherited and
+the radio cannot chatter around a threshold; `ac_matter_set_tx_power()`
+applies it and is a no-op when nothing changed. Full power is kept where the
+link quality is worth having, and given up exactly where the BAT pin needs
+the headroom - which is also the only place where a weaker link costs almost
+nothing, because the device is about to sleep.
+
+**Why not the simpler answers.** Always +12 dBm costs 8 dB of link budget in
+normal operation for a case that lasts minutes per discharge; the device may
+sit in a workshop with the border router elsewhere in the flat. Raising the
+critical threshold instead would throw away usable capacity at the LFP knee
+and would have to move pwr_std's thresholds, which are shared. Doing nothing
+was the third option, and the table above is why not.
+
+**What stays open.** The 0.11 Ohm is a design figure - the BMS board's FETs
+are the part nobody specifies at a 3.2 V gate - and BUVLO itself is a typical
+value. Both become measurements on the first unit: **T-L9b** finds this
+unit's own BUVLO with a lab supply on the BATT pad, then watches the pad
+during a burst with the cells near 3.10 V. `design.py` carries the
+calculation (`bat_pin_v`) so the numbers move together with the design.

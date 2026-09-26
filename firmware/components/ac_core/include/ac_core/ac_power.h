@@ -59,6 +59,25 @@ typedef struct {
     ac_ce_t     ce;
 } ac_power_out_t;
 
+/* Transmit power for 802.15.4, in dBm.
+ *
+ * ESP-IDF does not pick a modest default: it takes the maximum of the chip's
+ * power table, +20 dBm, which the ESP32-C6 datasheet (v1.5 Table 5-9) puts
+ * at a 305 mA peak - and nothing in a build says so out loud. The Sleeper
+ * Frame found that while chasing its own rail.
+ *
+ * The burst matters here because the regulator draws it from the cells as
+ * constant power: the emptier the pack, the more current, and the BQ25185
+ * disconnects the battery once its BAT pin stays below BUVLO (3.0 V typical
+ * and with no min/max in SLUSF65B) for 60 us. So the radio asks for full
+ * power only while the cells have headroom, and backs off to +12 dBm
+ * (187 mA) once the level leaves OK. The level comes from pwr_std and brings
+ * its hysteresis with it, so this does not chatter around a threshold.
+ * design.py computes the resulting BAT-pin margin. */
+#define AC_TX_DBM_FULL  20
+#define AC_TX_DBM_LOW   12
+int8_t ac_power_tx_dbm(const ac_power_out_t *o);
+
 void ac_power_init(ac_power_t *p);
 
 /* Before the radio starts: true when the device runs on the cells and they

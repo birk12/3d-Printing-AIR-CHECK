@@ -641,6 +641,17 @@ TPS62A02_DROPOUT_V = 0.35   # FireBeetle buck at ~350 mA radio peaks, 100 % duty
 LED_VF = {"R": 1.8, "G": 2.9, "B": 2.9}     # minimum forward voltages
 PS1_EFF_MIN = 0.80
 BUCK_EFF = 0.90             # FireBeetle TPS62A02 at a few hundred mA
+# Cells -> BQ25185 BAT pin: four cells with their fuses in parallel, the BMS's
+# two FETs and about 15 cm of 22 AWG.  0.11 Ohm is the audit's own figure for
+# this chain (sim/s4_aircheck_rail.cir uses 0.25 Ohm from the cells all the
+# way to LOAD, of which 0.14 Ohm is the charger's BATFET, SLUSF65B Table 5.5).
+# The BMS board's FETs are the part nobody specifies at a 3.2 V gate, so this
+# is a design figure until T-L9b measures the drop on the real unit.
+R_CELL_PATH = 0.11
+BUVLO_V = 3.00              # SLUSF65B: typical, no min/max
+BUVLO_MARGIN_V = 0.030      # what we keep at our own cut-off
+TX_DBM_FULL_MA = 350.0      # what ESP-IDF picks by itself: +20 dBm
+TX_DBM_LOW_MA = 210.0       # +12 dBm, 187 mA in the datasheet
 C6_BROWNOUT_V = 2.92        # sdkconfig brown-out level 4
 C6_VDD_MIN = 3.00           # ESP32-C6 DS v1.5 Tab. 5-2
 C3_TOL = 0.20               # electrolytic, -20 %
@@ -675,6 +686,25 @@ def power_budget() -> dict[str, float]:
         "VBUS_EXT": 1100.0,      # BQ25185 IIN, SLUSF65B Tab. 5.4
         "_pullups": pullups,
     }
+
+
+def bat_pin_v(v_cell: float, tx_ma: float, sen62: bool = True) -> float:
+    """Voltage at the BQ25185's BAT pin during a radio burst (EDR-23).
+
+    The regulator draws the burst from the cells as constant power, so the
+    current rises as the pack empties.  The charger disconnects the battery
+    once BAT stays below BUVLO for 60 us, and SLUSF65B gives BUVLO as 3.0 V
+    *typical* with no min/max - so the margin has to come from the design and
+    from a measurement per unit (T-L9b), not from the datasheet.
+    """
+    i_3v3 = (tx_ma + PARTS_BY_REF["U2"].i_max_ma + PARTS_BY_REF["U3"].i_max_ma
+             + 2 * 3.3 / 4.7 + (PARTS_BY_REF["U1"].i_max_ma if sen62 else 0.0))
+    leds = sum((RAILS["VSYS"].vnom - LED_VF[c]) / r
+               for c, r in (("R", 1.0), ("G", 0.33), ("B", 0.33)))
+    i_vsys = (i_3v3 * RAILS["+3V3"].vnom / (BUCK_EFF * RAILS["VSYS"].vmin)
+              + PARTS_BY_REF["U4"].i_typ_ma + leds)
+    i_cell = i_vsys * RAILS["+VREG"].vnom / (PS1_EFF_MIN * v_cell)
+    return v_cell - i_cell / 1000.0 * R_CELL_PATH
 
 
 def sen62_switch_on_v(c_sen_uf: float) -> float:
@@ -847,6 +877,22 @@ def run_erc() -> Erc:
     e.check(v_ladder_leak <= GPIO_ABS_MAX_V,
             f"PWR-K {v_ladder_leak * 1000:.0f} mV with {PWR_K_LEAK_UA} uA of diode "
             f"leakage exceeds the pad's {GPIO_ABS_MAX_V} V")
+    # EDR-23: the radio burst at the cells' lower end, against BUVLO.  The
+    # firmware asks for +12 dBm as soon as the level leaves OK
+    # (ac_power_tx_dbm), which is what makes this fit.
+    v_crit = 3.10           # pwr_std PWR_V_CRIT, where the last report goes out
+    v_bat_low = bat_pin_v(v_crit, TX_DBM_LOW_MA)
+    e.check(v_bat_low >= BUVLO_V + BUVLO_MARGIN_V,
+            f"BAT pin at {v_bat_low * 1000:.0f} mV during a +12 dBm burst at "
+            f"{v_crit} V: less than {BUVLO_MARGIN_V * 1000:.0f} mV over BUVLO")
+    e.check(bat_pin_v(RAILS["VCELL"].vnom, TX_DBM_FULL_MA) >= BUVLO_V + BUVLO_MARGIN_V,
+            "BAT pin sags under BUVLO at +20 dBm with the cells at nominal - "
+            "the full-power case has to hold where the firmware allows it")
+    # and the reason the firmware backs off at all: at full power it would not
+    e.check(bat_pin_v(v_crit, TX_DBM_FULL_MA) < BUVLO_V + BUVLO_MARGIN_V,
+            "at +12 dBm nothing is gained any more - re-check EDR-23 and "
+            "ac_power_tx_dbm before simplifying the firmware")
+
     # K16 (Power-Standard): a clamp holds the node whatever the leakage does
     e.check(("D22", "A") in NETS["PWR_K"] and _nets_of("D22", "K") == ["+3V3"],
             "K16: D22 must clamp the PWR-K node to +3V3 (anode at the node)")

@@ -10,7 +10,7 @@ components/pwr_std/    the Power-Standard's LFP module (C99), copied unchanged
 components/ac_hal/     ESP-IDF drivers: SEN62, Sunrise, SGP40, SHT40, the VBAT_S / PWR-K / VSYS ADC, CE, LED, button, NVS
 components/sensirion_gas_index/   vendored VOC Index algorithm (BSD-3)
 main/                  app_main.cpp and the Matter data model
-test/host/             537 checks plus the pwr_std test, run on a workstation
+test/host/             543 checks plus the pwr_std test, run on a workstation
 ```
 
 The split is the point: `ac_core` decides what happens and when, `ac_hal`
@@ -34,7 +34,7 @@ not. Note that `esp-matter/examples/common` is deliberately **not** on
 handling.
 
 The first build takes a while: it compiles the whole Matter SDK. The result
-(v1.4.4, ESP-IDF v5.5.5):
+(v1.5.0, ESP-IDF v5.5.5):
 
 ```
 aircheck.bin   1 687 776 bytes, 14 % free in the 1.9 MB OTA partition
@@ -60,10 +60,10 @@ cc -std=c99 -Wall -Wextra -Werror -Icomponents/pwr_std/include \
 /tmp/pwr_test
 ```
 
-537 checks, about 20 ms, then `all tests passed` from `pwr_std`. See
+543 checks, about 20 ms, then `all tests passed` from `pwr_std`. See
 `docs/TESTING.md` for what they cover.
 
-## Power (1.4.4)
+## Power (1.5.0)
 
 The Power-Standard's module C (EDR-21): a USB-C socket, the #6091 charger
 (TI BQ25185), 1S4P LiFePO4. `ac_hal/battery.c` reads the cell voltage /

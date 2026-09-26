@@ -162,7 +162,7 @@ firmware/
     app_main.cpp     two tasks: measure, and button/LED
     ac_matter.cpp    the Matter data model
     ac_console.cpp   service console on the FireBeetle's USB (only on external power)
-  test/host/         537 checks plus the pwr_std test, run on a workstation
+  test/host/         543 checks plus the pwr_std test, run on a workstation
 ```
 
 `ac_core` decides *what happens and when*; `ac_hal` only does what it is told.

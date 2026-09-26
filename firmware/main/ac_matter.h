@@ -45,6 +45,10 @@ void ac_matter_set_identify_cb(void (*cb)(bool on));
 /* Publish the configured device name as Basic Information / NodeLabel. */
 esp_err_t ac_matter_set_label(const char *label);
 bool ac_matter_thread_attached(void);
+/* Set the 802.15.4 transmit power (dBm).  ESP-IDF otherwise uses the chip
+ * table's maximum, +20 dBm; ac_power_tx_dbm() decides what we ask for and
+ * why.  Cheap and idempotent: it does nothing when the value is unchanged. */
+esp_err_t ac_matter_set_tx_power(int8_t dbm);
 esp_err_t ac_matter_open_commissioning_window(void);
 esp_err_t ac_matter_factory_reset(void);
 esp_err_t ac_matter_get_pairing_code(char *manual, size_t manual_len,

@@ -39,7 +39,7 @@
 
 static const char *TAG = "aircheck";
 
-#define AC_FW_VERSION "1.4.4"
+#define AC_FW_VERSION "1.5.0"
 #define WDT_TIMEOUT_S 120
 /* Today's outdoor CO2 background, the reference for a fresh-air
  * calibration (NOAA global mean, 2026: about 425 ppm). */
@@ -261,6 +261,9 @@ static void read_battery(void)
                         cells ? (int)o.st.lvl : -1, now_ms());
     unlock();
     ac_battery_ce(o.ce == AC_CE_HOLD ? 1 : o.ce == AC_CE_PULSE ? 2 : 0);
+    /* Never inherit the radio's default power: it is the table maximum, and
+     * the burst comes out of the cells (EDR-23). */
+    ac_matter_set_tx_power(ac_power_tx_dbm(&o));
 
     static int last_key = -1;
     int key = (int)o.st.src * 16 + (int)o.st.chg * 4 + (int)o.st.fault;

@@ -15,7 +15,8 @@ Conditions for *use*, all on the first unit: PS-2.13 / O3 (IC < 70 °C,
 holder 2's outer cell measured), T-L7 (T/RH offset while charging,
 documented), T-L8 (NTC seated), T-L9 (critical sleep, no restart loop),
 PS-1.6a (CE < 0.4 V in reset), T-P3 (C(SEN62) measured, switch-on step),
-T-P3a (3.3 V stable with C3), T-L1b (PWR-K node with a warm charger), T-L1c
+T-P3a (3.3 V stable with C3), T-L9b (this unit's BUVLO and the BAT pin in a
+burst), T-L1b (PWR-K node with a warm charger), T-L1c
 (cell measurement calibrated, protocol step 4.1b), O1/O2 (quiescent
 current). The full protocol PS-1.1 to PS-4.7 comes before the first charge.
 The battery session keeps the same list; T-L1b and 4.1b are the two whose
@@ -37,11 +38,11 @@ believed.
 
 | area | status | evidence |
 |---|---|---|
-| measurement core logic | SIMULATED, 537 checks | `firmware/test/host/test_ac_core.c` |
+| measurement core logic | SIMULATED, 543 checks | `firmware/test/host/test_ac_core.c` |
 | status LED logic | SIMULATED | part of the 537; every pattern and its timing |
 | LFP power module (`ac_power` over `pwr_std`) | SIMULATED | part of the 537, plus `firmware/test/host/test_pwr_std.c`: PWR-K decoding, charge pause, safety-timer restart, voltage levels, Matter's charge states |
 | energy model | BUILD-VERIFIED | `tools/battery_calculator/model.py`, inputs traced to datasheets |
-| electrical design | BUILD-VERIFIED | 780 rule checks in `electronics/schematic/design.py`, 0 warnings; the same wiring as `Elektronik-Audit/einreichung/SP-1_air-check.toml` (A1-A12, 0 errors) |
+| electrical design | BUILD-VERIFIED | 783 rule checks in `electronics/schematic/design.py`, 0 warnings; the same wiring as `Elektronik-Audit/einreichung/SP-1_air-check.toml` (A1-A12, 0 errors) |
 | enclosure | BUILD-VERIFIED | OpenSCAD asserts over every module, post and zone, and `tools/diagnostics/stl_check.py`: all four parts manifold, 1.2 % overhang on the front shell |
 | firmware build | BUILD-VERIFIED | full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6: 1.69 MB image (14 % free in the OTA slot), 210 kB DIRAM (46.5 %) |
 | sensor drivers | **untested** | register addresses and timings read from datasheets |
@@ -63,7 +64,7 @@ cc -std=c99 -Wall -Wextra -Ifirmware/components/pwr_std/include \
    -o /tmp/pwr_test && /tmp/pwr_test
 ```
 
-537 checks in about 10 ms, then the Power-Standard's own `pwr_std` test
+543 checks in about 10 ms, then the Power-Standard's own `pwr_std` test
 (`all tests passed`). What they cover:
 
 | area | examples |
@@ -90,10 +91,10 @@ python3 electronics/schematic/design.py
 ```
 
 ```
-ERC: 780 checks, 0 error(s), 0 warning(s)
+ERC: 783 checks, 0 error(s), 0 warning(s)
 ```
 
-What the 780 cover: every pin exists on its part and every pin of every part
+What the 783 cover: every pin exists on its part and every pin of every part
 is connected or declared open, no net has one connection, no pin is on two
 nets, every supply is within its part's range and the part really sits on
 that rail; **the cell chain** (Power-Standard checklist K1/K2): each cell's +
@@ -306,13 +307,14 @@ GPIO4, CE on GPIO5):
 | T-L6 | **Matter power sources** | read by a controller (`chip-tool`, DASHBOARD_INTERFACE.md). On the cells: endpoint 0 `Status` 1 (Active), `BatChargeState` 3 (IsNotCharging); USB-C endpoint `Status` 3, `WiredPresent` false. USB-C in J2, charging: endpoint 0 `Status` 2 (Standby), `BatChargeState` 1 (IsCharging); USB-C endpoint `Status` 1 (Active), `WiredPresent` true (a computer on the FireBeetle counts too). Full or paused: `BatChargeState` 2 (IsAtFullCharge). USB-C without cells: endpoint 0 `Status` 3 (Unavailable), `BatPresent` false, `BatPercentRemaining` null, no battery alarm. `BatVoltage` agrees with `diag`. With a lab supply in place of the cells: `BatChargeLevel` 1 below 3.20 V (yellow blink on a press), 2 below 3.10 V (red blip every 10 s, measuring stops) |
 | T-L7 | **T/RH offset while charging** | closed case, a reference thermometer/hygrometer beside the device, a room that does not change. 1 h charging at 1 A (cells well below full, log `charging`, `BatChargeState` 1), then 1 h with charging over or USB-C out: record the temperature and humidity difference to the reference in both hours. Nothing is compensated: the result tells how much the dashboard's charging mark matters (EDR-21) |
 | T-L8 | **NTC seat with the door closed** | door screwed shut; warm the door over the NTC's cell with a hand (or read TH to GND with the cells out of the charger's circuit) - the resistance must fall below its room-temperature value within a minute. If it does not move, the bead is not on the cell: open the door and put it back in its seat | the resistance follows the warmth |
+| T-L9b | **this unit's BUVLO, and the BAT pin during a burst** | (a) lab supply on the #6091's BATT pad in place of the pack, no USB-C, device running: lower it in 10 mV steps until LOAD switches off - that voltage is **this unit's BUVLO** (SLUSF65B gives 3.0 V as a typical value only, with no minimum or maximum). Note it. (b) with the pack back in and the cells at about 3.10 V, a scope on the BATT pad while the device transmits (force a report, or watch the last one before the deep sleep in T-L9): the pad stays **at or above the measured BUVLO + 30 mV** for the whole burst. The firmware drops to +12 dBm below the OK level, so this is the +12 dBm case; repeat once with `ac_power_tx_dbm` forced to 20 to see the margin the reduction buys |
 | T-L9 | **critical cells: deep sleep, no restart loop** | lab supply in place of the pack (behind the BMS), USB-C unplugged. Lower it to 3.08 V: a last report with `BatChargeLevel` = Critical, then `cells critical on battery: deep sleep for 3600 s` in the log and the current drops to the sleep floor. At 3.12 V after the wake-up: `boot check: cells at 3.12 V` and straight back to sleep, no Thread traffic. Raise to 3.30 V or plug in USB-C: after the next wake-up the device starts normally | sleeps, re-checks hourly, never loops |
 
 ### Firmware and controls
 
 | # | test | pass |
 |---|---|---|
-| T-B1 | flash and boot | the banner `3D Printing AIR CHECK 1.4.4` appears, no panic, no reset loop |
+| T-B1 | flash and boot | the banner `3D Printing AIR CHECK 1.5.0` appears, no panic, no reset loop |
 | T-B2 | status LED | white at boot, all three colours on a press, blue when pairing, readable in daylight in its panel holder |
 | T-B3 | button | short, long (3-8 s), calibrate (8-12 s) and very long all do the right thing, and the hold colour matches; over 20 s does nothing |
 | T-B4 | service console | with USB in, `aircheck_config.py get` lists the settings, `set name ...` changes the Matter NodeLabel, `diag` shows live values and the health of all four sensors and the power line (`LFP cells X.XX V, N %, charging, external power yes`); on the cells alone, the console is not running |

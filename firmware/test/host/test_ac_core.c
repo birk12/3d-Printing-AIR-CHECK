@@ -913,6 +913,21 @@ static void test_power(void)
     CHECK(!ac_power_boot_should_sleep(3.05f, idle));       /* USB-C: charge instead */
     CHECK(!ac_power_boot_should_sleep(0.1f, none));        /* no cells: a computer powers it */
 
+    CASE("transmit power backs off once the cells leave OK, not before");
+    ac_power_init(&p);
+    o = ac_power_update(&p, 3.30f, none, false, 100);      /* cells, level OK    */
+    CHECK(o.st.lvl == PWR_LVL_OK && ac_power_tx_dbm(&o) == AC_TX_DBM_FULL);
+    o = ac_power_update(&p, 3.18f, none, false, 200);      /* warning            */
+    CHECK(o.st.lvl == PWR_LVL_WARNING && ac_power_tx_dbm(&o) == AC_TX_DBM_LOW);
+    o = ac_power_update(&p, 3.22f, none, false, 300);      /* inside hysteresis  */
+    CHECK(ac_power_tx_dbm(&o) == AC_TX_DBM_LOW);
+    o = ac_power_update(&p, 3.30f, none, false, 400);      /* recovered          */
+    CHECK(ac_power_tx_dbm(&o) == AC_TX_DBM_FULL);
+    o = ac_power_update(&p, 3.05f, idle, false, 500);      /* critical, but USB-C */
+    CHECK(ac_power_tx_dbm(&o) == AC_TX_DBM_FULL);
+    o = ac_power_update(&p, 0.1f, idle, false, 600);       /* no cells at all    */
+    CHECK(ac_power_tx_dbm(&o) == AC_TX_DBM_FULL);
+
     CASE("an early fault (NTC hot/cold) is not taken for the timer");
     ac_power_init(&p);
     o = ac_power_update(&p, 3.20f, chg, false, 100);

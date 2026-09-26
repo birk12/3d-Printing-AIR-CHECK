@@ -3,6 +3,33 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-09-26
+
+The Sleeper Frame, re-checking its own rail, found that ESP-IDF sends at the
+chip's maximum unless a project says otherwise - and that the bottleneck at
+an empty pack is not the 3.3 V rail but the charger's BAT pin. Both apply
+here (EDR-23).
+
+### Added
+
+- **`ac_power_tx_dbm()`**: +20 dBm while the battery level is OK, on USB-C
+  or with no cells at all, **+12 dBm as soon as the level leaves OK**. The
+  level comes from pwr_std, so the hysteresis is inherited.
+  `ac_matter_set_tx_power()` applies it through `otPlatRadioSetTransmitPower`
+  and does nothing when the value has not changed.
+- **`bat_pin_v()` in the ERC**: what is left at the BQ25185's BAT pin during
+  a burst, against BUVLO (3.0 V *typical*, no min/max in SLUSF65B). At
+  +20 dBm and 3.10 V the margin is 7 mV; at +12 dBm it is 31 mV with the
+  SEN62 running and 63 mV without. Three checks, including one that fails if
+  the back-off ever stops being necessary.
+- **T-L9b**: measure this unit's own BUVLO on the BATT pad, then watch the
+  pad during a burst with the cells near 3.10 V.
+
+### Changed
+
+- `docs/THREAD.md` replaces "reducing TX power" (an energy argument, and the
+  wrong one) with what the firmware now does and why.
+
 ## [1.4.4] - 2026-09-20
 
 ### Changed
