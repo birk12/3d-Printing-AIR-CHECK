@@ -42,7 +42,7 @@ believed.
 | status LED logic | SIMULATED | part of the 537; every pattern and its timing |
 | LFP power module (`ac_power` over `pwr_std`) | SIMULATED | part of the 537, plus `firmware/test/host/test_pwr_std.c`: PWR-K decoding, charge pause, safety-timer restart, voltage levels, Matter's charge states |
 | energy model | BUILD-VERIFIED | `tools/battery_calculator/model.py`, inputs traced to datasheets |
-| electrical design | BUILD-VERIFIED | 783 rule checks in `electronics/schematic/design.py`, 0 warnings; the same wiring as `Elektronik-Audit/einreichung/SP-1_air-check.toml` (A1-A12, 0 errors) |
+| electrical design | BUILD-VERIFIED | 784 rule checks in `electronics/schematic/design.py`, 0 warnings; the same wiring as `Elektronik-Audit/einreichung/SP-1_air-check.toml` (A1-A12, 0 errors) |
 | enclosure | BUILD-VERIFIED | OpenSCAD asserts over every module, post and zone, and `tools/diagnostics/stl_check.py`: all four parts manifold, 1.2 % overhang on the front shell |
 | firmware build | BUILD-VERIFIED | full ESP-IDF v5.5.5 + esp-matter v1.6 build for esp32c6: 1.69 MB image (14 % free in the OTA slot), 210 kB DIRAM (46.5 %) |
 | sensor drivers | **untested** | register addresses and timings read from datasheets |
@@ -91,10 +91,10 @@ python3 electronics/schematic/design.py
 ```
 
 ```
-ERC: 783 checks, 0 error(s), 0 warning(s)
+ERC: 784 checks, 0 error(s), 0 warning(s)
 ```
 
-What the 783 cover: every pin exists on its part and every pin of every part
+What the 784 cover: every pin exists on its part and every pin of every part
 is connected or declared open, no net has one connection, no pin is on two
 nets, every supply is within its part's range and the part really sits on
 that rail; **the cell chain** (Power-Standard checklist K1/K2): each cell's +

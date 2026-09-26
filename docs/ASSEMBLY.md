@@ -14,7 +14,7 @@ PARTS -> PRINT + BAKE -> SET UP THE POWER MODULE -> WIRE -> FLASH -> INTO THE CA
 
 The wiring list, the pin map and where each inline part goes are in
 [`electronics/schematic/NETLIST.md`](../electronics/schematic/NETLIST.md).
-That file is generated from `design.py` and checked by 783 rules; if this
+That file is generated from `design.py` and checked by 784 rules; if this
 guide and the netlist ever disagree, the netlist wins.
 
 The power system is the Power-Standard's **module C** (EDR-21): LiFePO4

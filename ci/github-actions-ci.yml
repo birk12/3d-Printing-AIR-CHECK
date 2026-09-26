@@ -27,7 +27,7 @@ jobs:
           ./pwr_test
 
   electrical:
-    name: electrical rule check (783 checks)
+    name: electrical rule check (784 checks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
