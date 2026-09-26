@@ -1035,6 +1035,15 @@ critical threshold instead would throw away usable capacity at the LFP knee
 and would have to move pwr_std's thresholds, which are shared. Doing nothing
 was the third option, and the table above is why not.
 
+**The standard's K15 does not fit either device.** It asks for the rail to
+hold at a cell voltage of 3.05 V. Neither this device nor the Sleeper Frame
+ever transmits there: critical is 3.10 V, and after a critical sleep the
+radio does not come up again below 3.15 V. Both projects reached the same
+conclusion independently and wrote it down the same way - the frame in its
+specification (risk 17, open point 6), this project here - so whoever picks
+the Power-Standard up next has two matching entries to pull K15 onto
+"3.10 V at the BATT pad" rather than one project's exception.
+
 **What stays open.** The 0.11 Ohm is a design figure - the BMS board's FETs
 are the part nobody specifies at a 3.2 V gate - and BUVLO itself is a typical
 value. Both become measurements on the first unit: **T-L9b** finds this
