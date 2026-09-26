@@ -1044,9 +1044,26 @@ specification (risk 17, open point 6), this project here - so whoever picks
 the Power-Standard up next has two matching entries to pull K15 onto
 "3.10 V at the BATT pad" rather than one project's exception.
 
-**What stays open.** The 0.11 Ohm is a design figure - the BMS board's FETs
-are the part nobody specifies at a 3.2 V gate - and BUVLO itself is a typical
-value. Both become measurements on the first unit: **T-L9b** finds this
-unit's own BUVLO with a lab supply on the BATT pad, then watches the pad
-during a burst with the cells near 3.10 V. `design.py` carries the
-calculation (`bat_pin_v`) so the numbers move together with the design.
+**Where the 0.11 Ohm comes from.** The datasheets add up to **64-88 mOhm**:
+the four cells in parallel contribute 5.0 mOhm (< 20 mOhm each, but that is
+1 kHz impedance, the only figure Lithium Werks give), their four PICO II
+fuses 11.8 mOhm (47.3 mOhm each, "nominal cold resistance"), the BMS's two
+series FETs 39-63 mOhm depending on which of the 8205A's two specified gate
+voltages you believe, and 15 cm of 22 AWG 8.0 mOhm. The fuses contribute
+more than twice what the cells do - worth knowing, though at our branch
+currents the 2 A rating is what protects a shorted cell and stays.
+
+What no datasheet gives: the Keystone 1049's contact resistance (its drawing
+has neither that nor a current rating), the 8205A at the 3.0-3.6 V gate it
+actually sees (2.5 V and 4.5 V are specified, nothing between, and several
+makers sell parts under that type name), the cells' DC internal resistance
+as opposed to their 1 kHz impedance, the temperature coefficients, and every
+solder joint. The ERC therefore checks that the figure we design against
+stays *above* the documented sum, rather than treating the sum as the truth.
+
+**What stays open.** BUVLO itself is a typical value with no tolerance band,
+and the path is a design figure. Both become measurements on the first unit:
+**T-L9b** finds this unit's own BUVLO with a lab supply on the BATT pad, then
+watches the pad during a burst with the cells near 3.10 V. `design.py`
+carries the calculation (`bat_pin_v`) so the numbers move together with the
+design.

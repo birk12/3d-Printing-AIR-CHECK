@@ -641,13 +641,27 @@ TPS62A02_DROPOUT_V = 0.35   # FireBeetle buck at ~350 mA radio peaks, 100 % duty
 LED_VF = {"R": 1.8, "G": 2.9, "B": 2.9}     # minimum forward voltages
 PS1_EFF_MIN = 0.80
 BUCK_EFF = 0.90             # FireBeetle TPS62A02 at a few hundred mA
-# Cells -> BQ25185 BAT pin: four cells with their fuses in parallel, the BMS's
-# two FETs and about 15 cm of 22 AWG.  0.11 Ohm is the audit's own figure for
-# this chain (sim/s4_aircheck_rail.cir uses 0.25 Ohm from the cells all the
-# way to LOAD, of which 0.14 Ohm is the charger's BATFET, SLUSF65B Table 5.5).
-# The BMS board's FETs are the part nobody specifies at a 3.2 V gate, so this
-# is a design figure until T-L9b measures the drop on the real unit.
+# Cells -> BQ25185 BAT pin (the charger's own BATFET, 0.14 Ohm per SLUSF65B
+# Table 5.5, sits *after* this point).  What the datasheets actually give:
+#
+#   4 x cell, < 20 mOhm each        1 kHz ACIR, Lithium Werks 18650 Energy
+#                                   Cell spec sheet (320749-001)      5.0 mOhm
+#   4 x PICO II 251, 2 A, 47.3      "Nominal Cold Resistance",
+#                                   Littelfuse 251/253 table         11.8 mOhm
+#   2 x 8205A in series             19.5-25 mOhm at VGS 4.5 V,
+#                                   25-31.5 at 2.5 V (UMW)        39.0-63.0 mOhm
+#   0.15 m of 22 AWG                53.1 mOhm/m, Alpha Wire 392262    8.0 mOhm
+#                                                          sum    63.8-87.8 mOhm
+#
+# and what no datasheet gives: the Keystone 1049's contact resistance (the
+# drawing has neither that nor a current rating), the 8205A at the 3.0-3.6 V
+# gate it actually sees (only 2.5 V and 4.5 V are specified, and "8205A" is a
+# type name several makers use), the cells' DCIR as opposed to their 1 kHz
+# impedance (higher, by an amount nobody publishes), the temperature
+# coefficients, and every solder joint.  So the design figure keeps headroom
+# over the documented sum, and T-L9b measures the real thing.
 R_CELL_PATH = 0.11
+R_CELL_PATH_DOCUMENTED = 0.0878     # the upper end of what is actually specified
 BUVLO_V = 3.00              # SLUSF65B: typical, no min/max
 BUVLO_MARGIN_V = 0.030      # what we keep at our own cut-off
 TX_DBM_FULL_MA = 350.0      # what ESP-IDF picks by itself: +20 dBm
@@ -877,6 +891,9 @@ def run_erc() -> Erc:
     e.check(v_ladder_leak <= GPIO_ABS_MAX_V,
             f"PWR-K {v_ladder_leak * 1000:.0f} mV with {PWR_K_LEAK_UA} uA of diode "
             f"leakage exceeds the pad's {GPIO_ABS_MAX_V} V")
+    e.check(R_CELL_PATH > R_CELL_PATH_DOCUMENTED,
+            "the cell path used for the BUVLO check has to stay above the sum "
+            "of the datasheet values, because several terms have no datasheet")
     # EDR-23: the radio burst at the cells' lower end, against BUVLO.  The
     # firmware asks for +12 dBm as soon as the level leaves OK
     # (ac_power_tx_dbm), which is what makes this fit.
