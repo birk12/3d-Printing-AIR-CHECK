@@ -362,7 +362,7 @@ cells deliver (T-E0).
 
 | # | test | model | pass |
 |---|---|---|---|
-| T-E0 | **quiescent at the cells**: PS1's 3.9 V output disconnected, the µA meter in the BMS P+ lead (it then sees the regulator, the charger and the BMS, and the 940 kΩ VBAT_S divider) | < 0.2 mA for the regulator (Pololu), 4 + 3 µA charger and BMS, ~3.5 µA divider, 0 for the #6091's VSYSOK LED (#6091-R3 desoldered; 0.3–1.75 mA if not) | recorded; above 0.2 mA for the regulator the ECO runtime drops as in BATTERY_LIFE.md "What would change these numbers" |
+| T-E0 | **quiescent at the cells**: PS1's 3.9 V output disconnected, the µA meter in the BMS P+ lead (it then sees the regulator, the charger and the BMS, and the 940 kΩ VBAT_S divider) | < 0.2 mA for the regulator (Pololu), 4 + 3 µA charger and BMS, ~3.5 µA divider, 0 for the #6091's VSYSOK LED (#6091-R3 desoldered; 0.3–1.75 mA if not) | recorded; the regulator's 0.2 mA is 7.9 % of ECO (BATTERY_LIFE.md "Where the energy goes"): every further 0.1 mA costs ECO about 0.1 month, and above 0.5 mA it falls below the 2.5 months the CI asserts |
 | T-E1 | **idle floor**: SEN62 off, averaged between two windows (VOC samples, Sunrise shots and Thread polls included) | about 2.6 mW at the cells | recorded, and fed back into `model.py`. Well above the model: look for the #2810's slide switch in ON, the SparkFun LED jumper not cut, the FireBeetle's green LED (GPIO15), or a pin back-feeding an unpowered sensor |
 | T-E2 | **one full ECO hour**, SEN62 window included | 8.3 mWh at the cells | recorded; this is the number the 2.8 months rest on |
 | T-E3 | **one SEN62 window** on its own | 5.5 mWh at the cells | recorded; replaces the datasheet figure |

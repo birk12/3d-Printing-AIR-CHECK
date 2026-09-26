@@ -45,8 +45,9 @@ Berrybase/Eckstein/Reichelt/Adafruit. Check off:
 - [ ] Adafruit #6050 sunken USB-C breakout (J2, the charging and power socket)
 - [ ] JST PH 2-way pigtail
 - [ ] RGB LED 5 mm common anode, SMR1089 panel holder, T 250A push button
-- [ ] resistors 2 × 470 k, 2 × 150 k, 2 × 100 k, 33 k, 2 × 10 k, 2 × 4.7 k, 1 k,
-      2 × 330 Ω; 2 × 100 nF; 2 × BAT43
+- [ ] resistors 2 × 470 k, 100 k, 2 × 15 k, 3 × 10 k, 2 × 4.7 k, 3.3 k, 1 k,
+      2 × 330 Ω (14, all 1 % metal film); 2 × 100 nF, 470 uF low-ESR (C3);
+      3 × BAT43
 - [ ] 6 × M2.5 heat-set inserts; M2.5 × 8 screws (6); M2.5 self-tappers (8:
       four for the SGP40, four for the #6091); M2 self-tappers (8: four for the
       FireBeetle, two for the LM66200, two for J2); M3 self-tappers (4, two per

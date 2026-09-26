@@ -27,6 +27,17 @@ included (EDR-24).
   784 in some places and 780 in others). The SP-1 exporter writes the count
   from the ERC itself instead of a stale 764, and dates SP-1 2026-09-26.
 
+### Fixed
+
+- Stale documentation against `design.py` (K18 sweep): the parts checklist
+  in ASSEMBLY §1 lists the 10k ladder (2 × 470 k, 100 k, 2 × 15 k, 3 × 10 k,
+  2 × 4.7 k, 3.3 k, 1 k, 2 × 330 Ω - still fourteen), three BAT43 and C3;
+  ARCHITECTURE's power tree shows 10k / 15k / 15k / 3k3 instead of the 100k
+  ladder; the NTC sits on cell 2B, not "the middle cell", in NETLIST (from the
+  generator), ARCHITECTURE and RISKS; `ci/README.md` gives ECO as 2.8 months;
+  T-E0 points to BATTERY_LIFE's "Where the energy goes" instead of a section
+  that went in 1.4.1, and says what the regulator's quiescent current costs.
+
 ### Added
 
 - **`R3_6091`** in `design.py`: a part with both pins open and a new

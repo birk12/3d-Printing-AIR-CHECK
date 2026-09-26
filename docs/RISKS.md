@@ -171,11 +171,12 @@ exception: a damaged or hot device or a deformed cell is not charged
   recoverable fault; a fault after at least 5.5 h of charging is taken for the
   timer, and a CE pulse during a real NTC or overvoltage fault is harmless -
   the charger stays paused by its own logic.
-* **Temperature.** An NTC (Semitec 103AT-2) on a cell in the middle of the
-  pack, under Kapton, held by a finger on the door: the charger only charges
-  between 0 and 60 °C at the cell. The #6091's TH jumper is cut for it - with
-  it closed there is no temperature protection at all. Charge only at 0–45 °C
-  room temperature; not on a radiator, not in full sun, not covered.
+* **Temperature.** An NTC (Semitec 103AT-2) on cell 2B, the outer cell next
+  to the charger chamber and so the warmest, under Kapton, held by a finger
+  on the door: the charger only charges between 0 and 60 °C at the cell. The
+  #6091's TH jumper is cut for it - with it closed there is no temperature
+  protection at all. Charge only at 0–45 °C room temperature; not on a
+  radiator, not in full sun, not covered.
 * **BMS.** An HY2112 board (not DW01, which cuts only at ≥ 4.25 V): over-charge
   3.75 V, over-discharge 2.1 V, over-current. It switches the minus side, so
   its P− is the ground of the whole device and B− goes nowhere else (ERC).

@@ -8,7 +8,7 @@
 4 x AER18650m2A2 (2 x Keystone 1049) --PICO 2 A each--> CELL_B+ --BMS HY2112--> VCELL
    BMS P- = system GND; B- goes nowhere else
 USB-C socket J2 (5 V) --> #6091 DCIN+ (TI BQ25185: LFP 3.65 V, 1 A, NTC, 6 h timer)
-VCELL <--> #6091 BATT+        NTC 103AT-2 on the middle cell --> #6091 TH
+VCELL <--> #6091 BATT+        NTC 103AT-2 on cell 2B (TH1) --> #6091 TH
 #6091 LOAD (3.0-3.65 V on the cells, 4.5 V on USB-C) --> PS1 S9V11E2A --> +VREG 3.90 V
 #6091 SYS --green VSYSOK LED--#6091-R3 1k-- GND: R3 DESOLDERED (else 0.50-1.45 mA
           from the cells, EDR-24); the orange CHG and red FAULT LEDs stay

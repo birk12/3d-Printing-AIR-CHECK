@@ -61,7 +61,7 @@ generated and rule-checked by `electronics/schematic/design.py`.
 4 × AER18650m2A2 (2 × Keystone 1049) ─PICO 2 A each─► BMS HY2112 ─► VCELL 3.0..3.65 V
     BMS P− = system GND; B− goes nowhere else
 USB-C J2 ─► VBUS_EXT 5 V ─► #6091 DCIN (TI BQ25185: LFP 3.65 V, 1 A, NTC, 6 h timer)
-VCELL ◄─► #6091 BATT          NTC 103AT-2 on a cell in the middle of the pack ─► #6091 TH
+VCELL ◄─► #6091 BATT          NTC 103AT-2 on cell 2B, next to the charger ─► #6091 TH
 #6091 LOAD (3.0..3.65 V on the cells, 4.5 V on USB-C) ─► PS1 Pololu S9V11E2A ─► +VREG 3.90 V
 +VREG ─► LM66200 VIN1 (VIN2, ON at GND) ─► VSYS ─► FireBeetle battery input
 VSYS ─► Sunrise VBB, LED common anode
@@ -69,10 +69,10 @@ VSYS ─► FireBeetle TPS62A02 ─► +3V3 (always on): ESP32-C6, SGP40, SHT40
 +3V3 ─[Pololu #2810, ON = GPIO2]─► +3V3_SEN ─► SEN62, its pull-ups
 GPIO18 ─► Sunrise VDDIO and its pull-ups       (EN = GPIO14, 100k pull-down)
 VCELL ─ 470k/470k ─► GPIO3 (ADC 6 dB)          VBAT_S, cell voltage / 2
-VBUS_EXT ─ 100k ─┬─► GPIO4 (ADC 12 dB, 100 nF)   PWR-K node: EXT, CHG_N, FLT_N
-                 ├─ 150k ─ GND
-                 ├─ 150k ─►| BAT43 ─ #6091 S2 (CHG_N)
-                 └─  33k ─►| BAT43 ─ #6091 S1 (FLT_N)
+VBUS_EXT ─ 10k ─┬─► GPIO4 (ADC 12 dB, 100 nF)    PWR-K node: EXT, CHG_N, FLT_N
+                ├─ 15k ─ GND
+                ├─ 15k ─►| BAT43 ─ #6091 S2 (CHG_N)
+                └─ 3k3 ─►| BAT43 ─ #6091 S1 (FLT_N)
 GPIO5 ─► #6091 !CE                             high = charge pause, input = charging
 VSYS ─ 1M/1M (on the FireBeetle) ─► GPIO0      sanity only
 ```
